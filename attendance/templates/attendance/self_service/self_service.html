@@ -1,0 +1,915 @@
+{% load static %}
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% trans "Employee Self Service" %} - Clock In/Out</title>
+    <link rel="apple-touch-icon" sizes="180x180"
+        href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}">
+    <link rel="icon" type="image/png" sizes="32x32"
+        href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-32x32.png' %}{% endif %}">
+    <link rel="icon" type="image/png" sizes="16x16"
+        href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-16x16.png' %}{% endif %}">
+    <link rel="stylesheet" href="{% static '/build/css/style.min.css' %}" />
+    <link rel="manifest" href="{% static 'build/manifest.json' %}" />
+    <style>
+        .self-service-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .self-service-step {
+            display: none;
+        }
+
+        .self-service-step.active {
+            display: block;
+        }
+
+        .search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        .search-result-item {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .search-result-item:hover {
+            background-color: #f5f5f5;
+        }
+
+        .search-result-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #e0e0e0;
+        }
+
+        .employee-card {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .employee-avatar-large {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 auto 10px;
+            background: #e0e0e0;
+        }
+
+        .camera-container {
+            width: 100%;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        canvas {
+            display: none;
+        }
+
+        .camera-preview-img {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .status-indicator {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .status-indicator.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-indicator.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+
+        .status-indicator.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .button-group button {
+            flex: 1;
+        }
+
+        .split-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-items: stretch;
+            min-height: 500px;
+        }
+
+        .camera-side {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .camera-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 3/4;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .camera-wrapper video,
+        .camera-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .location-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 12px;
+            font-size: 12px;
+            line-height: 1.4;
+            border-radius: 0 0 8px 8px;
+        }
+
+        .location-overlay-label {
+            font-weight: bold;
+            margin-bottom: 4px;
+            font-size: 11px;
+            opacity: 0.8;
+        }
+
+        .location-overlay-content {
+            font-size: 13px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+
+        .controls-side {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .employee-info-compact {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .employee-info-compact img {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 auto 10px;
+            background: #e0e0e0;
+        }
+
+        .employee-info-compact h4 {
+            margin: 0 0 5px 0;
+            font-size: 16px;
+        }
+
+        .employee-info-compact p {
+            margin: 0;
+            color: #666;
+            font-size: 13px;
+        }
+
+        .controls-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex-grow: 1;
+        }
+
+        .controls-buttons button {
+            flex: 1;
+            min-height: 45px;
+        }
+
+        @media (max-width: 1024px) {
+            .split-layout {
+                grid-template-columns: 1fr;
+                min-height: auto;
+            }
+
+            .camera-wrapper {
+                aspect-ratio: 16/9;
+                min-height: 300px;
+            }
+        }
+
+        .confirmation-card {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .confirmation-card h3 {
+            color: #155724;
+            margin-bottom: 10px;
+        }
+
+        .confirmation-time {
+            font-size: 24px;
+            font-weight: bold;
+            color: #28a745;
+            margin: 10px 0;
+        }
+
+        .error-card {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .error-card h3 {
+            color: #721c24;
+            margin-bottom: 10px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .search-container {
+            position: relative;
+            width: 100%;
+        }
+
+        .badge-badge {
+            display: inline-block;
+            background-color: #6c757d;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+
+        .clocked-in-badge {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .info-text {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="main">
+        <main class="oh-auth">
+            <div class="oh-auth-card mb-4">
+                <!-- Header -->
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <img src="{% if white_label_company.icon %}
+                            {{white_label_company.icon.url}}
+                        {% else %}
+                            {% static 'images/ui/auth-logo.png' %}
+                        {% endif %}"
+                        alt="Logo"
+                        style="max-height: 60px; object-fit: contain;" />
+                    {% if white_label_company %}
+                    <p style="font-size: 18px; font-weight: 500; color: #333; margin-top: 10px; margin-bottom: 0;">
+                        {{white_label_company}}
+                    </p>
+                    {% endif %}
+                </div>
+
+                <h1 class="oh-onboarding-card__title oh-onboarding-card__title--h2 text-center my-3">
+                    {% trans "Employee Self Service" %}
+                </h1>
+                <p class="text-muted text-center">
+                    {% trans "Clock in or out with your selfie and location" %}
+                </p>
+
+                <!-- Step 1: Employee Search -->
+                <div class="self-service-step active" id="step-search">
+                    <p class="info-text">{% trans "Enter your employee number or name:" %}</p>
+                    <div class="search-container">
+                        <input type="text"
+                            id="employee-search"
+                            class="oh-input w-100"
+                            placeholder="{% trans 'Badge ID or Name...' %}"
+                            autocomplete="off" />
+                        <div class="search-results" id="search-results"></div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Selected Employee & Camera (Split Layout) -->
+                <div class="self-service-step" id="step-clock">
+                    <div class="split-layout">
+                        <!-- LEFT SIDE: Camera & Photo with Location Overlay -->
+                        <div class="camera-side">
+                            <!-- Camera Preview -->
+                            <div class="camera-wrapper" id="camera-container" style="display: none;">
+                                <video id="video-preview" playsinline autoplay></video>
+                            </div>
+
+                            <!-- Captured Photo with Location Overlay -->
+                            <div class="camera-wrapper" id="photo-wrapper" style="display: none;">
+                                <img id="captured-photo" src="" />
+                                <div class="location-overlay" id="location-overlay">
+                                    <div class="location-overlay-label">📍 {% trans "Location" %}</div>
+                                    <div class="location-overlay-content" id="location-overlay-text">
+                                        {% trans "No location" %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Hidden canvas for capturing photo -->
+                            <canvas id="canvas" style="display: none;"></canvas>
+
+                            <!-- Capture/Retake Buttons -->
+                            <div class="button-group">
+                                <button type="button"
+                                    class="oh-btn oh-btn--secondary w-100"
+                                    id="capture-btn"
+                                    style="display: none;">
+                                    <ion-icon class="me-2" name="camera-outline"></ion-icon>
+                                    {% trans "Capture Selfie" %}
+                                </button>
+                                <button type="button"
+                                    class="oh-btn oh-btn--secondary w-100"
+                                    id="retake-btn"
+                                    style="display: none;">
+                                    <ion-icon class="me-2" name="refresh-outline"></ion-icon>
+                                    {% trans "Retake" %}
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT SIDE: Controls -->
+                        <div class="controls-side">
+                            <!-- Employee Info -->
+                            <div class="employee-info-compact" id="employee-info" style="display: none;">
+                                <img id="employee-avatar" src="" alt="Avatar" />
+                                <h4 id="employee-name"></h4>
+                                <p id="employee-badge"></p>
+                                <div id="employee-status" style="margin-top: 8px;"></div>
+                            </div>
+
+                            <!-- Location Status -->
+                            <div class="status-indicator warning" id="location-status">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                                    <div style="flex: 1;">
+                                        <ion-icon name="location-outline" class="me-2"></ion-icon>
+                                        <span id="location-text">{% trans "Getting location..." %}</span>
+                                    </div>
+                                    <button type="button" class="oh-btn oh-btn--xsm oh-btn--secondary" id="retry-location-btn" style="display: none; flex-shrink: 0;">
+                                        {% trans "Retry" %}
+                                    </button>
+                                </div>
+                                <small id="location-coordinates" style="display: block; margin-top: 5px; color: inherit; opacity: 0.8;"></small>
+                            </div>
+
+                            <!-- Clock In/Out Buttons -->
+                            <div class="controls-buttons" id="action-buttons" style="display: none;">
+                                <button type="button"
+                                    class="oh-btn oh-btn--success"
+                                    id="clock-in-btn"
+                                    style="display: none;">
+                                    <ion-icon class="me-2" name="log-in-outline"></ion-icon>
+                                    {% trans "Clock In" %}
+                                </button>
+                                <button type="button"
+                                    class="oh-btn oh-btn--warning"
+                                    id="clock-out-btn"
+                                    style="display: none;">
+                                    <ion-icon class="me-2" name="log-out-outline"></ion-icon>
+                                    {% trans "Clock Out" %}
+                                </button>
+                            </div>
+
+                            <!-- Back Button -->
+                            <button type="button"
+                                class="oh-btn oh-btn--secondary-outline w-100"
+                                id="back-btn">
+                                <ion-icon class="me-2" name="arrow-back-outline"></ion-icon>
+                                {% trans "Back" %}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Confirmation -->
+                <div class="self-service-step" id="step-confirmation">
+                    <div id="confirmation-content"></div>
+                    <button type="button"
+                        class="oh-btn oh-btn--secondary w-100 mt-3"
+                        id="new-clock-btn">
+                        <ion-icon class="me-2" name="refresh-outline"></ion-icon>
+                        {% trans "Clock Another Employee" %}
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{% static '/build/js/web.frontend.min.js' %}"></script>
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script type="module" src="{% static 'images/ionicons/ui_icons/ionicons/ionicons.esm.js' %}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+
+    <script>
+        const CSRF_TOKEN = '{{ csrf_token }}';
+        let selectedEmployee = null;
+        let videoStream = null;
+        let capturedPhotoBlob = null;
+        let latitude = null;
+        let longitude = null;
+
+        // Initialize
+        $(document).ready(function() {
+            initializeLocationCapture();
+            setupEventListeners();
+        });
+
+        // Get device location
+        function initializeLocationCapture() {
+            if (navigator.geolocation) {
+                $('#location-text').text('{% trans "Getting location..." %}');
+
+                const options = {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                };
+
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        latitude = position.coords.latitude;
+                        longitude = position.coords.longitude;
+                        const accuracy = Math.round(position.coords.accuracy);
+
+                        $('#location-text').html(`✓ {% trans "Location captured" %}<br><small>(${latitude.toFixed(4)}, ${longitude.toFixed(4)})</small>`);
+                        $('#location-coordinates').text(`Accuracy: ±${accuracy}m`);
+                        $('#retry-location-btn').hide();
+                        $('#location-status').removeClass('warning').addClass('success');
+
+                        console.info(`Location captured: ${latitude}, ${longitude}, accuracy: ${accuracy}m`);
+                    },
+                    function(error) {
+                        let errorMsg = '{% trans "Location unavailable" %}';
+
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMsg = '{% trans "Location permission denied. Please enable location in browser settings." %}';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMsg = '{% trans "Location position unavailable" %}';
+                                break;
+                            case error.TIMEOUT:
+                                errorMsg = '{% trans "Location request timeout" %}';
+                                break;
+                        }
+
+                        $('#location-text').text(errorMsg);
+                        $('#location-coordinates').text('(You can still clock in/out without location)');
+                        $('#retry-location-btn').show();
+                        $('#location-status').removeClass('success').addClass('warning');
+
+                        console.warn('Geolocation error:', error);
+                    },
+                    options
+                );
+            } else {
+                $('#location-text').text('{% trans "Geolocation not supported" %}');
+                $('#location-coordinates').text('(You can still clock in/out without location)');
+                $('#location-status').removeClass('success').addClass('warning');
+            }
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            // Employee search
+            let searchTimeout;
+            $('#employee-search').on('keyup', function() {
+                clearTimeout(searchTimeout);
+                const query = $(this).val().trim();
+
+                if (query.length < 2) {
+                    $('#search-results').empty();
+                    return;
+                }
+
+                searchTimeout = setTimeout(function() {
+                    searchEmployees(query);
+                }, 300);
+            });
+
+            // Back button
+            $('#back-btn').on('click', function() {
+                resetForm();
+                showStep('search');
+            });
+
+            // Capture button
+            $('#capture-btn').on('click', function() {
+                capturePhoto();
+            });
+
+            // Retake button
+            $('#retake-btn').on('click', function() {
+                $('#capture-btn').css('display', 'block');
+                $('#retake-btn').css('display', 'none');
+                $('#photo-wrapper').css('display', 'none');
+                startCamera();
+            });
+
+            // Clock in/out buttons
+            $('#clock-in-btn').on('click', function() {
+                clockInEmployee();
+            });
+
+            $('#clock-out-btn').on('click', function() {
+                clockOutEmployee();
+            });
+
+            // New clock button
+            $('#new-clock-btn').on('click', function() {
+                resetForm();
+                showStep('search');
+            });
+
+            // Retry location button
+            $('#retry-location-btn').on('click', function() {
+                $('#location-text').text('{% trans "Getting location..." %}');
+                $('#location-coordinates').text('');
+                $('#retry-location-btn').hide();
+                initializeLocationCapture();
+            });
+        }
+
+        // Search for employees
+        function searchEmployees(query) {
+            const formData = new FormData();
+            formData.append('query', query);
+
+            fetch('{% url "self-service-employee-lookup" %}', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && data.results.length > 0) {
+                    let html = '';
+                    data.results.forEach(function(emp) {
+                        const badge = emp.badge_id ? `<span class="badge-badge">${emp.badge_id}</span>` : '';
+                        const status = emp.is_clocked_in ?
+                            `<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>` : '';
+                        html += `
+                            <div class="search-result-item" onclick="selectEmployee(${emp.id}, '${emp.name}', '${emp.badge_id}', '${emp.avatar}', ${emp.is_clocked_in})">
+                                <img src="${emp.avatar}" class="search-result-avatar" />
+                                <div style="flex: 1; text-align: left;">
+                                    <div>${emp.name}</div>
+                                    <small style="color: #666;">${badge} ${status}</small>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    $('#search-results').html(html);
+                } else {
+                    $('#search-results').html('<div class="search-result-item" style="cursor: default;">{% trans "No employees found" %}</div>');
+                }
+            })
+            .catch(error => {
+                console.error('Search error:', error);
+                $('#search-results').html(`<div class="search-result-item" style="cursor: default; color: red;">{% trans "Search error" %}: ${error.message}</div>`);
+            });
+        }
+
+        // Select employee
+        function selectEmployee(empId, empName, empBadge, empAvatar, isClockedIn) {
+            selectedEmployee = {
+                id: empId,
+                name: empName,
+                badge: empBadge,
+                avatar: empAvatar,
+                is_clocked_in: isClockedIn
+            };
+
+            $('#search-results').empty();
+            $('#employee-search').val(empName).blur(); // Blur to close any keyboard
+            $('#employee-info').css('display', 'block');
+            $('#employee-name').text(empName);
+            $('#employee-badge').text(empBadge ? `#${empBadge}` : '');
+            $('#employee-avatar').attr('src', empAvatar);
+
+            if (isClockedIn) {
+                $('#employee-status').html('<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>');
+            } else {
+                $('#employee-status').empty();
+            }
+
+            // Show clock step
+            showStep('clock');
+
+            // Re-attempt location capture when employee is selected
+            initializeLocationCapture();
+
+            // Start camera after a brief delay to ensure UI is rendered
+            setTimeout(function() {
+                startCamera();
+            }, 100);
+        }
+
+        // Start camera
+        function startCamera() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+                    .then(function(stream) {
+                        videoStream = stream;
+                        const video = document.getElementById('video-preview');
+                        video.srcObject = stream;
+                        $('#camera-container').css('display', 'block');
+                        $('#capture-btn').css('display', 'block');
+                        $('#retake-btn').css('display', 'none');
+                        $('#action-buttons').css('display', 'flex');
+                        $('#location-status').css('display', 'block');
+                        $('#captured-photo').css('display', 'none');
+
+                        // Show appropriate clock in/out button based on status
+                        if (selectedEmployee.is_clocked_in) {
+                            $('#clock-out-btn').css('display', 'block');
+                            $('#clock-in-btn').css('display', 'none');
+                        } else {
+                            $('#clock-in-btn').css('display', 'block');
+                            $('#clock-out-btn').css('display', 'none');
+                        }
+                    })
+                    .catch(function(error) {
+                        alert('{% trans "Camera access denied. Please allow camera permissions." %}');
+                        console.error('Camera error:', error);
+                    });
+            } else {
+                alert('{% trans "Camera not supported on this device." %}');
+            }
+        }
+
+        // Capture photo
+        function capturePhoto() {
+            const video = document.getElementById('video-preview');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob(function(blob) {
+                capturedPhotoBlob = blob;
+                const url = URL.createObjectURL(blob);
+                $('#captured-photo').attr('src', url);
+                $('#camera-container').css('display', 'none');
+                $('#photo-wrapper').css('display', 'block');
+                $('#capture-btn').css('display', 'none');
+                $('#retake-btn').css('display', 'block');
+
+                // Update location overlay with current location
+                updateLocationOverlay();
+            }, 'image/jpeg');
+        }
+
+        // Update location overlay on photo
+        function updateLocationOverlay() {
+            let locationText = '{% trans "No location" %}';
+
+            if (latitude && longitude) {
+                locationText = `${latitude.toFixed(4)}<br>${longitude.toFixed(4)}`;
+            }
+
+            $('#location-overlay-text').html(locationText);
+        }
+
+        // Clock in
+        function clockInEmployee() {
+            if (!selectedEmployee || !capturedPhotoBlob) {
+                alert('{% trans "Please take a selfie first." %}');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('employee_id', selectedEmployee.id);
+            formData.append('selfie', capturedPhotoBlob, 'selfie.jpg');
+            formData.append('latitude', latitude || '');
+            formData.append('longitude', longitude || '');
+
+            const btn = $('#clock-in-btn');
+            const originalText = btn.html();
+            btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
+
+            fetch('{% url "self-service-clock-in" %}', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showConfirmation(data, 'success');
+                } else {
+                    showConfirmation(data, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Clock in error:', error);
+                showConfirmation({
+                    message: `{% trans "Clock in failed" %}: ${error.message}`
+                }, 'error');
+            })
+            .finally(() => {
+                btn.html(originalText).prop('disabled', false);
+            });
+        }
+
+        // Clock out
+        function clockOutEmployee() {
+            if (!selectedEmployee || !capturedPhotoBlob) {
+                alert('{% trans "Please take a selfie first." %}');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('employee_id', selectedEmployee.id);
+            formData.append('selfie', capturedPhotoBlob, 'selfie.jpg');
+            formData.append('latitude', latitude || '');
+            formData.append('longitude', longitude || '');
+
+            const btn = $('#clock-out-btn');
+            const originalText = btn.html();
+            btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
+
+            fetch('{% url "self-service-clock-out" %}', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showConfirmation(data, 'success');
+                } else {
+                    showConfirmation(data, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Clock out error:', error);
+                showConfirmation({
+                    message: `{% trans "Clock out failed" %}: ${error.message}`
+                }, 'error');
+            })
+            .finally(() => {
+                btn.html(originalText).prop('disabled', false);
+            });
+        }
+
+        // Show confirmation
+        function showConfirmation(response, type) {
+            let html = '';
+            if (type === 'success') {
+                const action = response.worked_hours ? '{% trans "Clocked Out" %}' : '{% trans "Clocked In" %}';
+                html = `
+                    <div class="confirmation-card">
+                        <h3>✓ ${action}</h3>
+                        <p>${response.employee_name}</p>
+                        <div class="confirmation-time">${response.clock_in_time || response.clock_out_time}</div>
+                        ${response.worked_hours ? `<p>{% trans "Worked Hours" %}: ${response.worked_hours}</p>` : ''}
+                    </div>
+                `;
+            } else {
+                html = `
+                    <div class="error-card">
+                        <h3>✗ {% trans "Error" %}</h3>
+                        <p>${response.message || '{% trans "Unknown error" %}'}</p>
+                    </div>
+                `;
+            }
+
+            $('#confirmation-content').html(html);
+            showStep('confirmation');
+        }
+
+        // Show step
+        function showStep(step) {
+            $('.self-service-step').css('display', 'none').removeClass('active');
+            $('#step-' + step).css('display', 'block').addClass('active');
+        }
+
+        // Reset form
+        function resetForm() {
+            selectedEmployee = null;
+            capturedPhotoBlob = null;
+            $('#employee-search').val('');
+            $('#employee-info').css('display', 'none');
+            $('#camera-container').css('display', 'none');
+            $('#photo-wrapper').css('display', 'none');
+            $('#location-status').css('display', 'none');
+            $('#capture-btn').css('display', 'none');
+            $('#retake-btn').css('display', 'none');
+            $('#action-buttons').css('display', 'none');
+            $('#clock-in-btn').css('display', 'none');
+            $('#clock-out-btn').css('display', 'none');
+
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+        }
+
+        // Handle visibility change to stop camera when page is hidden
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden && videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+
+</html>

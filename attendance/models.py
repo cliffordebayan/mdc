@@ -70,6 +70,22 @@ class AttendanceActivity(HorillaModel):
     clock_out_date = models.DateField(null=True, verbose_name=_("Out Date"))
     out_datetime = models.DateTimeField(null=True)
     clock_out = models.TimeField(null=True, verbose_name=_("Check Out"))
+    # Self-service clock in/out fields
+    clock_in_selfie = models.ImageField(
+        upload_to=upload_path,
+        null=True,
+        blank=True,
+        verbose_name=_("Clock In Selfie"),
+    )
+    clock_out_selfie = models.ImageField(
+        upload_to=upload_path,
+        null=True,
+        blank=True,
+        verbose_name=_("Clock Out Selfie"),
+    )
+    latitude = models.FloatField(null=True, blank=True, verbose_name=_("Latitude"))
+    longitude = models.FloatField(null=True, blank=True, verbose_name=_("Longitude"))
+    location_verified = models.BooleanField(default=False, verbose_name=_("Location Verified"))
     objects = HorillaCompanyManager(
         related_company_field="employee_id__employee_work_info__company_id"
     )

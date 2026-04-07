@@ -13,6 +13,7 @@ import attendance.views.geofaceconfig
 import attendance.views.penalty
 import attendance.views.requests
 import attendance.views.search
+import attendance.views.self_service
 import base
 from base.forms import AttendanceAllowedIPForm
 from base.models import AttendanceAllowedIP
@@ -20,6 +21,27 @@ from base.models import AttendanceAllowedIP
 from .views import views
 
 urlpatterns = [
+    # Public self-service endpoints
+    path(
+        "self-service/",
+        attendance.views.self_service.public_self_service,
+        name="public-self-service",
+    ),
+    path(
+        "self-service/employee-lookup/",
+        attendance.views.self_service.employee_lookup,
+        name="self-service-employee-lookup",
+    ),
+    path(
+        "self-service/clock-in/",
+        attendance.views.self_service.public_clock_in,
+        name="self-service-clock-in",
+    ),
+    path(
+        "self-service/clock-out/",
+        attendance.views.self_service.public_clock_out,
+        name="self-service-clock-out",
+    ),
     path(
         "profile-attendance-tab",
         views.profile_attendance_tab,
