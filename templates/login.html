@@ -28,6 +28,20 @@
         </div>
         <main class="oh-auth">
             <div class="oh-auth-card mb-4">
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <img src={% if white_label_company.icon %}
+                            "{{white_label_company.icon.url}}"
+                            alt="{{white_label_company_name}}"
+                            style="max-height: 60px; object-fit: contain;"
+                        {% else %}
+                            "{% static 'images/ui/auth-logo.png' %}" alt="Horilla"
+                            style="max-height: 60px; object-fit: contain;"
+                        {% endif %}
+                    />
+                    {% if white_label_company %}
+                    <p style="font-size: 18px; font-weight: 500; color: #333; margin-top: 10px; margin-bottom: 0;">{{white_label_company}}</p>
+                    {% endif %}
+                </div>
                 <h1 class="oh-onboarding-card__title oh-onboarding-card__title--h2 text-center my-3">
                     {% trans "Sign In" %}
                 </h1>
@@ -39,7 +53,7 @@
                     <div class="oh-input-group">
                         <label class="oh-label" for="username">{% trans "Username" %}</label>
                         <input type="text" id="username" name="username" class="oh-input w-100"
-                            placeholder="e.g. adam.luis@horilla.com" />
+                            placeholder="juan@mail.com" />
                     </div>
                     <div class="oh-input-group">
                         <label class="oh-label" for="password">{% trans "Password" %}</label>
@@ -95,20 +109,6 @@
                         </div>
                     </div>
                 {% endif %}
-            </div>
-            <div style="display: contents;">
-                <img src={% if white_label_company.icon %}
-                        "{{white_label_company.icon.url}}"
-                        alt="{{white_label_company_name}}"
-                        style=" opacity:.90; 200px; height: 140px;"
-                    {% else %}
-                        "{% static 'images/ui/auth-logo.png' %}" alt="Horilla"
-                    {% endif %}
-                />
-                {% if white_label_company %}
-                <p style=" font-size: large; color: gray; text-align: center;" class="mt-2">{{white_label_company}}</p>
-                {% endif %}
-
             </div>
         </main>
     </div>

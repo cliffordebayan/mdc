@@ -7517,7 +7517,7 @@ def protected_media(request, path):
         "/recruitment/candidate-self-status-tracking",
     ]
 
-    exempted_folders = ["base/icon/"]
+    exempted_folders = ["base/icon/", "base/company/icon/"]
 
     # Prevent path traversal
     try:
