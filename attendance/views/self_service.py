@@ -9,6 +9,9 @@ Employees identify themselves by badge ID or name.
 import logging
 from datetime import date, datetime, timedelta
 
+from django.conf import settings
+from django.utils import timezone
+
 from django.contrib.auth.models import User
 from django.db.models import Q
 from django.http import JsonResponse
@@ -41,7 +44,15 @@ def public_self_service(request):
     Render the public self-service clock in/out page.
     No authentication required.
     """
-    return render(request, "attendance/self_service/self_service.html")
+    server_now = timezone.now()
+    return render(
+        request,
+        "attendance/self_service/self_service.html",
+        {
+            "server_time_iso": server_now.isoformat(),
+            "TIME_ZONE": settings.TIME_ZONE,
+        },
+    )
 
 
 @csrf_exempt
