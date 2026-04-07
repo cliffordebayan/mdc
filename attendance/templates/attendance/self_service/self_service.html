@@ -17,12 +17,7 @@
     <link rel="stylesheet" href="{% static '/build/css/style.min.css' %}" />
     <link rel="manifest" href="{% static 'build/manifest.json' %}" />
     <style>
-        .self-service-container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
+        /* ── Search step (unchanged) ── */
         .self-service-step {
             display: none;
         }
@@ -65,133 +60,123 @@
             background: #e0e0e0;
         }
 
-        .employee-card {
-            background: #f9f9f9;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-            text-align: center;
-        }
-
-        .employee-avatar-large {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            object-fit: cover;
-            margin: 0 auto 10px;
-            background: #e0e0e0;
-        }
-
-        .camera-container {
-            width: 100%;
-            background: #000;
-            border-radius: 8px;
-            overflow: hidden;
-            margin-bottom: 15px;
-        }
-
-        video {
-            width: 100%;
-            height: auto;
-            display: block;
-        }
-
-        canvas {
-            display: none;
-        }
-
-        .camera-preview-img {
-            width: 100%;
-            height: auto;
-            border-radius: 8px;
-            margin-bottom: 15px;
-        }
-
-        .status-indicator {
-            padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 10px;
-            text-align: center;
-            font-size: 14px;
-        }
-
-        .status-indicator.success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .status-indicator.warning {
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeeba;
-        }
-
-        .status-indicator.error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
-
-        .button-group button {
-            flex: 1;
-        }
-
-        .split-layout {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            align-items: stretch;
-            min-height: 500px;
-        }
-
-        .camera-side {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .camera-wrapper {
+        .search-container {
             position: relative;
             width: 100%;
-            aspect-ratio: 3/4;
-            background: #000;
-            border-radius: 8px;
-            overflow: hidden;
-            flex-shrink: 0;
         }
 
-        .camera-wrapper video,
-        .camera-wrapper img {
+        .badge-badge {
+            display: inline-block;
+            background-color: #6c757d;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+
+        .clocked-in-badge {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .info-text {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 15px;
+        }
+
+        /* ── Fullscreen clock step ── */
+        .clock-fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            background: #f5f7fa;
+            z-index: 9999;
+        }
+
+        /* Left: camera */
+        .clock-camera-panel {
+            position: relative;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .clock-camera-panel video,
+        .clock-camera-panel .captured-photo-full {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            display: block;
         }
 
-        .location-overlay {
+        .clock-camera-panel canvas {
+            display: none;
+        }
+
+        .camera-controls-bar {
             position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
-            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            padding: 16px;
+            background: linear-gradient(transparent, rgba(0, 0, 0, .7));
+            z-index: 2;
+        }
+
+        .camera-controls-bar button {
+            border: none;
+            border-radius: 50px;
+            padding: 12px 28px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform .15s, opacity .15s;
+        }
+
+        .camera-controls-bar button:hover {
+            transform: scale(1.05);
+        }
+
+        .camera-controls-bar .btn-capture {
+            background: #fff;
+            color: #333;
+        }
+
+        .camera-controls-bar .btn-retake {
+            background: rgba(255, 255, 255, .2);
+            color: #fff;
+            backdrop-filter: blur(6px);
+        }
+
+        .location-overlay {
+            position: absolute;
+            bottom: 80px;
+            left: 16px;
+            background: rgba(0, 0, 0, 0.65);
             color: white;
-            padding: 12px;
+            padding: 10px 14px;
             font-size: 12px;
-            line-height: 1.4;
-            border-radius: 0 0 8px 8px;
+            line-height: 1.5;
+            border-radius: 8px;
+            backdrop-filter: blur(6px);
+            z-index: 2;
         }
 
         .location-overlay-label {
             font-weight: bold;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
             font-size: 11px;
             opacity: 0.8;
         }
@@ -199,67 +184,158 @@
         .location-overlay-content {
             font-size: 13px;
             font-family: monospace;
-            word-break: break-all;
         }
 
-        .controls-side {
+        /* Right: info panel */
+        .clock-info-panel {
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 30px;
+            gap: 14px;
+            overflow: hidden;
         }
 
-        .employee-info-compact {
-            background: #f9f9f9;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 12px;
+        .clock-company-logo {
+            max-height: 50px;
+            object-fit: contain;
+        }
+
+        .clock-company-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin: 0;
+        }
+
+        .clock-live-time {
+            font-size: 40px;
+            font-weight: 700;
+            color: #222;
+            letter-spacing: -1px;
+            line-height: 1;
+        }
+
+        .clock-live-date {
+            font-size: 13px;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .clock-employee-card {
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 14px;
             text-align: center;
+            width: 100%;
+            max-width: 320px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
-        .employee-info-compact img {
-            width: 60px;
-            height: 60px;
+        .clock-employee-card img {
+            width: 64px;
+            height: 64px;
+            margin: 5px;
             border-radius: 50%;
             object-fit: cover;
-            margin: 0 auto 10px;
-            background: #e0e0e0;
+            border: 2px solid #e0e0e0;
+            flex-shrink: 0;
         }
 
-        .employee-info-compact h4 {
-            margin: 0 0 5px 0;
-            font-size: 16px;
+        .clock-employee-card .emp-details {
+            text-align: center;
+            min-width: 0;
         }
 
-        .employee-info-compact p {
+        .clock-employee-card h4 {
+            margin: 0 0 2px 0;
+            font-size: 15px;
+            color: #222;
+        }
+
+        .clock-employee-card p {
             margin: 0;
-            color: #666;
-            font-size: 13px;
+            color: #888;
+            font-size: 12px;
         }
 
-        .controls-buttons {
+        .clock-location-status {
+            padding: 8px 14px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 12px;
+            width: 100%;
+            max-width: 320px;
+        }
+
+        .clock-location-status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .clock-location-status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+
+        .clock-action-buttons {
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            flex-grow: 1;
+            gap: 8px;
+            width: 100%;
+            max-width: 320px;
         }
 
-        .controls-buttons button {
-            flex: 1;
-            min-height: 45px;
+        .clock-action-buttons button {
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: transform .15s, box-shadow .15s;
         }
 
-        @media (max-width: 1024px) {
-            .split-layout {
-                grid-template-columns: 1fr;
-                min-height: auto;
-            }
-
-            .camera-wrapper {
-                aspect-ratio: 16/9;
-                min-height: 300px;
-            }
+        .clock-action-buttons button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, .15);
         }
 
+        .clock-action-buttons button:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+
+        .btn-clock-in {
+            background: #28a745;
+            color: #fff;
+        }
+
+        .btn-clock-out {
+            background: #fd7e14;
+            color: #fff;
+        }
+
+        .btn-back {
+            background: transparent;
+            color: #666;
+            border: 1px solid #ddd !important;
+            font-size: 13px !important;
+            padding: 8px !important;
+        }
+
+        /* ── Confirmation step ── */
         .confirmation-card {
             background: #d4edda;
             border: 2px solid #28a745;
@@ -295,6 +371,7 @@
             margin-bottom: 10px;
         }
 
+        /* ── Utilities ── */
         .loading {
             display: inline-block;
             width: 20px;
@@ -306,34 +383,34 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
 
-        .search-container {
-            position: relative;
-            width: 100%;
-        }
+        /* ── Responsive ── */
+        @media (max-width: 900px) {
+            .clock-fullscreen {
+                grid-template-columns: 1fr;
+                grid-template-rows: 50vh 50vh;
+            }
 
-        .badge-badge {
-            display: inline-block;
-            background-color: #6c757d;
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            margin-left: 5px;
-        }
+            .clock-info-panel {
+                padding: 20px;
+                gap: 16px;
+            }
 
-        .clocked-in-badge {
-            background-color: #ffc107;
-            color: #333;
-        }
+            .clock-live-time {
+                font-size: 36px;
+            }
 
-        .info-text {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 15px;
+            .clock-employee-card {
+                padding: 16px;
+            }
         }
     </style>
 </head>
@@ -348,9 +425,7 @@
                             {{white_label_company.icon.url}}
                         {% else %}
                             {% static 'images/ui/auth-logo.png' %}
-                        {% endif %}"
-                        alt="Logo"
-                        style="max-height: 60px; object-fit: contain;" />
+                        {% endif %}" alt="Logo" style="max-height: 60px; object-fit: contain;" />
                     {% if white_label_company %}
                     <p style="font-size: 18px; font-weight: 500; color: #333; margin-top: 10px; margin-bottom: 0;">
                         {{white_label_company}}
@@ -369,105 +444,94 @@
                 <div class="self-service-step active" id="step-search">
                     <p class="info-text">{% trans "Enter your employee number or name:" %}</p>
                     <div class="search-container">
-                        <input type="text"
-                            id="employee-search"
-                            class="oh-input w-100"
-                            placeholder="{% trans 'Badge ID or Name...' %}"
-                            autocomplete="off" />
+                        <input type="text" id="employee-search" class="oh-input w-100"
+                            placeholder="{% trans 'Badge ID or Name...' %}" autocomplete="off" />
                         <div class="search-results" id="search-results"></div>
                     </div>
                 </div>
 
-                <!-- Step 2: Selected Employee & Camera (Split Layout) -->
+                <!-- Step 2: Fullscreen Clock In/Out -->
                 <div class="self-service-step" id="step-clock">
-                    <div class="split-layout">
-                        <!-- LEFT SIDE: Camera & Photo with Location Overlay -->
-                        <div class="camera-side">
-                            <!-- Camera Preview -->
-                            <div class="camera-wrapper" id="camera-container" style="display: none;">
-                                <video id="video-preview" playsinline autoplay></video>
-                            </div>
+                    <div class="clock-fullscreen">
+                        <!-- LEFT: Camera -->
+                        <div class="clock-camera-panel">
+                            <video id="video-preview" playsinline autoplay style="display:none;"></video>
+                            <img id="captured-photo" class="captured-photo-full" src="" style="display:none;" />
+                            <canvas id="canvas"></canvas>
 
-                            <!-- Captured Photo with Location Overlay -->
-                            <div class="camera-wrapper" id="photo-wrapper" style="display: none;">
-                                <img id="captured-photo" src="" />
-                                <div class="location-overlay" id="location-overlay">
-                                    <div class="location-overlay-label">📍 {% trans "Location" %}</div>
-                                    <div class="location-overlay-content" id="location-overlay-text">
-                                        {% trans "No location" %}
-                                    </div>
+                            <!-- Location overlay on photo -->
+                            <div class="location-overlay" id="location-overlay" style="display:none;">
+                                <div class="location-overlay-label">📍 {% trans "Location" %}</div>
+                                <div class="location-overlay-content" id="location-overlay-text">
+                                    {% trans "No location" %}
                                 </div>
                             </div>
 
-                            <!-- Hidden canvas for capturing photo -->
-                            <canvas id="canvas" style="display: none;"></canvas>
-
-                            <!-- Capture/Retake Buttons -->
-                            <div class="button-group">
-                                <button type="button"
-                                    class="oh-btn oh-btn--secondary w-100"
-                                    id="capture-btn"
-                                    style="display: none;">
-                                    <ion-icon class="me-2" name="camera-outline"></ion-icon>
+                            <!-- Camera capture / retake buttons -->
+                            <div class="camera-controls-bar">
+                                <button type="button" class="btn-capture" id="capture-btn" style="display:none;">
+                                    <ion-icon name="camera-outline"></ion-icon>
                                     {% trans "Capture Selfie" %}
                                 </button>
-                                <button type="button"
-                                    class="oh-btn oh-btn--secondary w-100"
-                                    id="retake-btn"
-                                    style="display: none;">
-                                    <ion-icon class="me-2" name="refresh-outline"></ion-icon>
+                                <button type="button" class="btn-retake" id="retake-btn" style="display:none;">
+                                    <ion-icon name="refresh-outline"></ion-icon>
                                     {% trans "Retake" %}
                                 </button>
                             </div>
                         </div>
 
-                        <!-- RIGHT SIDE: Controls -->
-                        <div class="controls-side">
-                            <!-- Employee Info -->
-                            <div class="employee-info-compact" id="employee-info" style="display: none;">
+                        <!-- RIGHT: Info panel -->
+                        <div class="clock-info-panel">
+                            <!-- Company Logo -->
+                            <img src="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'images/ui/auth-logo.png' %}{% endif %}"
+                                alt="Logo" class="clock-company-logo" />
+                            {% if white_label_company %}
+                            <p class="clock-company-name">{{ white_label_company }}</p>
+                            {% endif %}
+
+                            <!-- Live clock -->
+                            <div style="text-align:center;">
+                                <div class="clock-live-time" id="live-clock">--:--:--</div>
+                                <div class="clock-live-date" id="live-date"></div>
+                            </div>
+
+                            <!-- Employee card -->
+                            <div class="clock-employee-card" id="employee-info" style="display:none;">
                                 <img id="employee-avatar" src="" alt="Avatar" />
-                                <h4 id="employee-name"></h4>
-                                <p id="employee-badge"></p>
-                                <div id="employee-status" style="margin-top: 8px;"></div>
-                            </div>
-
-                            <!-- Location Status -->
-                            <div class="status-indicator warning" id="location-status">
-                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-                                    <div style="flex: 1;">
-                                        <ion-icon name="location-outline" class="me-2"></ion-icon>
-                                        <span id="location-text">{% trans "Getting location..." %}</span>
-                                    </div>
-                                    <button type="button" class="oh-btn oh-btn--xsm oh-btn--secondary" id="retry-location-btn" style="display: none; flex-shrink: 0;">
-                                        {% trans "Retry" %}
-                                    </button>
+                                <div class="emp-details">
+                                    <h4 id="employee-name"></h4>
+                                    <p id="employee-badge"></p>
+                                    <div id="employee-status" style="margin-top: 4px;"></div>
                                 </div>
-                                <small id="location-coordinates" style="display: block; margin-top: 5px; color: inherit; opacity: 0.8;"></small>
                             </div>
 
-                            <!-- Clock In/Out Buttons -->
-                            <div class="controls-buttons" id="action-buttons" style="display: none;">
-                                <button type="button"
-                                    class="oh-btn oh-btn--success"
-                                    id="clock-in-btn"
-                                    style="display: none;">
-                                    <ion-icon class="me-2" name="log-in-outline"></ion-icon>
+                            <!-- Location status -->
+                            <div class="clock-location-status warning" id="location-status">
+                                <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                                <span id="location-text">{% trans "Getting location..." %}</span>
+                                <button type="button" class="oh-btn oh-btn--xsm oh-btn--secondary"
+                                    id="retry-location-btn" style="display:none; margin-left:8px;">
+                                    {% trans "Retry" %}
+                                </button>
+                                <small id="location-coordinates"
+                                    style="display:block; margin-top:4px; opacity:.8;"></small>
+                            </div>
+
+                            <!-- Clock In / Out buttons -->
+                            <div class="clock-action-buttons" id="action-buttons" style="display:none;">
+                                <button type="button" class="btn-clock-in" id="clock-in-btn" style="display:none;">
+                                    <ion-icon name="log-in-outline"></ion-icon>
                                     {% trans "Clock In" %}
                                 </button>
-                                <button type="button"
-                                    class="oh-btn oh-btn--warning"
-                                    id="clock-out-btn"
-                                    style="display: none;">
-                                    <ion-icon class="me-2" name="log-out-outline"></ion-icon>
+                                <button type="button" class="btn-clock-out" id="clock-out-btn" style="display:none;">
+                                    <ion-icon name="log-out-outline"></ion-icon>
                                     {% trans "Clock Out" %}
                                 </button>
                             </div>
 
-                            <!-- Back Button -->
-                            <button type="button"
-                                class="oh-btn oh-btn--secondary-outline w-100"
-                                id="back-btn">
-                                <ion-icon class="me-2" name="arrow-back-outline"></ion-icon>
+                            <!-- Back -->
+                            <button type="button" class="btn-back" id="back-btn" style="width:100%; max-width:320px;">
+                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
                                 {% trans "Back" %}
                             </button>
                         </div>
@@ -477,9 +541,7 @@
                 <!-- Step 3: Confirmation -->
                 <div class="self-service-step" id="step-confirmation">
                     <div id="confirmation-content"></div>
-                    <button type="button"
-                        class="oh-btn oh-btn--secondary w-100 mt-3"
-                        id="new-clock-btn">
+                    <button type="button" class="oh-btn oh-btn--secondary w-100 mt-3" id="new-clock-btn">
                         <ion-icon class="me-2" name="refresh-outline"></ion-icon>
                         {% trans "Clock Another Employee" %}
                     </button>
@@ -502,11 +564,32 @@
         let latitude = null;
         let longitude = null;
 
+        // Toast notification helper
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000,
+            timerProgressBar: true,
+        });
+
         // Initialize
-        $(document).ready(function() {
+        $(document).ready(function () {
             initializeLocationCapture();
             setupEventListeners();
+            startLiveClock();
         });
+
+        // Live clock on right panel
+        function startLiveClock() {
+            function tick() {
+                const now = new Date();
+                $('#live-clock').text(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+                $('#live-date').text(now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+            }
+            tick();
+            setInterval(tick, 1000);
+        }
 
         // Get device location
         function initializeLocationCapture() {
@@ -520,7 +603,7 @@
                 };
 
                 navigator.geolocation.getCurrentPosition(
-                    function(position) {
+                    function (position) {
                         latitude = position.coords.latitude;
                         longitude = position.coords.longitude;
                         const accuracy = Math.round(position.coords.accuracy);
@@ -532,10 +615,10 @@
 
                         console.info(`Location captured: ${latitude}, ${longitude}, accuracy: ${accuracy}m`);
                     },
-                    function(error) {
+                    function (error) {
                         let errorMsg = '{% trans "Location unavailable" %}';
 
-                        switch(error.code) {
+                        switch (error.code) {
                             case error.PERMISSION_DENIED:
                                 errorMsg = '{% trans "Location permission denied. Please enable location in browser settings." %}';
                                 break;
@@ -567,7 +650,7 @@
         function setupEventListeners() {
             // Employee search
             let searchTimeout;
-            $('#employee-search').on('keyup', function() {
+            $('#employee-search').on('keyup', function () {
                 clearTimeout(searchTimeout);
                 const query = $(this).val().trim();
 
@@ -576,47 +659,45 @@
                     return;
                 }
 
-                searchTimeout = setTimeout(function() {
+                searchTimeout = setTimeout(function () {
                     searchEmployees(query);
                 }, 300);
             });
 
             // Back button
-            $('#back-btn').on('click', function() {
+            $('#back-btn').on('click', function () {
                 resetForm();
                 showStep('search');
             });
 
             // Capture button
-            $('#capture-btn').on('click', function() {
+            $('#capture-btn').on('click', function () {
                 capturePhoto();
             });
 
             // Retake button
-            $('#retake-btn').on('click', function() {
-                $('#capture-btn').css('display', 'block');
-                $('#retake-btn').css('display', 'none');
-                $('#photo-wrapper').css('display', 'none');
+            $('#retake-btn').on('click', function () {
+                capturedPhotoBlob = null;
                 startCamera();
             });
 
             // Clock in/out buttons
-            $('#clock-in-btn').on('click', function() {
+            $('#clock-in-btn').on('click', function () {
                 clockInEmployee();
             });
 
-            $('#clock-out-btn').on('click', function() {
+            $('#clock-out-btn').on('click', function () {
                 clockOutEmployee();
             });
 
             // New clock button
-            $('#new-clock-btn').on('click', function() {
+            $('#new-clock-btn').on('click', function () {
                 resetForm();
                 showStep('search');
             });
 
             // Retry location button
-            $('#retry-location-btn').on('click', function() {
+            $('#retry-location-btn').on('click', function () {
                 $('#location-text').text('{% trans "Getting location..." %}');
                 $('#location-coordinates').text('');
                 $('#retry-location-btn').hide();
@@ -633,20 +714,20 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success && data.results.length > 0) {
-                    let html = '';
-                    data.results.forEach(function(emp) {
-                        const badge = emp.badge_id ? `<span class="badge-badge">${emp.badge_id}</span>` : '';
-                        const status = emp.is_clocked_in ?
-                            `<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>` : '';
-                        html += `
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success && data.results.length > 0) {
+                        let html = '';
+                        data.results.forEach(function (emp) {
+                            const badge = emp.badge_id ? `<span class="badge-badge">${emp.badge_id}</span>` : '';
+                            const status = emp.is_clocked_in ?
+                                `<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>` : '';
+                            html += `
                             <div class="search-result-item" onclick="selectEmployee(${emp.id}, '${emp.name}', '${emp.badge_id}', '${emp.avatar}', ${emp.is_clocked_in})">
                                 <img src="${emp.avatar}" class="search-result-avatar" />
                                 <div style="flex: 1; text-align: left;">
@@ -655,16 +736,16 @@
                                 </div>
                             </div>
                         `;
-                    });
-                    $('#search-results').html(html);
-                } else {
-                    $('#search-results').html('<div class="search-result-item" style="cursor: default;">{% trans "No employees found" %}</div>');
-                }
-            })
-            .catch(error => {
-                console.error('Search error:', error);
-                $('#search-results').html(`<div class="search-result-item" style="cursor: default; color: red;">{% trans "Search error" %}: ${error.message}</div>`);
-            });
+                        });
+                        $('#search-results').html(html);
+                    } else {
+                        $('#search-results').html('<div class="search-result-item" style="cursor: default;">{% trans "No employees found" %}</div>');
+                    }
+                })
+                .catch(error => {
+                    console.error('Search error:', error);
+                    $('#search-results').html(`<div class="search-result-item" style="cursor: default; color: red;">{% trans "Search error" %}: ${error.message}</div>`);
+                });
         }
 
         // Select employee
@@ -678,7 +759,7 @@
             };
 
             $('#search-results').empty();
-            $('#employee-search').val(empName).blur(); // Blur to close any keyboard
+            $('#employee-search').val(empName).blur();
             $('#employee-info').css('display', 'block');
             $('#employee-name').text(empName);
             $('#employee-badge').text(empBadge ? `#${empBadge}` : '');
@@ -697,7 +778,7 @@
             initializeLocationCapture();
 
             // Start camera after a brief delay to ensure UI is rendered
-            setTimeout(function() {
+            setTimeout(function () {
                 startCamera();
             }, 100);
         }
@@ -706,32 +787,32 @@
         function startCamera() {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-                    .then(function(stream) {
+                    .then(function (stream) {
                         videoStream = stream;
                         const video = document.getElementById('video-preview');
                         video.srcObject = stream;
-                        $('#camera-container').css('display', 'block');
-                        $('#capture-btn').css('display', 'block');
+                        $('#video-preview').css('display', 'block');
+                        $('#captured-photo').css('display', 'none');
+                        $('#location-overlay').css('display', 'none');
+                        $('#capture-btn').css('display', 'flex');
                         $('#retake-btn').css('display', 'none');
                         $('#action-buttons').css('display', 'flex');
-                        $('#location-status').css('display', 'block');
-                        $('#captured-photo').css('display', 'none');
 
                         // Show appropriate clock in/out button based on status
                         if (selectedEmployee.is_clocked_in) {
-                            $('#clock-out-btn').css('display', 'block');
+                            $('#clock-out-btn').css('display', 'flex');
                             $('#clock-in-btn').css('display', 'none');
                         } else {
-                            $('#clock-in-btn').css('display', 'block');
+                            $('#clock-in-btn').css('display', 'flex');
                             $('#clock-out-btn').css('display', 'none');
                         }
                     })
-                    .catch(function(error) {
-                        alert('{% trans "Camera access denied. Please allow camera permissions." %}');
+                    .catch(function (error) {
+                        Toast.fire({ icon: 'error', title: '{% trans "Camera access denied. Please allow camera permissions." %}' });
                         console.error('Camera error:', error);
                     });
             } else {
-                alert('{% trans "Camera not supported on this device." %}');
+                Toast.fire({ icon: 'error', title: '{% trans "Camera not supported on this device." %}' });
             }
         }
 
@@ -745,14 +826,14 @@
             canvas.height = video.videoHeight;
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            canvas.toBlob(function(blob) {
+            canvas.toBlob(function (blob) {
                 capturedPhotoBlob = blob;
                 const url = URL.createObjectURL(blob);
-                $('#captured-photo').attr('src', url);
-                $('#camera-container').css('display', 'none');
-                $('#photo-wrapper').css('display', 'block');
+                $('#captured-photo').attr('src', url).css('display', 'block');
+                $('#video-preview').css('display', 'none');
                 $('#capture-btn').css('display', 'none');
-                $('#retake-btn').css('display', 'block');
+                $('#retake-btn').css('display', 'flex');
+                $('#location-overlay').css('display', 'block');
 
                 // Update location overlay with current location
                 updateLocationOverlay();
@@ -773,7 +854,7 @@
         // Clock in
         function clockInEmployee() {
             if (!selectedEmployee || !capturedPhotoBlob) {
-                alert('{% trans "Please take a selfie first." %}');
+                Toast.fire({ icon: 'warning', title: '{% trans "Please take a selfie first." %}' });
                 return;
             }
 
@@ -791,29 +872,29 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showConfirmation(data, 'success');
-                } else {
-                    showConfirmation(data, 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Clock in error:', error);
-                showConfirmation({
-                    message: `{% trans "Clock in failed" %}: ${error.message}`
-                }, 'error');
-            })
-            .finally(() => {
-                btn.html(originalText).prop('disabled', false);
-            });
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showConfirmation(data, 'success');
+                    } else {
+                        showConfirmation(data, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Clock in error:', error);
+                    showConfirmation({
+                        message: `{% trans "Clock in failed" %}: ${error.message}`
+                    }, 'error');
+                })
+                .finally(() => {
+                    btn.html(originalText).prop('disabled', false);
+                });
         }
 
         // Clock out
         function clockOutEmployee() {
             if (!selectedEmployee || !capturedPhotoBlob) {
-                alert('{% trans "Please take a selfie first." %}');
+                Toast.fire({ icon: 'warning', title: '{% trans "Please take a selfie first." %}' });
                 return;
             }
 
@@ -831,23 +912,23 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showConfirmation(data, 'success');
-                } else {
-                    showConfirmation(data, 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Clock out error:', error);
-                showConfirmation({
-                    message: `{% trans "Clock out failed" %}: ${error.message}`
-                }, 'error');
-            })
-            .finally(() => {
-                btn.html(originalText).prop('disabled', false);
-            });
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showConfirmation(data, 'success');
+                    } else {
+                        showConfirmation(data, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Clock out error:', error);
+                    showConfirmation({
+                        message: `{% trans "Clock out failed" %}: ${error.message}`
+                    }, 'error');
+                })
+                .finally(() => {
+                    btn.html(originalText).prop('disabled', false);
+                });
         }
 
         // Show confirmation
@@ -888,9 +969,9 @@
             capturedPhotoBlob = null;
             $('#employee-search').val('');
             $('#employee-info').css('display', 'none');
-            $('#camera-container').css('display', 'none');
-            $('#photo-wrapper').css('display', 'none');
-            $('#location-status').css('display', 'none');
+            $('#video-preview').css('display', 'none');
+            $('#captured-photo').css('display', 'none');
+            $('#location-overlay').css('display', 'none');
             $('#capture-btn').css('display', 'none');
             $('#retake-btn').css('display', 'none');
             $('#action-buttons').css('display', 'none');
@@ -904,7 +985,7 @@
         }
 
         // Handle visibility change to stop camera when page is hidden
-        document.addEventListener('visibilitychange', function() {
+        document.addEventListener('visibilitychange', function () {
             if (document.hidden && videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
             }
