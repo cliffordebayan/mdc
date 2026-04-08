@@ -43,6 +43,11 @@ urlpatterns = [
         name="self-service-clock-out",
     ),
     path(
+        "self-service/server-time/",
+        attendance.views.self_service.server_time,
+        name="self-service-server-time",
+    ),
+    path(
         "profile-attendance-tab",
         views.profile_attendance_tab,
         name="profile-attendance-tab",

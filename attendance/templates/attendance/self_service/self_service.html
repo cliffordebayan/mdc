@@ -677,7 +677,19 @@
         let longitude = null;
 
         // Server time offset: difference between server clock and client clock
-        const serverTimeOffset = new Date('{{ server_time_iso }}').getTime() - Date.now();
+        // This is re-synced from the server every 30 seconds so employees
+        // cannot manipulate the displayed time by changing their computer clock.
+        let serverTimeOffset = new Date('{{ server_time_iso }}').getTime() - Date.now();
+
+        function resyncServerTime() {
+            fetch('/attendance/self-service/server-time/')
+                .then(r => r.json())
+                .then(data => {
+                    serverTimeOffset = new Date(data.server_time_iso).getTime() - Date.now();
+                })
+                .catch(() => {});  // silently keep last known offset on failure
+        }
+        setInterval(resyncServerTime, 30000);
 
         // Toast notification helper
         const Toast = Swal.mixin({

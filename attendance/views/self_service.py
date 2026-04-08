@@ -7,8 +7,11 @@ Employees identify themselves by badge ID or name.
 """
 
 import logging
+import socket
+import struct
 from datetime import date, datetime, timedelta
 
+import pytz
 from django.conf import settings
 from django.utils import timezone
 
@@ -38,21 +41,70 @@ from employee.models import Employee
 
 logger = logging.getLogger(__name__)
 
+# NTP servers to try in order
+_NTP_SERVERS = ["time.cloudflare.com", "pool.ntp.org", "time.google.com"]
+_NTP_DELTA = 2208988800  # seconds between NTP epoch (1900) and Unix epoch (1970)
+
+
+def get_real_now():
+    """
+    Return the current datetime from an NTP internet time server so that
+    employees cannot manipulate attendance times by changing their PC clock.
+
+    Falls back to Django's timezone.now() only when no NTP server is reachable
+    (e.g. no internet connection), so the system keeps working offline.
+
+    Returns a *naive* datetime in the configured TIME_ZONE, matching the
+    behaviour of datetime.now() that the rest of the attendance code expects.
+    """
+    tz = pytz.timezone(settings.TIME_ZONE)
+    for server in _NTP_SERVERS:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(2)
+            # Minimal NTP request packet (LI=0, VN=3, Mode=3)
+            sock.sendto(b"\x1b" + 47 * b"\x00", (server, 123))
+            data, _ = sock.recvfrom(1024)
+            sock.close()
+            # Transmit Timestamp is at bytes 40-47; upper 32 bits = seconds
+            tx_seconds = struct.unpack("!I", data[40:44])[0] - _NTP_DELTA
+            utc_dt = datetime.fromtimestamp(tx_seconds, tz=pytz.UTC)
+            # Convert to local timezone and strip tzinfo to stay naive
+            return utc_dt.astimezone(tz).replace(tzinfo=None)
+        except Exception:
+            continue
+    # All NTP servers failed — fall back to system time and log a warning
+    logger.warning("NTP sync failed; falling back to system clock for attendance time")
+    return datetime.now()
+
 
 def public_self_service(request):
     """
     Render the public self-service clock in/out page.
     No authentication required.
     """
-    server_now = timezone.now()
+    real_now = get_real_now()
+    tz = pytz.timezone(settings.TIME_ZONE)
+    aware_now = tz.localize(real_now)
     return render(
         request,
         "attendance/self_service/self_service.html",
         {
-            "server_time_iso": server_now.isoformat(),
+            "server_time_iso": aware_now.isoformat(),
             "TIME_ZONE": settings.TIME_ZONE,
         },
     )
+
+
+def server_time(request):
+    """
+    Return the current NTP internet time as JSON so the browser clock
+    cannot be spoofed by changing the client PC's system time.
+    """
+    real_now = get_real_now()
+    tz = pytz.timezone(settings.TIME_ZONE)
+    aware_now = tz.localize(real_now)
+    return JsonResponse({"server_time_iso": aware_now.isoformat()})
 
 
 @csrf_exempt
@@ -194,9 +246,9 @@ def public_clock_in(request):
                 {"success": False, "message": "Employee shift not configured"}, status=200
             )
 
-        # Get current date and time
-        date_today = date.today()
-        datetime_now = datetime.now()
+        # Get current date and time from NTP (tamper-proof)
+        datetime_now = get_real_now()
+        date_today = datetime_now.date()
         day_name = date_today.strftime("%A").lower()
 
         try:
@@ -368,9 +420,9 @@ def public_clock_out(request):
                 status=200,
             )
 
-        # Get current date and time
-        date_today = date.today()
-        datetime_now = datetime.now()
+        # Get current date and time from NTP (tamper-proof)
+        datetime_now = get_real_now()
+        date_today = datetime_now.date()
         now_str = datetime_now.strftime("%H:%M")
 
         # Call the business logic function
