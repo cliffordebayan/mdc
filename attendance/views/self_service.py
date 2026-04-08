@@ -147,6 +147,15 @@ def public_clock_in(request):
                 {"success": False, "message": "Employee ID required"}, status=200
             )
 
+        # Require GPS location
+        latitude = request.POST.get("latitude")
+        longitude = request.POST.get("longitude")
+        if not latitude or not longitude:
+            return JsonResponse(
+                {"success": False, "message": "Location is required to clock in. Please enable location access and try again."},
+                status=200,
+            )
+
         # Find employee
         try:
             employee = Employee.objects.get(id=employee_id, is_active=True)
@@ -327,6 +336,15 @@ def public_clock_out(request):
         if not employee_id:
             return JsonResponse(
                 {"success": False, "message": "Employee ID required"}, status=200
+            )
+
+        # Require GPS location
+        latitude = request.POST.get("latitude")
+        longitude = request.POST.get("longitude")
+        if not latitude or not longitude:
+            return JsonResponse(
+                {"success": False, "message": "Location is required to clock out. Please enable location access and try again."},
+                status=200,
             )
 
         # Find employee

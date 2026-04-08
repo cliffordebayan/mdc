@@ -729,6 +729,7 @@
                         $('#location-coordinates').text(`Accuracy: ±${accuracy}m`);
                         $('#retry-location-btn').hide();
                         $('#location-status').removeClass('warning').addClass('success');
+                        enableClockButtons();
 
                         console.info(`Location captured: ${latitude}, ${longitude}, accuracy: ${accuracy}m`);
                     },
@@ -747,20 +748,34 @@
                                 break;
                         }
 
+                        latitude = null;
+                        longitude = null;
                         $('#location-text').text(errorMsg);
-                        $('#location-coordinates').text('(You can still clock in/out without location)');
+                        $('#location-coordinates').text('{% trans "Location is required to clock in or out." %}');
                         $('#retry-location-btn').show();
                         $('#location-status').removeClass('success').addClass('warning');
+                        disableClockButtons();
 
                         console.warn('Geolocation error:', error);
                     },
                     options
                 );
             } else {
-                $('#location-text').text('{% trans "Geolocation not supported" %}');
-                $('#location-coordinates').text('(You can still clock in/out without location)');
+                latitude = null;
+                longitude = null;
+                $('#location-text').text('{% trans "Geolocation not supported by this browser." %}');
+                $('#location-coordinates').text('{% trans "Location is required to clock in or out." %}');
                 $('#location-status').removeClass('success').addClass('warning');
+                disableClockButtons();
             }
+        }
+
+        function disableClockButtons() {
+            $('#clock-in-btn, #clock-out-btn').prop('disabled', true).attr('title', '{% trans "Location is required to clock in or out." %}');
+        }
+
+        function enableClockButtons() {
+            $('#clock-in-btn, #clock-out-btn').prop('disabled', false).removeAttr('title');
         }
 
         // Setup event listeners
@@ -943,18 +958,97 @@
             canvas.height = video.videoHeight;
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            canvas.toBlob(function (blob) {
-                capturedPhotoBlob = blob;
-                const url = URL.createObjectURL(blob);
-                $('#captured-photo').attr('src', url).css('display', 'block');
-                $('#video-preview').css('display', 'none');
-                $('#capture-btn').css('display', 'none');
-                $('#retake-btn').css('display', 'flex');
-                $('#location-overlay').css('display', 'block');
+            // Show loading state on capture button
+            $('#capture-btn').html('<span class="loading"></span>').prop('disabled', true);
 
-                // Update location overlay with current location
-                updateLocationOverlay();
-            }, 'image/jpeg');
+            // Reverse geocode the coordinates then stamp the image
+            reverseGeocode(latitude, longitude).then(function (address) {
+                stampLocationOnCanvas(canvas, context, address);
+
+                canvas.toBlob(function (blob) {
+                    capturedPhotoBlob = blob;
+                    const url = URL.createObjectURL(blob);
+                    $('#captured-photo').attr('src', url).css('display', 'block');
+                    $('#video-preview').css('display', 'none');
+                    $('#capture-btn').html('<ion-icon name="camera-outline"></ion-icon> {% trans "Capture Selfie" %}').prop('disabled', false).css('display', 'none');
+                    $('#retake-btn').css('display', 'flex');
+                    $('#location-overlay').css('display', 'none'); // hidden since it's already burned in
+
+                    updateLocationOverlay();
+                }, 'image/jpeg', 0.92);
+            });
+        }
+
+        // Reverse geocode lat/lng → address string using Nominatim
+        function reverseGeocode(lat, lng) {
+            return fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+                headers: { 'Accept-Language': 'en' }
+            })
+            .then(r => r.json())
+            .then(data => data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`)
+            .catch(() => `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        }
+
+        // Burn location + timestamp text onto the canvas
+        function stampLocationOnCanvas(canvas, ctx, address) {
+            const now = new Date(Date.now() + serverTimeOffset);
+            const timestamp = now.toLocaleString([], {
+                year: 'numeric', month: 'short', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                timeZone: SERVER_TZ
+            });
+
+            const coordLine   = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+            const lines = [
+                address,
+                coordLine,
+                timestamp,
+            ];
+
+            const padding   = 10;
+            const fontSize  = Math.max(14, Math.round(canvas.width / 40));
+            const lineH     = fontSize + 6;
+            const boxH      = lineH * lines.length + padding * 2;
+            const boxY      = canvas.height - boxH;
+
+            // Semi-transparent dark banner at the bottom
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+            ctx.fillRect(0, boxY, canvas.width, boxH);
+
+            ctx.font       = `${fontSize}px Arial, sans-serif`;
+            ctx.fillStyle  = '#ffffff';
+            ctx.textBaseline = 'top';
+
+            lines.forEach(function (line, i) {
+                // Word-wrap long lines to fit canvas width
+                const maxWidth = canvas.width - padding * 2;
+                const words = line.split(' ');
+                let currentLine = '';
+                let wrappedLines = [];
+
+                words.forEach(function (word) {
+                    const test = currentLine ? currentLine + ' ' + word : word;
+                    if (ctx.measureText(test).width > maxWidth && currentLine) {
+                        wrappedLines.push(currentLine);
+                        currentLine = word;
+                    } else {
+                        currentLine = test;
+                    }
+                });
+                if (currentLine) wrappedLines.push(currentLine);
+
+                // Re-draw banner taller if wrapped
+                if (wrappedLines.length > 1) {
+                    const extra = (wrappedLines.length - 1) * lineH;
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+                    ctx.fillRect(0, boxY - extra, canvas.width, boxH + extra);
+                    ctx.fillStyle = '#ffffff';
+                }
+
+                wrappedLines.forEach(function (wl, wi) {
+                    ctx.fillText(wl, padding, boxY + padding + (i + wi) * lineH);
+                });
+            });
         }
 
         // Update location overlay on photo
@@ -972,6 +1066,11 @@
         function clockInEmployee() {
             if (!selectedEmployee || !capturedPhotoBlob) {
                 Toast.fire({ icon: 'warning', title: '{% trans "Please take a selfie first." %}' });
+                return;
+            }
+
+            if (!latitude || !longitude) {
+                Toast.fire({ icon: 'error', title: '{% trans "Location is required. Please enable location access and retry." %}' });
                 return;
             }
 
@@ -1012,6 +1111,11 @@
         function clockOutEmployee() {
             if (!selectedEmployee || !capturedPhotoBlob) {
                 Toast.fire({ icon: 'warning', title: '{% trans "Please take a selfie first." %}' });
+                return;
+            }
+
+            if (!latitude || !longitude) {
+                Toast.fire({ icon: 'error', title: '{% trans "Location is required. Please enable location access and retry." %}' });
                 return;
             }
 

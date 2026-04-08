@@ -75,6 +75,17 @@
                 </div>
             </div>
 
+            {% if activity.clock_in_selfie %}
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Check In Selfie" %}</span>
+                    <div style="margin-top: 8px;">
+                        <img src="{{activity.clock_in_selfie.url}}" alt="Clock In" style="max-width: 150px; max-height: 150px; border-radius: 8px; cursor: pointer;" onclick="openImageModal('{{activity.clock_in_selfie.url}}', 'Clock In Selfie')" />
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
                 <div class="oh-timeoff-modal__stat">
                     <span class="oh-timeoff-modal__stat-title">{% trans "Check Out" %}</span>
@@ -85,6 +96,29 @@
                     <span class="oh-timeoff-modal__stat-count dateformat_changer">{{activity.clock_out_date}}</span>
                 </div>
             </div>
+
+            {% if activity.clock_out_selfie %}
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Check Out Selfie" %}</span>
+                    <div style="margin-top: 8px;">
+                        <img src="{{activity.clock_out_selfie.url}}" alt="Clock Out" style="max-width: 150px; max-height: 150px; border-radius: 8px; cursor: pointer;" onclick="openImageModal('{{activity.clock_out_selfie.url}}', 'Clock Out Selfie')" />
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if activity.latitude and activity.longitude %}
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Location" %}</span>
+                    <span class="oh-timeoff-modal__stat-count" style="font-size: 14px;">
+                        <strong>Lat:</strong> {{ activity.latitude|floatformat:6 }}<br/>
+                        <strong>Lng:</strong> {{ activity.longitude|floatformat:6 }}
+                    </span>
+                </div>
+            </div>
+            {% endif %}
 
             <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
                 <div class="oh-timeoff-modal__stat">
@@ -130,3 +164,28 @@
         </h5>
     </div>
 {% endif %}
+
+<script>
+    // Function to open image in modal
+    function openImageModal(imageUrl, title) {
+        const modal = document.createElement('div');
+        modal.className = 'oh-modal-backdrop oh-modal-backdrop--active';
+        modal.innerHTML = `
+            <div class="oh-modal oh-modal--md oh-modal--active" role="dialog">
+                <div class="oh-modal__header">
+                    <h4 class="oh-modal__title">${title}</h4>
+                    <button type="button" class="oh-modal__close" aria-label="Close" onclick="this.closest('.oh-modal-backdrop').remove();">
+                        <ion-icon name="close-outline"></ion-icon>
+                    </button>
+                </div>
+                <div class="oh-modal__body" style="text-align: center;">
+                    <img src="${imageUrl}" alt="${title}" style="max-width: 100%; max-height: 500px; border-radius: 8px;" />
+                </div>
+            </div>
+        `;
+        modal.onclick = function(e) {
+            if (e.target === this) this.remove();
+        };
+        document.body.appendChild(modal);
+    }
+</script>

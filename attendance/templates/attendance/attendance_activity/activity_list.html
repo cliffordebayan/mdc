@@ -77,8 +77,11 @@
                             {% trans "In Date" %}
                         </div>
                         <div data-cell-index="3" data-cell-title="{% trans 'Check In' %}" class='oh-sticky-table__th'>{% trans "Check In" %}</div>
-                        <div data-cell-index="4" data-cell-title="{% trans 'Check Out' %}" class='oh-sticky-table__th'>{% trans "Check Out" %}</div>
-                        <div data-cell-index="5" data-cell-title="{% trans 'Out Date' %}"
+                        <div data-cell-index="4" data-cell-title="{% trans 'Check In Image' %}" class='oh-sticky-table__th'>{% trans "Check In Image" %}</div>
+                        <div data-cell-index="5" data-cell-title="{% trans 'Check Out' %}" class='oh-sticky-table__th'>{% trans "Check Out" %}</div>
+                        <div data-cell-index="6" data-cell-title="{% trans 'Check Out Image' %}" class='oh-sticky-table__th'>{% trans "Check Out Image" %}</div>
+                        <div data-cell-index="7" data-cell-title="{% trans 'Location' %}" class='oh-sticky-table__th'>{% trans "Location" %}</div>
+                        <div data-cell-index="8" data-cell-title="{% trans 'Out Date' %}"
                             class="oh-sticky-table__th
                             {% if request.sort_option.order == '-clock_out_date' %}
                                 arrow-up
@@ -117,8 +120,31 @@
                             <div data-cell-index="1" class="oh-sticky-table__td dateformat_changer">{{activity.attendance_date}}</div>
                             <div data-cell-index="2" class="oh-sticky-table__td dateformat_changer">{{activity.clock_in_date}}</div>
                             <div data-cell-index="3" class="oh-sticky-table__td timeformat_changer">{{activity.clock_in}}</div>
-                            <div data-cell-index="4" class="oh-sticky-table__td timeformat_changer">{{activity.clock_out}}</div>
-                            <div data-cell-index="5" class="oh-sticky-table__td dateformat_changer">{{activity.clock_out_date}}</div>
+                            <div data-cell-index="4" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                                {% if activity.clock_in_selfie %}
+                                    <img src="{{activity.clock_in_selfie.url}}" alt="Clock In" style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;" onclick="openImageModal('{{activity.clock_in_selfie.url}}', 'Clock In Selfie')" />
+                                {% else %}
+                                    <span class="oh-text--light">—</span>
+                                {% endif %}
+                            </div>
+                            <div data-cell-index="5" class="oh-sticky-table__td timeformat_changer">{{activity.clock_out}}</div>
+                            <div data-cell-index="6" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                                {% if activity.clock_out_selfie %}
+                                    <img src="{{activity.clock_out_selfie.url}}" alt="Clock Out" style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;" onclick="openImageModal('{{activity.clock_out_selfie.url}}', 'Clock Out Selfie')" />
+                                {% else %}
+                                    <span class="oh-text--light">—</span>
+                                {% endif %}
+                            </div>
+                            <div data-cell-index="7" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                                {% if activity.latitude and activity.longitude %}
+                                    <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
+                                        <ion-icon name="location-outline" style="vertical-align: middle;"></ion-icon> View Map
+                                    </a>
+                                {% else %}
+                                    <span class="oh-text--light">—</span>
+                                {% endif %}
+                            </div>
+                            <div data-cell-index="8" class="oh-sticky-table__td dateformat_changer">{{activity.clock_out_date}}</div>
                             {% if perms.attendance.delete_attendanceactivity %}
                                 <div class="oh-sticky-table__td oh-sticky-table__right">
                                     <form hx-confirm="{% trans 'Are you sure want to delete this attendance?' %}"
@@ -215,13 +241,34 @@
             unselectAllActivity();
         });
     });
-    // toggle columns //
-    toggleColumns("attendance-activity-table", "AttendanceActivityCells");
-    localStorageAttendanceActivityCells = localStorage.getItem(
-        "attendance_activity_tab"
-    );
-    if (!localStorageAttendanceActivityCells) {
-        $("#AttendanceActivityCells").find("[type=checkbox]").prop("checked", true);
+    // Always show all columns — remove any saved column state
+    localStorage.removeItem("attendance_activity_tab");
+    $("[data-cell-index]").show();
+
+    function openImageModal(imageUrl, title) {
+        const existing = document.getElementById('selfie-preview-overlay');
+        if (existing) existing.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'selfie-preview-overlay';
+        overlay.style.cssText = `
+            position: fixed; inset: 0; z-index: 99999;
+            background: rgba(0,0,0,0.75);
+            display: flex; align-items: center; justify-content: center;
+        `;
+        overlay.innerHTML = `
+            <div style="background:#fff; border-radius:12px; max-width:90vw; max-height:90vh; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.4); display:flex; flex-direction:column;">
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #e5e7eb;">
+                    <span style="font-weight:600; font-size:15px;">${title}</span>
+                    <button onclick="document.getElementById('selfie-preview-overlay').remove()" style="background:none; border:none; cursor:pointer; font-size:22px; line-height:1; color:#6b7280;">&times;</button>
+                </div>
+                <div style="padding:16px; overflow:auto; text-align:center;">
+                    <img src="${imageUrl}" alt="${title}" style="max-width:100%; max-height:75vh; border-radius:8px; display:block; margin:auto;" />
+                </div>
+            </div>
+        `;
+        overlay.addEventListener('click', function(e) {
+            if (e.target === this) this.remove();
+        });
+        document.body.appendChild(overlay);
     }
-    $("[type=checkbox]").change();
 </script>
