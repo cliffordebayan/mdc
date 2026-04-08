@@ -126,59 +126,61 @@
         <div class="oh-dashboard__left col-12 col-sm-12 col-md-12 col-lg-9">
             <div class="oh-dashboard__cards row">
                 {% if perms.employee.view_employee %}
-                    {% if "recruitment"|app_installed %}
-                        <div class="col-12 col-sm-12 col-md-6 col-lg-4">
-                            <div class="oh-card-dashboard oh-card-dashboard--success tile">
-                                <a href="{% url 'candidate-view' %}?joining_date={{current_date}}"
-                                    style="text-decoration: none">
-                                    <div class="oh-card-dashboard__header">
-                                        <span class="oh-card-dashboard__title">{% trans "New Joining Today" %}</span>
-                                    </div>
-                                    <div class="oh-card-dashboard__body">
-                                        <div class="oh-card-dashboard__counts">
-                                            <span class="oh-card-dashboard__count" hx-get="{% url 'joining-today-count' %}" hx-trigger="load">
-                                                <div style="height: 67px;"></div>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </a>
+                {% if "recruitment"|app_installed %}
+                <div class="col-12 col-sm-12 col-md-6 col-lg-4">
+                    <div class="oh-card-dashboard oh-card-dashboard--success tile">
+                        <a href="{% url 'candidate-view' %}?joining_date={{current_date}}"
+                            style="text-decoration: none">
+                            <div class="oh-card-dashboard__header">
+                                <span class="oh-card-dashboard__title">{% trans "New Joining Today" %}</span>
                             </div>
-                        </div>
-                        <div class="col-12 col-sm-12 col-md-6 col-lg-4">
-                            <div class="oh-card-dashboard oh-card-dashboard oh-card-dashboard--warning tile">
-                                <a href="{% url 'candidate-view' %}?scheduled_from={{first_day_of_week}}&scheduled_till={{last_day_of_week}}"
-                                    style="text-decoration: none">
-                                    <div class="oh-card-dashboard__header">
-                                        <span class="oh-card-dashboard__title">{% trans "New Joining This Week" %}</span>
-                                    </div>
-                                    <div class="oh-card-dashboard__body">
-                                        <div class="oh-card-dashboard__counts">
-                                            <span class="oh-card-dashboard__count" hx-get="{% url 'joining-week-count' %}" hx-trigger="load">
-                                                <div style="height: 67px;"></div>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </a>
-                            </div>
-                        </div>
-                    {% endif %}
-                    <div class="col-12 col-sm-12 col-md-6 col-lg-4">
-                        <a href="{% url 'employee-view' %}" style="text-decoration: none">
-                            <div class="oh-card-dashboard oh-card-dashboard--neutral tile">
-                                <div class="oh-card-dashboard__header">
-                                    <span class="oh-card-dashboard__title">{% trans "Total Strength" %}</span>
-                                </div>
-                                <div class="oh-card-dashboard__body">
-                                    <div class="oh-card-dashboard__counts">
-                                        <span class="oh-card-dashboard__count" hx-get="{% url 'total-employees-count' %}"
-                                            hx-trigger="load">
-                                            <div style="height: 67px;"></div>
-                                        </span>
-                                    </div>
+                            <div class="oh-card-dashboard__body">
+                                <div class="oh-card-dashboard__counts">
+                                    <span class="oh-card-dashboard__count" hx-get="{% url 'joining-today-count' %}"
+                                        hx-trigger="load">
+                                        <div style="height: 67px;"></div>
+                                    </span>
                                 </div>
                             </div>
                         </a>
                     </div>
+                </div>
+                <div class="col-12 col-sm-12 col-md-6 col-lg-4">
+                    <div class="oh-card-dashboard oh-card-dashboard oh-card-dashboard--warning tile">
+                        <a href="{% url 'candidate-view' %}?scheduled_from={{first_day_of_week}}&scheduled_till={{last_day_of_week}}"
+                            style="text-decoration: none">
+                            <div class="oh-card-dashboard__header">
+                                <span class="oh-card-dashboard__title">{% trans "New Joining This Week" %}</span>
+                            </div>
+                            <div class="oh-card-dashboard__body">
+                                <div class="oh-card-dashboard__counts">
+                                    <span class="oh-card-dashboard__count" hx-get="{% url 'joining-week-count' %}"
+                                        hx-trigger="load">
+                                        <div style="height: 67px;"></div>
+                                    </span>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="col-12 col-sm-12 col-md-6 col-lg-4">
+                    <a href="{% url 'employee-view' %}" style="text-decoration: none">
+                        <div class="oh-card-dashboard oh-card-dashboard--neutral tile">
+                            <div class="oh-card-dashboard__header">
+                                <span class="oh-card-dashboard__title">{% trans "Total Employees" %}</span>
+                            </div>
+                            <div class="oh-card-dashboard__body">
+                                <div class="oh-card-dashboard__counts">
+                                    <span class="oh-card-dashboard__count" hx-get="{% url 'total-employees-count' %}"
+                                        hx-trigger="load">
+                                        <div style="height: 67px;"></div>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                </div>
                 {% endif %}
                 <div class="oh-dashboard__movable-cards row mt-4" id="tileContainer">
                     {% include "dashboard_tile_container.html" %}
@@ -187,26 +189,26 @@
         </div>
         <div class="oh-dashboard__right col-12 col-sm-12 col-md-12 col-lg-3">
             {% if 'birthday_view'|feature_is_accessible:request or perms.employee.view_employee %}
-                <div class="oh-dashboard__events" hx-get="{% url 'get-birthday' %}" hx-trigger="load"> </div>
+            <div class="oh-dashboard__events" hx-get="{% url 'get-birthday' %}" hx-trigger="load"> </div>
             {% endif %}
             <div class="oh-card-dashboard oh-card-dashboard--no-scale oh-card-dashboard--transparent mb-3">
                 <div style="display: flex;align-items:center;justify-content:space-between;margin-right:20px">
                     <span class="oh-card-dashboard__title">{% trans "Announcements" %}</span>
                     {% if perms.base.add_announcement %}
-                        <span>
-                            <button id="addAnnouncement" style="display: inline-block;padding: 0px;
+                    <span>
+                        <button id="addAnnouncement" style="display: inline-block;padding: 0px;
                             border-radius: 6px;
                             display: flex;
                             align-items: center;
                             justify-content: center;
                             width: 50px;
                             height: 28px;" class="oh-btn oh-btn--secondary-outline float-end ms-3"
-                                hx-get="{% url 'create-announcement' %}" hx-target="#objectCreateModalTarget"
-                                hx-swap="innerHTML" data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
-                                title="{% trans 'Create Announcement' %}">
-                                <ion-icon name="add-outline" class="m-0"></ion-icon>
-                            </button>
-                        </span>
+                            hx-get="{% url 'create-announcement' %}" hx-target="#objectCreateModalTarget"
+                            hx-swap="innerHTML" data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
+                            title="{% trans 'Create Announcement' %}">
+                            <ion-icon name="add-outline" class="m-0"></ion-icon>
+                        </button>
+                    </span>
                     {% endif %}
                 </div>
 
@@ -218,33 +220,33 @@
                 </div>
             </div>
             {% if "leave"|app_installed %}
-                {% if perms.leave.view_leaverequest or request.user|is_reportingmanager %}
-                    <div class="oh-card-dashboard oh-card-dashboard--no-scale oh-card-dashboard--transparent mb-3">
-                        <div class="oh-card-dashboard__header oh-card-dashboard__header--divider">
-                            <span class="oh-card-dashboard__title">{% trans "On Leave" %}</span>
-                        </div>
-                        <div class="oh-card-dashboard__body" hx-get="{% url 'employee-leave' %}" hx-trigger="load"
-                            style="height:300px;overflow-x: auto;">
-                            <div class="animated-background"></div>
-                        </div>
-                    </div>
-                {% endif %}
+            {% if perms.leave.view_leaverequest or request.user|is_reportingmanager %}
+            <div class="oh-card-dashboard oh-card-dashboard--no-scale oh-card-dashboard--transparent mb-3">
+                <div class="oh-card-dashboard__header oh-card-dashboard__header--divider">
+                    <span class="oh-card-dashboard__title">{% trans "On Leave" %}</span>
+                </div>
+                <div class="oh-card-dashboard__body" hx-get="{% url 'employee-leave' %}" hx-trigger="load"
+                    style="height:300px;overflow-x: auto;">
+                    <div class="animated-background"></div>
+                </div>
+            </div>
+            {% endif %}
             {% endif %}
             {% if perms.employee.view_employeeworkinformation or request.user|is_reportingmanager %}
-                <div class="oh-card-dashboard oh-card-dashboard--no-scale oh-card-dashboard--transparent">
-                    <div class="oh-card-dashboard__header oh-card-dashboard__header--divider">
-                        <span class="oh-card-dashboard__title">{% trans "Employee Work Information" %}</span>
-                    </div>
-                    <!-- Search bar -->
-                    <div class="oh-search-bar mb-3">
-                        <input type="text" hx-get="{% url 'emp-workinfo-complete' %}" hx-target="#pending"
-                            hx-trigger="keyup  changed delay:0.3s" id="employeeSearch" name="search"
-                            placeholder="Search Employee">
-                    </div>
-                    <div class="oh-card-dashboard__body" hx-get="{% url 'emp-workinfo-complete' %}" hx-trigger="load">
-                        <div class="animated-background"></div>
-                    </div>
+            <div class="oh-card-dashboard oh-card-dashboard--no-scale oh-card-dashboard--transparent">
+                <div class="oh-card-dashboard__header oh-card-dashboard__header--divider">
+                    <span class="oh-card-dashboard__title">{% trans "Employee Work Information" %}</span>
                 </div>
+                <!-- Search bar -->
+                <div class="oh-search-bar mb-3">
+                    <input type="text" hx-get="{% url 'emp-workinfo-complete' %}" hx-target="#pending"
+                        hx-trigger="keyup  changed delay:0.3s" id="employeeSearch" name="search"
+                        placeholder="Search Employee">
+                </div>
+                <div class="oh-card-dashboard__body" hx-get="{% url 'emp-workinfo-complete' %}" hx-trigger="load">
+                    <div class="animated-background"></div>
+                </div>
+            </div>
             {% endif %}
         </div>
     </div>
@@ -302,30 +304,30 @@
 <script src="{% static 'dashboard/employeeChart.js' %}"></script>
 
 {% if "leave"|app_installed %}
-    <script src="{% static 'dashboard/onLeave.js' %}"></script>
-    <script src="{% static 'dashboard/leaveChart.js' %}"></script>
+<script src="{% static 'dashboard/onLeave.js' %}"></script>
+<script src="{% static 'dashboard/leaveChart.js' %}"></script>
 {% endif %}
 
 {% if "recruitment"|app_installed %}
-    {% if perms.recruitment.view_recruitment or request.user|is_stagemanager %}
-        <script src="{% static 'dashboard/recruitmentChart.js' %}"></script>
-    {% endif %}
+{% if perms.recruitment.view_recruitment or request.user|is_stagemanager %}
+<script src="{% static 'dashboard/recruitmentChart.js' %}"></script>
+{% endif %}
 {% endif %}
 
 {% if "attendance"|app_installed %}
-    {% if perms.attendance.view_attendance or request.user|is_reportingmanager %}
-        <script src="{% static 'dashboard/attendanceChart.js' %}"></script>
-    {% endif %}
+{% if perms.attendance.view_attendance or request.user|is_reportingmanager %}
+<script src="{% static 'dashboard/attendanceChart.js' %}"></script>
+{% endif %}
 {% endif %}
 
 {% if "onboarding"|app_installed %}
-    <!-- onboarding dashboard -->
-    <script src="{% static 'dashboard/onboardChart.js' %}"></script>
+<!-- onboarding dashboard -->
+<script src="{% static 'dashboard/onboardChart.js' %}"></script>
 {% endif %}
 
 {% if "pms"|app_installed %}
-    <!-- PMS chart -->
-    <script src="{% static 'src/dashboard/pmsChart.js' %}"></script>
+<!-- PMS chart -->
+<script src="{% static 'src/dashboard/pmsChart.js' %}"></script>
 {% endif %}
 
 <!-- leave dashboard -->
