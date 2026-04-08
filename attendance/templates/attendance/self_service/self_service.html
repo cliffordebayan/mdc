@@ -168,6 +168,7 @@
             position: absolute;
             bottom: 80px;
             left: 16px;
+            right: 16px;
             background: rgba(0, 0, 0, 0.65);
             color: white;
             padding: 10px 14px;
@@ -176,6 +177,9 @@
             border-radius: 8px;
             backdrop-filter: blur(6px);
             z-index: 2;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: calc(100% - 32px);
         }
 
         .location-overlay-label {
@@ -188,6 +192,8 @@
         .location-overlay-content {
             font-size: 13px;
             font-family: monospace;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         /* Right: info panel */
@@ -275,6 +281,13 @@
             font-size: 12px;
             width: 100%;
             max-width: 320px;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
 
         .clock-location-status.success {
@@ -423,12 +436,19 @@
         /* Phone */
         @media (max-width: 600px) {
             .clock-fullscreen {
-                grid-template-rows: 40vh 1fr;
+                grid-template-rows: 35vh 1fr;
+            }
+
+            .clock-camera-panel {
+                max-height: 35vh;
+                overflow: hidden;
             }
 
             .clock-camera-panel video,
             .clock-camera-panel .captured-photo-full {
                 object-fit: cover;
+                width: 100%;
+                height: 100%;
             }
 
             .camera-controls-bar {
@@ -443,9 +463,12 @@
 
             .location-overlay {
                 bottom: 60px;
-                left: 10px;
-                padding: 6px 10px;
-                font-size: 11px;
+                left: 8px;
+                right: 8px;
+                padding: 6px 8px;
+                font-size: 10px;
+                max-width: calc(100% - 16px);
+                line-height: 1.3;
             }
 
             .clock-info-panel {
@@ -487,7 +510,23 @@
             .clock-location-status {
                 max-width: 100%;
                 font-size: 11px;
-                padding: 6px 10px;
+                padding: 8px 10px;
+                flex-direction: column;
+                gap: 4px;
+                word-wrap: break-word;
+                overflow-wrap: break-word;
+            }
+
+            .clock-location-status small {
+                width: 100%;
+                display: block !important;
+                margin-top: 4px !important;
+            }
+
+            .clock-location-status .oh-btn--xsm {
+                margin-left: 0 !important;
+                padding: 4px 8px !important;
+                font-size: 10px !important;
             }
 
             .clock-action-buttons {
@@ -675,6 +714,8 @@
         let capturedPhotoBlob = null;
         let latitude = null;
         let longitude = null;
+        let capturedAddress = null;
+        let locationAccuracy = null;
 
         // Server time offset: difference between server clock and client clock
         // This is re-synced from the server every 30 seconds so employees
@@ -735,15 +776,23 @@
                     function (position) {
                         latitude = position.coords.latitude;
                         longitude = position.coords.longitude;
-                        const accuracy = Math.round(position.coords.accuracy);
+                        locationAccuracy = Math.round(position.coords.accuracy);
 
-                        $('#location-text').html(`✓ {% trans "Location captured" %}<br><small>(${latitude.toFixed(4)}, ${longitude.toFixed(4)})</small>`);
-                        $('#location-coordinates').text(`Accuracy: ±${accuracy}m`);
+                        // Show loading while getting address
+                        $('#location-text').html(`✓ {% trans "Location captured" %}<br><small>{% trans "Getting address..." %}</small>`);
+                        $('#location-coordinates').text(`Accuracy: ±${locationAccuracy}m`);
                         $('#retry-location-btn').hide();
                         $('#location-status').removeClass('warning').addClass('success');
                         enableClockButtons();
 
-                        console.info(`Location captured: ${latitude}, ${longitude}, accuracy: ${accuracy}m`);
+                        // Get address immediately and display it
+                        reverseGeocode(latitude, longitude).then(function (address) {
+                            capturedAddress = address;
+                            $('#location-text').html(`✓ {% trans "Location captured" %}<br><small>${address}</small>`);
+                            console.info(`Location address: ${address}`);
+                        });
+
+                        console.info(`Location captured: ${latitude}, ${longitude}, accuracy: ${locationAccuracy}m`);
                     },
                     function (error) {
                         let errorMsg = '{% trans "Location unavailable" %}';
@@ -973,22 +1022,21 @@
             // Show loading state on capture button
             $('#capture-btn').html('<span class="loading"></span>').prop('disabled', true);
 
-            // Reverse geocode the coordinates then stamp the image
-            reverseGeocode(latitude, longitude).then(function (address) {
-                stampLocationOnCanvas(canvas, context, address);
+            // Use captured address to stamp the image
+            const addressToStamp = capturedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+            stampLocationOnCanvas(canvas, context, addressToStamp);
 
-                canvas.toBlob(function (blob) {
-                    capturedPhotoBlob = blob;
-                    const url = URL.createObjectURL(blob);
-                    $('#captured-photo').attr('src', url).css('display', 'block');
-                    $('#video-preview').css('display', 'none');
-                    $('#capture-btn').html('<ion-icon name="camera-outline"></ion-icon> {% trans "Capture Selfie" %}').prop('disabled', false).css('display', 'none');
-                    $('#retake-btn').css('display', 'flex');
-                    $('#location-overlay').css('display', 'none'); // hidden since it's already burned in
+            canvas.toBlob(function (blob) {
+                capturedPhotoBlob = blob;
+                const url = URL.createObjectURL(blob);
+                $('#captured-photo').attr('src', url).css('display', 'block');
+                $('#video-preview').css('display', 'none');
+                $('#capture-btn').html('<ion-icon name="camera-outline"></ion-icon> {% trans "Capture Selfie" %}').prop('disabled', false).css('display', 'none');
+                $('#retake-btn').css('display', 'flex');
+                $('#location-overlay').css('display', 'none'); // hidden since it's already burned in
 
-                    updateLocationOverlay();
-                }, 'image/jpeg', 0.92);
-            });
+                updateLocationOverlay();
+            }, 'image/jpeg', 0.92);
         }
 
         // Reverse geocode lat/lng → address string using Nominatim
@@ -1067,8 +1115,10 @@
         function updateLocationOverlay() {
             let locationText = '{% trans "No location" %}';
 
-            if (latitude && longitude) {
-                locationText = `${latitude.toFixed(4)}<br>${longitude.toFixed(4)}`;
+            if (capturedAddress) {
+                locationText = capturedAddress;
+            } else if (latitude && longitude) {
+                locationText = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
             }
 
             $('#location-overlay-text').html(locationText);
@@ -1200,6 +1250,7 @@
         function resetForm() {
             selectedEmployee = null;
             capturedPhotoBlob = null;
+            capturedAddress = null;
             $('#employee-search').val('');
             $('#employee-info').css('display', 'none');
             $('#video-preview').css('display', 'none');
