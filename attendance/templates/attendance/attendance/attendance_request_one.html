@@ -236,9 +236,9 @@
                             <ion-icon name="create-outline" role="img" class="md hydrated" aria-label="create outline">
                             </ion-icon>
                         </a>
-                        <form action="{% url 'attendance-delete' attendance_request.id  %}" onsubmit="return confirm('{% trans "
-                            Are you sure want to delete this attendance?" %}')" hx-target="#tab_contents" method='post'
-                            style="width: 50%;">
+                        <form action="{% url 'attendance-delete' attendance_request.id  %}"
+                            onsubmit="return confirm('{% trans "Are you sure want to delete this attendance?" %}')"
+                            hx-target="#tab_contents" method='post' style="width: 50%;">
                             {% csrf_token %}
                             <button type='submit' class="oh-btn oh-btn--danger w-100" data-action="delete" title='{% trans "Delete" %}'>
                                 <ion-icon name="trash-outline" role="img" class="md hydrated" aria-label="create outline"></ion-icon>

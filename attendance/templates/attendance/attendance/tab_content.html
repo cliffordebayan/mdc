@@ -174,9 +174,9 @@
                                         {% endif %}
                                         {% if perms.attendance.delete_attendance or request.user|is_reportingmanager %}
                                             <form action="{% url 'attendance-delete' attendance.id %}"
-                                                onclick="event.stopPropagation()" onsubmit="return confirm('{% trans " Are you sure
-                                                want to delete this attendance?" %}')" hx-target="#tab_contents" method='post'
-                                                class='w-50'>
+                                                onclick="event.stopPropagation()"
+                                                onsubmit="return confirm('{% trans "Are you sure want to delete this attendance?" %}')"
+                                                hx-target="#tab_contents" method='post' class='w-50'>
                                                 {% csrf_token %}
                                                 <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100"
                                                     title="{% trans 'Remove' %}">
