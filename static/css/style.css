@@ -761,12 +761,201 @@ form label {
             rgba(255, 255, 255, 1) 80%);
     pointer-events: none;
 }
-#faqContainer .oh-faq_search--icon{
-    top:17px;
+
+#faqContainer .oh-faq_search--icon {
+    top: 17px;
 }
-.swal2-styled.swal2-confirm{
+
+.swal2-styled.swal2-confirm {
     background-color: rgb(0, 128, 0);
 }
-.swal2-styled.swal2-cancel{
-    background-color : rgb(221, 51, 51);
+
+.swal2-styled.swal2-cancel {
+    background-color: rgb(221, 51, 51);
+}
+
+/* Modern compact white sidebar overrides */
+.oh-wrapper-main {
+    grid-template-columns: 208px auto;
+}
+
+.oh-wrapper-main--closed {
+    grid-template-columns: max-content auto;
+}
+
+@media (max-width: 767.98px) {
+    .oh-wrapper-main--closed {
+        grid-template-columns: auto;
+    }
+}
+
+#sidebar .oh-sidebar {
+    background: #ffffff;
+    color: #111827;
+    width: fit-content;
+    border-right: 1px solid #e5e7eb;
+    box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+#sidebar .oh-sidebar__company {
+    box-sizing: border-box;
+    padding: 12px 14px !important;
+    border-bottom: 1px solid #eef2f7;
+    background: #ffffff;
+    backdrop-filter: none;
+}
+
+#sidebar .oh-sidebar__company-title {
+    color: #111827;
+}
+
+#sidebar .oh-sidebar__company-link {
+    color: #6b7280;
+}
+
+#sidebar .oh-sidebar__menu-items {
+    margin-top: 12px;
+}
+
+#sidebar .oh-sidebar__menu-link {
+    color: #111827;
+    margin: 0 10px 4px;
+    padding: 0.55rem 0.6rem;
+    min-height: 38px;
+    border-radius: 10px;
+    align-items: center;
+    font-size: 0.82rem;
+}
+
+#sidebar .oh-sidebar__menu-link:hover {
+    color: #111827;
+    opacity: 1;
+    background: #f3f4f6;
+}
+
+#sidebar .oh-sidebar__menu-link--active {
+    color: #111827;
+    background: #eceff3;
+}
+
+#sidebar .oh-sidebar__menu-icon {
+    margin-right: 8px;
+    width: 18px;
+    min-width: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#sidebar .oh-sidebar__menu-icon img,
+#sidebar .oh-sidebar__menu-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+#sidebar .oh-sidebar__menu-icon img {
+    filter: brightness(0) saturate(100%);
+}
+
+#sidebar .oh-sidebar__menu-icon svg {
+    fill: currentColor;
+    stroke: currentColor;
+}
+
+#sidebar .oh-sidebar__submenu {
+    width: 208px;
+    padding: 6px 12px 10px 14px;
+    margin-left: 0.5rem;
+    background: transparent;
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+#sidebar .oh-sidebar__submenu-items {
+    margin-left: 0.75rem;
+    padding-left: 0.75rem;
+    border-left: 1px solid rgba(0, 0, 0, 0.12);
+    box-sizing: border-box;
+}
+
+#sidebar .oh-sidebar__submenu-item {
+    margin: 6px 0;
+    padding-left: 0;
+    font-size: 0.78rem;
+}
+
+#sidebar .oh-sidebar__submenu-link {
+    display: block;
+    color: #4b5563;
+    border-radius: 8px;
+    padding: 0.38rem 0.5rem 0.38rem 0.8rem;
+    font-size: 0.78rem;
+    box-sizing: border-box;
+}
+
+#sidebar .oh-sidebar__submenu-link:hover,
+#sidebar .oh-sidebar__submenu-link:focus,
+#sidebar .oh-sidebar__submenu-link:focus-visible {
+    color: #111827;
+    text-decoration: none;
+    background: #f3f4f6;
+}
+
+#sidebar .oh-sidebar__submenu-link--active {
+    color: #111827;
+    background: #e5e7eb;
+    font-weight: 600;
+}
+
+.oh-wrapper-main--closed #sidebar .oh-sidebar {
+    width: fit-content;
+    min-width: 64px;
+    max-width: 72px;
+    overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+.oh-wrapper-main--closed #sidebar .oh-sidebar__company {
+    width: auto;
+    min-width: 64px;
+    max-width: 72px;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+}
+
+.oh-wrapper-main--closed #sidebar .oh-sidebar__menu-link {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-left: 8px;
+    margin-right: 8px;
+    width: calc(100% - 16px);
+    box-sizing: border-box;
+}
+
+.oh-wrapper-main--closed #sidebar .oh-sidebar__menu-icon {
+    margin-right: 0;
+}
+
+.oh-wrapper-main--closed #sidebar .oh-sidebar__menu-link span {
+    display: none;
+}
+
+.oh-wrapper-main--closed #sidebar .oh-sidebar__submenu {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 0 !important;
+}
+
+.oh-wrapper-main--closed #sidebar .oh-sidebar__submenu-items {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    display: none !important;
 }
