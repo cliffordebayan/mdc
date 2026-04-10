@@ -118,6 +118,10 @@
             height: 100%;
             object-fit: cover;
         }
+        
+        #video-preview {
+            transform: scaleX(-1);
+        }
 
         .clock-camera-panel canvas {
             display: none;
@@ -1017,7 +1021,11 @@
 
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
+            context.save();
+            context.translate(canvas.width, 0);
+            context.scale(-1, 1);
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            context.restore();
 
             // Show loading state on capture button
             $('#capture-btn').html('<span class="loading"></span>').prop('disabled', true);
@@ -1058,56 +1066,98 @@
                 timeZone: SERVER_TZ
             });
 
-            const coordLine   = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-            const lines = [
-                address,
-                coordLine,
-                timestamp,
-            ];
+            const coordLine = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+            const padding = 10;
+            const fontSize = Math.max(14, Math.round(canvas.width / 40));
+            const lineH = fontSize + 6;
+            const maxWidth = canvas.width - padding * 2;
 
-            const padding   = 10;
-            const fontSize  = Math.max(14, Math.round(canvas.width / 40));
-            const lineH     = fontSize + 6;
-            const boxH      = lineH * lines.length + padding * 2;
-            const boxY      = canvas.height - boxH;
+            ctx.font = `${fontSize}px Arial, sans-serif`;
+            ctx.textBaseline = 'top';
+
+            function splitLongToken(token) {
+                const chunks = [];
+                let currentChunk = '';
+
+                for (const ch of token) {
+                    const testChunk = currentChunk + ch;
+                    if (ctx.measureText(testChunk).width > maxWidth && currentChunk) {
+                        chunks.push(currentChunk);
+                        currentChunk = ch;
+                    } else {
+                        currentChunk = testChunk;
+                    }
+                }
+
+                if (currentChunk) {
+                    chunks.push(currentChunk);
+                }
+
+                return chunks;
+            }
+
+            function wrapLine(lineText) {
+                const cleanText = (lineText || '').toString().trim();
+                if (!cleanText) {
+                    return [''];
+                }
+
+                const words = cleanText.split(/\s+/);
+                const wrapped = [];
+                let currentLine = '';
+
+                words.forEach(function (word) {
+                    if (!word) {
+                        return;
+                    }
+
+                    if (ctx.measureText(word).width > maxWidth) {
+                        if (currentLine) {
+                            wrapped.push(currentLine);
+                            currentLine = '';
+                        }
+                        splitLongToken(word).forEach(function (chunk) {
+                            wrapped.push(chunk);
+                        });
+                        return;
+                    }
+
+                    const testLine = currentLine ? `${currentLine} ${word}` : word;
+                    if (ctx.measureText(testLine).width <= maxWidth) {
+                        currentLine = testLine;
+                    } else {
+                        if (currentLine) {
+                            wrapped.push(currentLine);
+                        }
+                        currentLine = word;
+                    }
+                });
+
+                if (currentLine) {
+                    wrapped.push(currentLine);
+                }
+
+                return wrapped.length ? wrapped : [''];
+            }
+
+            const addressRows = wrapLine(address);
+            const coordRows = wrapLine(coordLine);
+            const timestampRows = wrapLine(timestamp);
+            const allRows = [...addressRows, ...coordRows, ...timestampRows];
+
+            const boxH = lineH * allRows.length + padding * 2;
+            const boxY = Math.max(0, canvas.height - boxH);
 
             // Semi-transparent dark banner at the bottom
             ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
             ctx.fillRect(0, boxY, canvas.width, boxH);
 
-            ctx.font       = `${fontSize}px Arial, sans-serif`;
-            ctx.fillStyle  = '#ffffff';
-            ctx.textBaseline = 'top';
+            ctx.fillStyle = '#ffffff';
 
-            lines.forEach(function (line, i) {
-                // Word-wrap long lines to fit canvas width
-                const maxWidth = canvas.width - padding * 2;
-                const words = line.split(' ');
-                let currentLine = '';
-                let wrappedLines = [];
-
-                words.forEach(function (word) {
-                    const test = currentLine ? currentLine + ' ' + word : word;
-                    if (ctx.measureText(test).width > maxWidth && currentLine) {
-                        wrappedLines.push(currentLine);
-                        currentLine = word;
-                    } else {
-                        currentLine = test;
-                    }
-                });
-                if (currentLine) wrappedLines.push(currentLine);
-
-                // Re-draw banner taller if wrapped
-                if (wrappedLines.length > 1) {
-                    const extra = (wrappedLines.length - 1) * lineH;
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-                    ctx.fillRect(0, boxY - extra, canvas.width, boxH + extra);
-                    ctx.fillStyle = '#ffffff';
-                }
-
-                wrappedLines.forEach(function (wl, wi) {
-                    ctx.fillText(wl, padding, boxY + padding + (i + wi) * lineH);
-                });
+            let y = boxY + padding;
+            allRows.forEach(function (row) {
+                ctx.fillText(row, padding, y);
+                y += lineH;
             });
         }
 
