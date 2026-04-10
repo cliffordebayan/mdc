@@ -933,6 +933,21 @@
     }
   });
   $(document).ready(function () {
+    function getCookie(name) {
+      var cookieValue = null;
+      if (document.cookie && document.cookie !== "") {
+        var cookies = document.cookie.split(";");
+        for (var i = 0; i < cookies.length; i++) {
+          var cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === name + "=") {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    }
+
     $(".deletebutton").click(function () {
       var id = $(this).attr("data-id");
       var url = `/attendance/attendance-delete/${id}/`;
@@ -943,7 +958,10 @@
       form.attr("action", url);
 
       // Create a hidden input field for the CSRF token
-      var csrf_token = $('input[name="csrfmiddlewaretoken"]').val();
+      var csrf_token = $('input[name="csrfmiddlewaretoken"]').first().val();
+      if (!csrf_token) {
+        csrf_token = getCookie("csrftoken");
+      }
       var csrf_input = $('<input type="hidden" name="csrfmiddlewaretoken">');
       csrf_input.val(csrf_token);
       form.append(csrf_input);

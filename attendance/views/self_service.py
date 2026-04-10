@@ -432,6 +432,7 @@ def public_clock_out(request):
                 date_today=date_today,
                 now=now_str,
                 out_datetime=datetime_now,
+                auto_validate=False,
             )
         except Exception as e:
             logger.error(f"Clock out error for {employee.id}: {str(e)}", exc_info=True)

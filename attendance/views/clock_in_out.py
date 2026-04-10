@@ -348,13 +348,16 @@ def clock_in(request):
         return HorillaRedirect(request)
 
 
-def clock_out_attendance_and_activity(employee, date_today, now, out_datetime=None):
+def clock_out_attendance_and_activity(
+    employee, date_today, now, out_datetime=None, auto_validate=True
+):
     """
     Clock out the attendance and activity
     args:
-        employee    : employee instance
-        date_today  : today date
-        now         : now
+        employee      : employee instance
+        date_today    : today date
+        now           : now
+        auto_validate : if True, apply attendance validation condition automatically
     """
 
     attendance_activities = AttendanceActivity.objects.filter(
@@ -395,8 +398,12 @@ def clock_out_attendance_and_activity(employee, date_today, now, out_datetime=No
         # Overtime calculation
         attendance.attendance_overtime = overtime_calculation(attendance)
 
-        # Validate the attendance as per the condition
-        attendance.attendance_validated = attendance_validate(attendance)
+        if auto_validate:
+            # Validate the attendance as per the condition
+            attendance.attendance_validated = attendance_validate(attendance)
+        else:
+            # Keep attendance in not-validated state until manual validation.
+            attendance.attendance_validated = False
         attendance.save()
 
         return attendance

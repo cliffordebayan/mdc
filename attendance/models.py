@@ -472,7 +472,9 @@ class Attendance(HorillaModel):
     def delete(self, *args, **kwargs):
         # Custom delete logic
         # Perform additional operations before deleting the object
+        employee_ot = None
         with contextlib.suppress(Exception):
+            AttendanceLateComeEarlyOut.objects.filter(attendance_id=self).delete()
             AttendanceActivity.objects.filter(
                 attendance_date=self.attendance_date, employee_id=self.employee_id
             ).delete()
@@ -480,7 +482,7 @@ class Attendance(HorillaModel):
                 month=self.attendance_date.strftime("%B").lower(),
                 year=self.attendance_date.strftime("%Y"),
             )
-        if employee_ot.exists():
+        if employee_ot is not None and employee_ot.exists():
             self.update_ot(employee_ot.first())
         # Call the superclass delete() method to delete the object
         super().delete(*args, **kwargs)

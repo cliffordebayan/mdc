@@ -126,6 +126,14 @@ from horilla.decorators import (
 from notifications.signals import notify
 
 
+def _delete_blocked_message(protected_objects):
+    model_verbose_names_set = {
+        __(obj._meta.verbose_name.capitalize()) for obj in protected_objects
+    }
+    model_names_str = ", ".join(model_verbose_names_set)
+    return _("Deletion blocked by related records: {}.").format(model_names_str)
+
+
 def attendance_validate(attendance):
     """
     This method is is used to check condition for at work in AttendanceValidationCondition
@@ -453,7 +461,7 @@ def attendance_update(request, obj_id):
 
 
 @login_required
-@permission_required("attendance.delete_attendance")
+@manager_can_enter("attendance.delete_attendance")
 @require_http_methods(["POST"])
 def attendance_delete(request, obj_id):
     """
@@ -466,42 +474,28 @@ def attendance_delete(request, obj_id):
         month = attendance.attendance_date
         month = month.strftime("%B").lower()
         overtime = attendance.employee_id.employee_overtime.filter(month=month).last()
-        if overtime is not None:
-            if attendance.attendance_overtime_approve:
-                # Subtract overtime of this attendance
-                total_overtime = strtime_seconds(overtime.overtime)
-                attendance_overtime_seconds = strtime_seconds(
-                    attendance.attendance_overtime
-                )
-                if total_overtime > attendance_overtime_seconds:
-                    total_overtime = total_overtime - attendance_overtime_seconds
-                else:
-                    total_overtime = attendance_overtime_seconds - total_overtime
-                overtime.overtime = format_time(total_overtime)
-                overtime.save()
-            try:
-                attendance.delete()
-                messages.success(request, _("Attendance deleted."))
-            except ProtectedError as e:
-                model_verbose_names_set = set()
-                for obj in e.protected_objects:
-                    model_verbose_names_set.add(__(obj._meta.verbose_name.capitalize()))
-                model_names_str = ", ".join(model_verbose_names_set)
-                messages.error(
-                    request,
-                    _(
-                        ("An attendance entry for {} already exists.").format(
-                            model_names_str
-                        )
-                    ),
-                )
+        if overtime is not None and attendance.attendance_overtime_approve:
+            # Subtract overtime of this attendance
+            total_overtime = strtime_seconds(overtime.overtime)
+            attendance_overtime_seconds = strtime_seconds(attendance.attendance_overtime)
+            if total_overtime > attendance_overtime_seconds:
+                total_overtime = total_overtime - attendance_overtime_seconds
+            else:
+                total_overtime = attendance_overtime_seconds - total_overtime
+            overtime.overtime = format_time(total_overtime)
+            overtime.save()
+        try:
+            attendance.delete()
+            messages.success(request, _("Attendance deleted."))
+        except ProtectedError as e:
+            messages.error(request, _delete_blocked_message(e.protected_objects))
     except (Attendance.DoesNotExist, OverflowError):
         messages.error(request, _("Attendance Does not exists.."))
     return HorillaRedirect(request)
 
 
 @login_required
-@permission_required("attendance.delete_attendance")
+@manager_can_enter("attendance.delete_attendance")
 @require_http_methods(["POST"])
 def attendance_bulk_delete(request):
     """
@@ -536,14 +530,7 @@ def attendance_bulk_delete(request):
                 success_count += 1
 
             except ProtectedError as e:
-                model_verbose_names_set = {
-                    __(obj._meta.verbose_name.capitalize())
-                    for obj in e.protected_objects
-                }
-                model_names_str = ", ".join(model_verbose_names_set)
-                error_messages.append(
-                    f"An attendance entry is protected by: {model_names_str}."
-                )
+                error_messages.append(_delete_blocked_message(e.protected_objects))
 
     # Build response messages
     if success_count:
