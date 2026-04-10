@@ -193,6 +193,36 @@ def custom404(request):
     return render(request, "404.html")
 
 
+def pwa_manifest(request):
+    """
+    Return a dynamic web app manifest using HQ company branding.
+    """
+    default_name = "Horilla"
+    default_icon = "/static/favicons/apple-touch-icon.png"
+    company = Company.objects.filter(hq=True).last()
+
+    app_name = company.company if company and company.company else default_name
+    icon_src = company.icon.url if company and company.icon else default_icon
+
+    manifest = {
+        "name": app_name,
+        "short_name": app_name,
+        "description": "Free and Open Source HR Software",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "orangered",
+        "theme_color": "orangered",
+        "icons": [
+            {
+                "src": icon_src,
+                "sizes": "192x192",
+                "type": "image/png",
+            }
+        ],
+    }
+    return JsonResponse(manifest, content_type="application/manifest+json")
+
+
 # Create your views here.
 def is_reportingmanger(request, instance):
     """

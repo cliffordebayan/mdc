@@ -36,6 +36,7 @@ from horilla_audit.models import AuditTag
 
 urlpatterns = [
     path("", views.home, name="home-page"),
+    path("manifest.webmanifest", views.pwa_manifest, name="pwa-manifest"),
     path("initialize-database", views.initialize_database, name="initialize-database"),
     path("load-demo-database", views.load_demo_database, name="load-demo-database"),
     path(
