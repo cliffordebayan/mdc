@@ -4406,7 +4406,7 @@ msgstr "El {} se ha eliminado correctamente."
 msgid "{} not found."
 msgstr "{} no encontrado."
 
-msgid "Test mail from Horilla"
+msgid "Test mail from MDC"
 msgstr "Correo de prueba de Horilla"
 
 msgid "Something went wrong :"

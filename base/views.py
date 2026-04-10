@@ -1552,7 +1552,7 @@ def mail_server_test_email(request):
         form = DynamicMailTestForm(request.POST)
         if form.is_valid():
             email_to = form.cleaned_data["to_email"]
-            subject = _("Test mail from Horilla")
+            subject = _("Test mail from MDC")
 
             # HTML content
             html_content = f"""

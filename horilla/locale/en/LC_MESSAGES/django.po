@@ -4776,7 +4776,7 @@ msgstr ""
 msgid "{} not found."
 msgstr ""
 
-msgid "Test mail from Horilla"
+msgid "Test mail from MDC"
 msgstr ""
 
 msgid "Something went wrong :"

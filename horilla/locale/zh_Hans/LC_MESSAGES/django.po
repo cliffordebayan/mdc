@@ -4571,7 +4571,7 @@ msgstr "{} 已成功删除。"
 msgid "{} not found."
 msgstr "未找到 {}。"
 
-msgid "Test mail from Horilla"
+msgid "Test mail from MDC"
 msgstr "来自 Horilla 的测试邮件"
 
 msgid "Something went wrong :"
