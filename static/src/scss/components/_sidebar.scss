@@ -1,4 +1,5 @@
-.oh-sidebar {
+.oh-sidebar,
+#sidebar .oh-sidebar {
   background-color: #ffffff;
   color: #111827;
   width: fit-content;
@@ -14,7 +15,8 @@
   z-index: 99;
 }
 
-.oh-sidebar__company {
+.oh-sidebar__company,
+#sidebar .oh-sidebar__company {
   display: grid;
   grid-template-columns: 1fr 4fr auto;
   align-items: center;
@@ -47,12 +49,14 @@
   flex-direction: column;
 }
 
-.oh-sidebar__company-title {
+.oh-sidebar__company-title,
+#sidebar .oh-sidebar__company-title {
   color: #111827;
   font-size: 0.95rem;
 }
 
-.oh-sidebar__company-link {
+.oh-sidebar__company-link,
+#sidebar .oh-sidebar__company-link {
   font-size: 0.7rem;
   color: #6b7280;
 
@@ -69,7 +73,8 @@
   }
 }
 
-.oh-sidebar__menu-items {
+.oh-sidebar__menu-items,
+#sidebar .oh-sidebar__menu-items {
   padding-left: 0px;
   margin-top: 12px;
   list-style: none;
@@ -79,7 +84,8 @@
   font-size: 0.8rem;
 }
 
-.oh-sidebar__menu-link {
+.oh-sidebar__menu-link,
+#sidebar .oh-sidebar__menu-link {
   display: grid;
   grid-template-columns: auto 1fr;
   color: #111827;
@@ -107,12 +113,14 @@
   }
 }
 
-.oh-sidebar__menu-link--active {
+.oh-sidebar__menu-link--active,
+#sidebar .oh-sidebar__menu-link--active {
   color: #111827;
   background-color: #eceff3;
 }
 
-.oh-sidebar__menu-icon {
+.oh-sidebar__menu-icon,
+#sidebar .oh-sidebar__menu-icon {
   margin-right: 8px;
   width: 18px;
   min-width: 18px;
@@ -136,7 +144,8 @@
   }
 }
 
-.oh-sidebar__submenu {
+.oh-sidebar__submenu,
+#sidebar .oh-sidebar__submenu {
   width: 208px;
   padding: 6px 12px 10px 14px;
   margin-left: 0.5rem;
@@ -145,7 +154,8 @@
   box-sizing: border-box;
 }
 
-.oh-sidebar__submenu-items {
+.oh-sidebar__submenu-items,
+#sidebar .oh-sidebar__submenu-items {
   margin-left: 0.75rem;
   padding-left: 0.75rem;
   border-left: 1px solid rgba(0, 0, 0, 0.12);
@@ -153,13 +163,15 @@
   list-style-type: none;
 }
 
-.oh-sidebar__submenu-item {
+.oh-sidebar__submenu-item,
+#sidebar .oh-sidebar__submenu-item {
   font-size: 0.78rem;
   padding-left: 0;
   margin: 6px 0;
 }
 
-.oh-sidebar__submenu-link {
+.oh-sidebar__submenu-link,
+#sidebar .oh-sidebar__submenu-link {
   display: block;
   color: #4b5563;
   border-radius: 8px;
@@ -176,7 +188,8 @@
   }
 }
 
-.oh-sidebar__submenu-link--active {
+.oh-sidebar__submenu-link--active,
+#sidebar .oh-sidebar__submenu-link--active {
   color: #111827;
   background: #e5e7eb;
   font-weight: 600;
@@ -241,9 +254,9 @@
 }
 
 .oh-activity-sidebar__body {
-  overflow-y: auto;
-  min-height: calc(100% - 90px);
-  max-height: calc(100% - 90px);
+  overflow-y: auto !important;
+  min-height: calc(100% - 90px) !important;
+  max-height: calc(110% - 90px) !important;
 }
 
 .oh-activity-sidebar__qa-list {
@@ -413,10 +426,12 @@ span.oh-activity-sidebar__a img {
 }
 
 .oh-wrapper-main--closed {
+  #sidebar .oh-sidebar__company-details,
   .oh-sidebar__company-details {
     display: none;
   }
 
+  #sidebar .oh-sidebar,
   .oh-sidebar {
     width: fit-content;
     min-width: 64px;
@@ -425,6 +440,7 @@ span.oh-activity-sidebar__a img {
     box-sizing: border-box;
   }
 
+  #sidebar .oh-sidebar__company,
   .oh-sidebar__company {
     display: flex;
     align-items: center;
@@ -445,11 +461,14 @@ span.oh-activity-sidebar__a img {
     }
   }
 
+  #sidebar .oh-sidebar__submenu-items,
   .oh-sidebar__submenu-items,
+  #sidebar .oh-sidebar__menu-link span,
   .oh-sidebar__menu-link span {
     display: none;
   }
 
+  #sidebar .oh-sidebar__menu-item,
   .oh-sidebar__menu-item {
     margin-bottom: 1rem;
 
@@ -458,6 +477,7 @@ span.oh-activity-sidebar__a img {
     }
   }
 
+  #sidebar .oh-sidebar__submenu,
   .oh-sidebar__submenu {
     position: fixed;
     z-index: -1;
@@ -471,6 +491,7 @@ span.oh-activity-sidebar__a img {
     border: 0 !important;
   }
 
+  #sidebar .oh-sidebar__menu-link,
   .oh-sidebar__menu-link {
     display: flex;
     justify-content: center;
@@ -481,15 +502,18 @@ span.oh-activity-sidebar__a img {
     box-sizing: border-box;
   }
 
+  #sidebar .oh-sidebar__menu-icon,
   .oh-sidebar__menu-icon {
     margin-right: 0;
   }
 
+  #sidebar .oh-sidebar__menu-icon img,
   .oh-sidebar__menu-icon img {
     height: 18px;
     width: 18px;
   }
 
+  #sidebar .oh-sidebar__submenu-items,
   .oh-sidebar__submenu-items {
     margin: 0 !important;
     padding: 0 !important;
