@@ -82,20 +82,33 @@ def get_real_now():
 
 def _get_client_ip(request):
     """
-    Return the real client IP, honouring X-Forwarded-For set by a proxy.
-    When the request arrives on loopback (127.x / ::1) — i.e. the browser
-    is on the same machine as the server — substitute the server's own LAN IP
-    so that an allowed-IP rule like '192.168.100.56' still matches.
+    Return the real client IP, checking proxy/CDN headers in priority order:
+      1. CF-Connecting-IP  — set by Cloudflare, most reliable when behind CF
+      2. X-Real-IP         — set by nginx and other single-hop proxies
+      3. X-Forwarded-For   — leftmost (original client) entry in the chain
+      4. REMOTE_ADDR       — direct connection fallback
+    When the resolved IP is loopback (127.x / ::1), substitute the server's
+    own LAN IP so local rules still match.
     """
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    for header in ("HTTP_CF_CONNECTING_IP", "HTTP_X_REAL_IP"):
+        ip = request.META.get(header, "").strip()
+        if ip:
+            logger.debug(f"[IP] resolved from {header}: {ip}")
+            return ip
+
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "").strip()
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        ip = forwarded.split(",")[0].strip()
+        logger.debug(f"[IP] resolved from X-Forwarded-For: {ip}")
+        return ip
+
     ip = request.META.get("REMOTE_ADDR", "")
     try:
         if ipaddress.ip_address(ip).is_loopback:
             ip = socket.gethostbyname(socket.gethostname())
     except (ValueError, OSError):
         pass
+    logger.debug(f"[IP] resolved from REMOTE_ADDR: {ip}")
     return ip
 
 
@@ -110,6 +123,7 @@ def _ip_is_allowed(request):
 
     client_ip = _get_client_ip(request)
     allowed = restriction.additional_data.get("allowed_ips", [])
+    logger.info(f"[IP restriction] client_ip={client_ip!r}  allowed_list={allowed}")
     for entry in allowed:
         try:
             if ipaddress.ip_address(client_ip) in ipaddress.ip_network(
@@ -206,13 +220,13 @@ def public_self_service(request):
       </svg>
     </div>
     <h1>Access Denied</h1>
-    <p>This self-service kiosk is not accessible.</p>
+    <p>This self-service kiosk is not accessible.<br>Restricted to allowed networks only.</p>
     <hr class="divider" />
     <span class="contact">
       <svg viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M22 16.92V19a2 2 0 0 1-2.18 2A19.86 19.86 0 0 1 3 4.18 2 2 0 0 1 5 2h2.09a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>
       </svg>
-      Contact Administrator
+      Contact Administrator &mdash; <a href="mailto:ithelpdesk@martindevcorp.com" style="color:#1a73e8;text-decoration:none;">ithelpdesk@martindevcorp.com</a>
     </span>
   </div>
 </body>
