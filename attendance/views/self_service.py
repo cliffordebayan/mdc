@@ -226,7 +226,7 @@ def public_self_service(request):
       <svg viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M22 16.92V19a2 2 0 0 1-2.18 2A19.86 19.86 0 0 1 3 4.18 2 2 0 0 1 5 2h2.09a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>
       </svg>
-      Contact Administrator &mdash; <a href="mailto:ithelpdesk@martindevcorp.com" style="color:#1a73e8;text-decoration:none;">ithelpdesk@martindevcorp.com</a>
+      Contact Administrator
     </span>
   </div>
 </body>
