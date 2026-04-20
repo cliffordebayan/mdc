@@ -241,9 +241,7 @@
             unselectAllActivity();
         });
     });
-    // Always show all columns — remove any saved column state
-    localStorage.removeItem("attendance_activity_tab");
-    $("[data-cell-index]").show();
+    toggleColumns('attendance-activity-table', 'AttendanceActivityCells');
 
     function openImageModal(imageUrl, title) {
         const existing = document.getElementById('selfie-preview-overlay');

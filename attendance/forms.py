@@ -875,6 +875,10 @@ class AttendanceActivityExportForm(forms.Form):
 
     model_fields = AttendanceActivity._meta.get_fields()
     field_choices = [
+        ("employee_id__employee_work_info__company_id", _("Company")),
+        ("employee_id__employee_work_info__department_id", _("Department")),
+        ("employee_id__badge_id", _("Badge ID")),
+    ] + [
         (field.name, field.verbose_name)
         for field in model_fields
         if hasattr(field, "verbose_name") and field.name not in excluded_fields
@@ -883,6 +887,9 @@ class AttendanceActivityExportForm(forms.Form):
         choices=field_choices,
         widget=forms.CheckboxSelectMultiple,
         initial=[
+            "employee_id__employee_work_info__company_id",
+            "employee_id__employee_work_info__department_id",
+            "employee_id__badge_id",
             "employee_id",
             "attendance_date",
             "clock_in_date",

@@ -6,7 +6,9 @@ No authentication required - suitable for kiosk-style access.
 Employees identify themselves by badge ID or name.
 """
 
+import ipaddress
 import logging
+import re
 import socket
 import struct
 from datetime import date, datetime, timedelta
@@ -36,7 +38,7 @@ from attendance.views.clock_in_out import (
     clock_in_attendance_and_activity,
     clock_out_attendance_and_activity,
 )
-from base.models import Company, EmployeeShiftDay
+from base.models import AttendanceAllowedIP, Company, EmployeeShiftDay
 from employee.models import Employee
 
 logger = logging.getLogger(__name__)
@@ -78,11 +80,144 @@ def get_real_now():
     return datetime.now()
 
 
+def _get_client_ip(request):
+    """
+    Return the real client IP, honouring X-Forwarded-For set by a proxy.
+    When the request arrives on loopback (127.x / ::1) — i.e. the browser
+    is on the same machine as the server — substitute the server's own LAN IP
+    so that an allowed-IP rule like '192.168.100.56' still matches.
+    """
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    ip = request.META.get("REMOTE_ADDR", "")
+    try:
+        if ipaddress.ip_address(ip).is_loopback:
+            ip = socket.gethostbyname(socket.gethostname())
+    except (ValueError, OSError):
+        pass
+    return ip
+
+
+def _ip_is_allowed(request):
+    """
+    Return True if IP restrictions are disabled, or if the client IP is in the
+    allowed list stored in AttendanceAllowedIP.
+    """
+    restriction = AttendanceAllowedIP.objects.first()
+    if not restriction or not restriction.is_enabled:
+        return True
+
+    client_ip = _get_client_ip(request)
+    allowed = restriction.additional_data.get("allowed_ips", [])
+    for entry in allowed:
+        try:
+            if ipaddress.ip_address(client_ip) in ipaddress.ip_network(
+                entry, strict=False
+            ):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def public_self_service(request):
     """
     Render the public self-service clock in/out page.
     No authentication required.
     """
+    if not _ip_is_allowed(request):
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden(
+            """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Access Denied</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f4f6fa;
+      font-family: 'Segoe UI', Arial, sans-serif;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.10);
+      padding: 52px 48px 44px;
+      max-width: 420px;
+      width: 90%;
+      text-align: center;
+    }
+    .icon {
+      width: 72px;
+      height: 72px;
+      background: #fff0f0;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+    }
+    .icon svg { width: 36px; height: 36px; }
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 12px;
+    }
+    p {
+      font-size: 0.97rem;
+      color: #555;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid #eee;
+      margin-bottom: 24px;
+    }
+    .contact {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #f4f6fa;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 0.9rem;
+      color: #444;
+      font-weight: 500;
+    }
+    .contact svg { width: 18px; height: 18px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#e53935" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    </div>
+    <h1>Access Denied</h1>
+    <p>This self-service kiosk is not accessible.</p>
+    <hr class="divider" />
+    <span class="contact">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 16.92V19a2 2 0 0 1-2.18 2A19.86 19.86 0 0 1 3 4.18 2 2 0 0 1 5 2h2.09a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>
+      </svg>
+      Contact Administrator
+    </span>
+  </div>
+</body>
+</html>"""
+        )
     real_now = get_real_now()
     tz = pytz.timezone(settings.TIME_ZONE)
     aware_now = tz.localize(real_now)
@@ -128,20 +263,23 @@ def employee_lookup(request):
             }
         ]
     """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
     try:
         # Handle both POST data and FormData
         query = request.POST.get("query", "").strip()
 
         logger.info(f"Employee lookup query: {query}, POST data: {request.POST}")
 
-        if not query or len(query) < 2:
+        if not query or not re.fullmatch(r"\d{7}", query):
             return JsonResponse({"success": True, "results": []})
 
-        # Search by badge_id, first name, or last name
+        # Search by badge_id only (exact match on complete 7-digit ID)
         employees = Employee.objects.filter(
-            Q(badge_id__icontains=query)
-            | Q(employee_first_name__icontains=query)
-            | Q(employee_last_name__icontains=query),
+            badge_id__exact=query,
             is_active=True,
         )[:10]
 
@@ -188,6 +326,11 @@ def public_clock_in(request):
             "clock_in_time": str
         }
     """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
     try:
         # Get employee ID from POST data
         employee_id = request.POST.get("employee_id")
@@ -379,6 +522,11 @@ def public_clock_out(request):
             "worked_hours": str
         }
     """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
     try:
         # Get employee ID from POST data
         employee_id = request.POST.get("employee_id")

@@ -118,7 +118,7 @@
             height: 100%;
             object-fit: cover;
         }
-        
+
         #video-preview {
             transform: scaleX(-1);
         }
@@ -597,10 +597,10 @@
 
                 <!-- Step 1: Employee Search -->
                 <div class="self-service-step active" id="step-search">
-                    <p class="info-text">{% trans "Enter your employee number or name:" %}</p>
+                    <p class="info-text">{% trans "Enter your Employee ID:" %}</p>
                     <div class="search-container">
                         <input type="text" id="employee-search" class="oh-input w-100"
-                            placeholder="{% trans 'Badge ID or Name...' %}" autocomplete="off" />
+                            placeholder="{% trans 'Employee ID...' %}" autocomplete="off" />
                         <div class="search-results" id="search-results"></div>
                     </div>
                 </div>
@@ -732,7 +732,7 @@
                 .then(data => {
                     serverTimeOffset = new Date(data.server_time_iso).getTime() - Date.now();
                 })
-                .catch(() => {});  // silently keep last known offset on failure
+                .catch(() => { });  // silently keep last known offset on failure
         }
         setInterval(resyncServerTime, 30000);
 
@@ -851,7 +851,7 @@
                 clearTimeout(searchTimeout);
                 const query = $(this).val().trim();
 
-                if (query.length < 2) {
+                if (!/^\d{7}$/.test(query)) {
                     $('#search-results').empty();
                     return;
                 }
@@ -1052,9 +1052,9 @@
             return fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
                 headers: { 'Accept-Language': 'en' }
             })
-            .then(r => r.json())
-            .then(data => data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`)
-            .catch(() => `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                .then(r => r.json())
+                .then(data => data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`)
+                .catch(() => `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
         }
 
         // Burn location + timestamp text onto the canvas
@@ -1288,6 +1288,27 @@
 
             $('#confirmation-content').html(html);
             showStep('confirmation');
+
+            // Auto-reset after 5 seconds if "Clock Another Employee" is not clicked
+            let autoResetSeconds = 5;
+            const $btn = $('#new-clock-btn');
+            $btn.html(`<ion-icon class="me-2" name="refresh-outline"></ion-icon>{% trans "Clock Another Employee" %} (${autoResetSeconds})`);
+
+            const autoResetInterval = setInterval(function () {
+                autoResetSeconds--;
+                if (autoResetSeconds > 0) {
+                    $btn.html(`<ion-icon class="me-2" name="refresh-outline"></ion-icon>{% trans "Clock Another Employee" %} (${autoResetSeconds})`);
+                } else {
+                    clearInterval(autoResetInterval);
+                    resetForm();
+                    showStep('search');
+                }
+            }, 1000);
+
+            // Cancel auto-reset if button is clicked manually
+            $btn.one('click', function () {
+                clearInterval(autoResetInterval);
+            });
         }
 
         // Show step
