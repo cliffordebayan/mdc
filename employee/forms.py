@@ -42,6 +42,7 @@ from employee.models import (
     Employee,
     EmployeeBankDetails,
     EmployeeGeneralSetting,
+    EmployeeInsurance,
     EmployeeNote,
     EmployeeTag,
     EmployeeWorkInformation,
@@ -449,8 +450,6 @@ class EmployeeBankDetailsForm(ModelForm):
     Form for EmployeeBankDetails model
     """
 
-    address = forms.CharField(widget=forms.Textarea(attrs={"rows": 2, "cols": 40}))
-
     class Meta:
         """
         Meta class to add the additional info
@@ -460,19 +459,12 @@ class EmployeeBankDetailsForm(ModelForm):
         fields = (
             "bank_name",
             "account_number",
-            "branch",
-            "any_other_code1",
-            "address",
-            "country",
-            "state",
-            "city",
-            "any_other_code2",
+            "is_primary",
         )
         exclude = ["employee_id", "is_active", "additional_info"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["address"].widget.attrs["autocomplete"] = "address"
         for visible in self.visible_fields():
             visible.field.widget.attrs["class"] = "oh-input w-100"
 
@@ -505,6 +497,29 @@ class EmployeeBankDetailsUpdateForm(ModelForm):
     def as_p(self, *args, **kwargs):
         context = {"form": self}
         return render_to_string("employee/update_form/bank_info_as_p.html", context)
+
+
+class EmployeeInsuranceForm(ModelForm):
+    """
+    Form for EmployeeInsurance model
+    """
+
+    class Meta:
+        model = EmployeeInsurance
+        fields = ("name", "description", "start_date", "end_date")
+        exclude = ["employee_id", "is_active"]
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 3}),
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for visible in self.visible_fields():
+            visible.field.widget.attrs["class"] = "oh-input w-100"
+        for field in self.fields:
+            self.fields[field].widget.attrs["placeholder"] = self.fields[field].label
 
 
 excel_columns = [
@@ -547,13 +562,7 @@ excel_columns = [
     ("employee_work_info__contract_end_date", trans("Contract End Date")),
     ("employee_work_info__company_id", trans("Company")),
     ("employee_bank_details__bank_name", trans("Bank Name")),
-    ("employee_bank_details__branch", trans("Branch")),
     ("employee_bank_details__account_number", trans("Account Number")),
-    ("employee_bank_details__any_other_code1", trans("Bank Code #1")),
-    ("employee_bank_details__any_other_code2", trans("Bank Code #2")),
-    ("employee_bank_details__country", trans("Bank Country")),
-    ("employee_bank_details__state", trans("Bank State")),
-    ("employee_bank_details__city", trans("Bank City")),
 ]
 fields_to_remove = [
     "badge_id",

@@ -28,9 +28,11 @@ class PayslipSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(
         source="employee_id.employee_work_info.department_id.department", read_only=True
     )
-    bank_account_check_number = serializers.CharField(
-        source="employee_id.employee_bank_details.account_number", read_only=True
-    )
+    bank_account_check_number = serializers.SerializerMethodField()
+
+    def get_bank_account_check_number(self, obj):
+        bank = obj.employee_id.get_primary_bank() if obj.employee_id else None
+        return bank.account_number if bank else None
 
     class Meta:
         model = Payslip

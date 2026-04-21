@@ -1,9 +1,41 @@
 {% load i18n %}
 <div class="oh-general__tab-target oh-profile-section mb-4 d-none" id="bank">
     <div class="oh-profile-section__card">
-        <form action="" method="post">
 
+        {% if bank_accounts %}
+        <div class="mb-4">
+            <h6 class="fw-bold mb-3">{% trans "Existing Bank Accounts" %}</h6>
+            {% for bank in bank_accounts %}
+            <div class="border rounded p-3 mb-2 d-flex justify-content-between align-items-start">
+                <div>
+                    <strong>{{ bank.bank_name }}</strong>
+                    {% if bank.is_primary %}<span class="badge bg-success ms-2">{% trans "Primary" %}</span>{% endif %}
+                    <br>
+                    <small class="text-muted">{% trans "Account" %}: {{ bank.account_number|default:"—" }}</small>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="oh-btn oh-btn--secondary oh-btn--xs"
+                        onclick="fillBankForm({{ bank.id }}, '{{ bank.bank_name|escapejs }}', '{{ bank.account_number|default:''|escapejs }}', {{ bank.is_primary|yesno:'true,false' }})">
+                        {% trans "Edit" %}
+                    </button>
+                    <form method="post" action="{% url 'employee-delete-bank-details' bank.id %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="oh-btn oh-btn--danger oh-btn--xs"
+                            onclick="return confirm('{% trans "Delete this bank account?" %}')">
+                            {% trans "Delete" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <hr>
+        {% endif %}
+
+        <h6 class="fw-bold mb-3" id="bankFormTitle">{% trans "Add Bank Account" %}</h6>
+        <form action="{% url 'employee-profile-bank-update' %}" method="post">
             {% csrf_token %}
+            <input type="hidden" name="bank_id" id="bankFormId" value="">
             <div class="row">
                 <div class="col-12 col-sm-12 col-md-12 col-lg-6">
                     <div class="oh-input-group">
@@ -20,68 +52,19 @@
                     </div>
                 </div>
             </div>
-            <div class="row">
-                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                    <div class="oh-input-group">
-                        <label class="oh-label">{% trans "Branch" %}</label>
-                        {{ bank_form.branch }}
-                        {{ bank_form.branch.errors }}
-                    </div>
-                </div>
-                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                    <div class="oh-input-group">
-                        <label class="oh-label">{% trans "Bank Code" %} #1</label>
-                        {{ bank_form.any_other_code1 }}
-                        {{ bank_form.any_other_code1.errors }}
-                    </div>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-12 col-sm-12 col-md-12 col-lg-12">
-                    <div class="oh-input-group">
-                        <label class="oh-label">{% trans "Bank Address" %}</label>
-                        {{ bank_form.address }}
-                        {{ bank_form.address.errors }}
-                    </div>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                    <label class="oh-label" for="country">{% trans "Country" %}</label>
-                    <select name="country" id="country" class="oh-select oh-select-2"
-                        data-selected="{{ bank_form.country.value|default:'' }}">
-                    </select>
-                    {{ bank_form.country.errors }}
-                </div>
-                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                    <div class="oh-input-group">
-                        <label class="oh-label">{% trans "State" %}</label>
-                        <select name="state" id="state" class="oh-select oh-select-2"
-                            data-selected="{{ bank_form.state.value|default:'' }}">
-
-                        </select>
-                        {{ bank_form.state.errors }}
-                    </div>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                    <div class="oh-input-group">
-                        <label class="oh-label">{% trans "City" %}</label>
-                        {{ bank_form.city }}
-                        {{ bank_form.city.errors }}
-                    </div>
-                </div>
-                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                    <div class="oh-input-group">
-                        <label class="oh-label">{% trans "Bank Code" %} #2</label>
-                        {{ bank_form.any_other_code2 }}
-                        {{ bank_form.any_other_code2.errors }}
+            <div class="row mt-2">
+                <div class="col-12">
+                    <div class="oh-input-group d-flex align-items-center gap-2">
+                        {{ bank_form.is_primary }}
+                        <label class="oh-label mb-0" for="{{ bank_form.is_primary.id_for_label }}">{% trans "Set as Primary Account" %}</label>
                     </div>
                 </div>
             </div>
             <hr class="mt-5 mb-3">
-            <div class="w-100 d-flex align-items-center justify-content-end">
+            <div class="w-100 d-flex align-items-center justify-content-between">
+                <button type="button" class="oh-btn oh-btn--light oh-btn--w-100-resp d-none" id="bankCancelBtn" onclick="cancelBankEdit()">
+                    {% trans "Cancel" %}
+                </button>
                 <button type="submit" class="oh-btn oh-btn--secondary oh-btn--w-100-resp">
                     {% trans "Save" %}
                 </button>
@@ -90,3 +73,22 @@
     </div>
 </div>
 </div>
+
+<script>
+function fillBankForm(id, bankName, accountNumber, isPrimary) {
+    document.getElementById('bankFormId').value = id;
+    document.getElementById('bankFormTitle').textContent = '{% trans "Edit Bank Account" %}';
+    document.getElementById('id_bank_name').value = bankName;
+    document.getElementById('id_account_number').value = accountNumber;
+    document.getElementById('id_is_primary').checked = isPrimary;
+    document.getElementById('bankCancelBtn').classList.remove('d-none');
+    document.querySelector('#bank').scrollIntoView({behavior: 'smooth'});
+}
+
+function cancelBankEdit() {
+    document.getElementById('bankFormId').value = '';
+    document.getElementById('bankFormTitle').textContent = '{% trans "Add Bank Account" %}';
+    document.querySelector('#bank form').reset();
+    document.getElementById('bankCancelBtn').classList.add('d-none');
+}
+</script>

@@ -1,0 +1,112 @@
+{% load i18n %}
+<div class="oh-wrapper">
+    <div class="oh-general__tab-target oh-profile-section mb-4 d-none" id="insurance">
+        <div class="oh-profile-section__card">
+
+            {% if insurance_accounts %}
+            <div class="mb-4">
+                <h6 class="fw-bold mb-3">{% trans "Existing Insurance Records" %}</h6>
+                {% for ins in insurance_accounts %}
+                <div class="border rounded p-3 mb-2 d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>{{ ins.name }}</strong>
+                        <br>
+                        <small class="text-muted">
+                            {% trans "Start" %}: {{ ins.start_date|default:"—" }} &nbsp;|&nbsp;
+                            {% trans "End" %}: {{ ins.end_date|default:"—" }}
+                        </small>
+                        {% if ins.description %}
+                        <br><small class="text-muted">{{ ins.description }}</small>
+                        {% endif %}
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="oh-btn oh-btn--secondary oh-btn--xs"
+                            onclick="fillInsuranceForm({{ ins.id }}, '{{ ins.name|escapejs }}', '{{ ins.description|default:''|escapejs }}', '{{ ins.start_date|default:'' }}', '{{ ins.end_date|default:'' }}')">
+                            {% trans "Edit" %}
+                        </button>
+                        <form method="post" action="{% url 'employee-delete-insurance' ins.id %}" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="oh-btn oh-btn--danger oh-btn--xs"
+                                onclick="return confirm('{% trans "Delete this insurance record?" %}')">
+                                {% trans "Delete" %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <hr>
+            {% endif %}
+
+            <h6 class="fw-bold mb-3" id="insuranceFormTitle">{% trans "Add Insurance" %}</h6>
+            <form method="post" action="{% url 'employee-save-insurance-manager' obj_id %}" id="insuranceForm">
+                {% csrf_token %}
+                <input type="hidden" name="insurance_id" id="insuranceFormId" value="">
+                <div class="row">
+                    <div class="col-12">
+                        <div class="oh-input-group">
+                            <label class="oh-label">{% trans "Insurance Name" %}</label>
+                            {{ insurance_form.name }}
+                            {{ insurance_form.name.errors }}
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-input-group">
+                            <label class="oh-label">{% trans "Start Date" %}</label>
+                            {{ insurance_form.start_date }}
+                            {{ insurance_form.start_date.errors }}
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <div class="oh-input-group">
+                            <label class="oh-label">{% trans "End Date" %}</label>
+                            {{ insurance_form.end_date }}
+                            {{ insurance_form.end_date.errors }}
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12">
+                        <div class="oh-input-group">
+                            <label class="oh-label">{% trans "Description" %}</label>
+                            {{ insurance_form.description }}
+                            {{ insurance_form.description.errors }}
+                        </div>
+                    </div>
+                </div>
+                <hr class="mt-5 mb-3">
+                <div class="w-100 d-flex align-items-center justify-content-between">
+                    <button type="button" class="oh-btn oh-btn--light oh-btn--w-100-resp d-none" id="insuranceCancelBtn" onclick="cancelInsuranceEdit()">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="oh-btn oh-btn--secondary oh-btn--w-100-resp">
+                        {% trans "Save" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function fillInsuranceForm(id, name, description, startDate, endDate) {
+    document.getElementById('insuranceFormId').value = id;
+    document.getElementById('insuranceFormTitle').textContent = '{% trans "Edit Insurance" %}';
+    var form = document.getElementById('insuranceForm');
+    if (form.querySelector('[name="name"]')) form.querySelector('[name="name"]').value = name;
+    if (form.querySelector('[name="description"]')) form.querySelector('[name="description"]').value = description;
+    if (form.querySelector('[name="start_date"]')) form.querySelector('[name="start_date"]').value = startDate;
+    if (form.querySelector('[name="end_date"]')) form.querySelector('[name="end_date"]').value = endDate;
+    document.getElementById('insuranceCancelBtn').classList.remove('d-none');
+    document.querySelector('#insurance').scrollIntoView({behavior: 'smooth'});
+}
+
+function cancelInsuranceEdit() {
+    document.getElementById('insuranceFormId').value = '';
+    document.getElementById('insuranceFormTitle').textContent = '{% trans "Add Insurance" %}';
+    document.getElementById('insuranceForm').reset();
+    document.getElementById('insuranceCancelBtn').classList.add('d-none');
+}
+</script>

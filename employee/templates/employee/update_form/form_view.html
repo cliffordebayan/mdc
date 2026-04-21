@@ -17,12 +17,16 @@
                 <li class="oh-general__tab">
         <a href="#" class="oh-general__tab-link" data-action="general-tab" data-target="#bank">{% trans "Bank Info" %}</a>
     </li>
+                <li class="oh-general__tab">
+        <a href="#" class="oh-general__tab-link" data-action="general-tab" data-target="#insurance">{% trans "Insurance" %}</a>
+    </li>
 </ul>
 </div>
 </section>
 {% include 'employee/update_form/personal_info.html' %}
 {% include 'employee/update_form/work_details.html' %}
 {% include 'employee/update_form/bank_details.html' %}
+{% include 'employee/update_form/insurance_details.html' %}
 
 </div>
 <script>
@@ -44,7 +48,7 @@
       function activeEmpTab() {
         var activeTab = localStorage.getItem("activeEmpTab")
 
-        if (!["#personal", "#work", "#bank"].includes(activeTab)) {
+        if (!["#personal", "#work", "#bank", "#insurance"].includes(activeTab)) {
           activeTab = "#personal";
         }
 

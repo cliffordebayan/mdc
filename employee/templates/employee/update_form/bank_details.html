@@ -2,20 +2,73 @@
 <div class="oh-wrapper">
     <div class="oh-general__tab-target oh-profile-section mb-4 d-none" id="bank">
         <div class="oh-profile-section__card">
-            <form method='post' action=""  >
-                <div id="bankMessage">
+
+            {% if bank_accounts %}
+            <div class="mb-4">
+                <h6 class="fw-bold mb-3">{% trans "Existing Bank Accounts" %}</h6>
+                {% for bank in bank_accounts %}
+                <div class="border rounded p-3 mb-2 d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>{{ bank.bank_name }}</strong>
+                        {% if bank.is_primary %}<span class="badge bg-success ms-2">{% trans "Primary" %}</span>{% endif %}
+                        <br>
+                        <small class="text-muted">{% trans "Account" %}: {{ bank.account_number|default:"—" }}</small>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="oh-btn oh-btn--secondary oh-btn--xs"
+                            onclick="fillBankUpdateForm({{ bank.id }}, '{{ bank.bank_name|escapejs }}', '{{ bank.account_number|default:''|escapejs }}', {{ bank.is_primary|yesno:'true,false' }})">
+                            {% trans "Edit" %}
+                        </button>
+                        <form method="post" action="{% url 'employee-delete-bank-details' bank.id %}" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="oh-btn oh-btn--danger oh-btn--xs"
+                                onclick="return confirm('{% trans "Delete this bank account?" %}')">
+                                {% trans "Delete" %}
+                            </button>
+                        </form>
+                    </div>
                 </div>
+                {% endfor %}
+            </div>
+            <hr>
+            {% endif %}
+
+            <h6 class="fw-bold mb-3" id="bankUpdateFormTitle">{% trans "Add Bank Account" %}</h6>
+            <form method='post' action="" id="bankUpdateForm">
+                <div id="bankMessage"></div>
                 {% csrf_token %}
                 <input type="hidden" name="form" value="bank">
+                <input type="hidden" name="bank_id" id="bankUpdateFormId" value="">
                 {{bank_form.as_p}}
-            <hr class="mt-5 mb-3">
-            <div class="w-100 d-flex align-items-center justify-content-end">
-                <button type="submit" class="oh-btn oh-btn--secondary oh-btn--w-100-resp">
-                {% trans "Save" %}
-                </button>
-            </div>
+                <hr class="mt-5 mb-3">
+                <div class="w-100 d-flex align-items-center justify-content-between">
+                    <button type="button" class="oh-btn oh-btn--light oh-btn--w-100-resp d-none" id="bankUpdateCancelBtn" onclick="cancelBankUpdateEdit()">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="oh-btn oh-btn--secondary oh-btn--w-100-resp">
+                        {% trans "Save" %}
+                    </button>
+                </div>
             </form>
         </div>
     </div>
-    </div>
 </div>
+
+<script>
+function fillBankUpdateForm(id, bankName, accountNumber, isPrimary) {
+    document.getElementById('bankUpdateFormId').value = id;
+    document.getElementById('bankUpdateFormTitle').textContent = '{% trans "Edit Bank Account" %}';
+    var form = document.getElementById('bankUpdateForm');
+    if (form.querySelector('[name="bank_name"]')) form.querySelector('[name="bank_name"]').value = bankName;
+    if (form.querySelector('[name="account_number"]')) form.querySelector('[name="account_number"]').value = accountNumber;
+    if (form.querySelector('[name="is_primary"]')) form.querySelector('[name="is_primary"]').checked = isPrimary;
+    document.getElementById('bankUpdateCancelBtn').classList.remove('d-none');
+}
+
+function cancelBankUpdateEdit() {
+    document.getElementById('bankUpdateFormId').value = '';
+    document.getElementById('bankUpdateFormTitle').textContent = '{% trans "Add Bank Account" %}';
+    document.getElementById('bankUpdateForm').reset();
+    document.getElementById('bankUpdateCancelBtn').classList.add('d-none');
+}
+</script>

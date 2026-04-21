@@ -13,6 +13,7 @@ from employee.models import (
     DisciplinaryAction,
     Employee,
     EmployeeBankDetails,
+    EmployeeInsurance,
     EmployeeNote,
     EmployeeTag,
     EmployeeWorkInformation,
@@ -24,6 +25,7 @@ from employee.models import (
 
 # admin.site.register(Employee)
 admin.site.register(EmployeeBankDetails)
+admin.site.register(EmployeeInsurance)
 admin.site.register([EmployeeNote, EmployeeTag, PolicyMultipleFile, Policy, BonusPoint])
 admin.site.register([DisciplinaryAction, Actiontype])
 

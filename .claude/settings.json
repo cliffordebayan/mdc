@@ -5,7 +5,9 @@
       "Bash(python manage.py makemigrations base)",
       "Read(//c/Users/CLIFFORD/Music/HRIS//**)",
       "Read(//c/Users/CLIFFORD/Music/HRIS/**)",
-      "Bash(python manage.py makemigrations employee)"
+      "Bash(python manage.py makemigrations employee)",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Read(//c/Users/CLIFFORD/Music/**)"
     ]
   }
 }

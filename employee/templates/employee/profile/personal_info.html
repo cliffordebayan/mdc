@@ -28,6 +28,18 @@
                 </div>
                 <div class="row">
                     <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label" for="id_employee_middle_name">{% trans "Middle Name" %}</label>
+                        {{form.employee_middle_name}}
+                        {{form.employee_middle_name.errors}}
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label" for="id_employee_extension">{% trans "Extension" %}</label>
+                        {{form.employee_extension}}
+                        {{form.employee_extension.errors}}
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
                         <label class="oh-label" for="email">{% trans "Email" %}</label>
                         {{form.email}} {{form.email.errors}}
                     </div>

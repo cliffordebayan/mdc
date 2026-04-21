@@ -76,6 +76,7 @@ from employee.forms import (
     EmployeeExportExcelForm,
     EmployeeForm,
     EmployeeGeneralSettingPrefixForm,
+    EmployeeInsuranceForm,
     EmployeeNoteForm,
     EmployeeTagForm,
     EmployeeWorkInformationForm,
@@ -103,6 +104,7 @@ from employee.models import (
     Employee,
     EmployeeBankDetails,
     EmployeeGeneralSetting,
+    EmployeeInsurance,
     EmployeeNote,
     EmployeeTag,
     EmployeeWorkInformation,
@@ -260,9 +262,7 @@ def self_info_update(request):
     user = request.user
     employee = Employee.objects.filter(employee_user_id=user).first()
     badge_id = employee.badge_id
-    bank_form = EmployeeBankDetailsForm(
-        instance=EmployeeBankDetails.objects.filter(employee_id=employee).first()
-    )
+    bank_form = EmployeeBankDetailsForm()
     form = EmployeeForm(instance=Employee.objects.filter(employee_user_id=user).first())
     if request.POST:
         if request.POST.get("employee_first_name") is not None:
@@ -276,19 +276,25 @@ def self_info_update(request):
                 instance.save()
                 messages.success(request, _("Profile updated."))
         elif request.POST.get("any_other_code1") is not None:
-            instance = EmployeeBankDetails.objects.filter(employee_id=employee).first()
-            bank_form = EmployeeBankDetailsForm(request.POST, instance=instance)
+            bank_id = request.POST.get("bank_id")
+            existing = EmployeeBankDetails.objects.filter(id=bank_id, employee_id=employee).first() if bank_id else None
+            bank_form = EmployeeBankDetailsForm(request.POST, instance=existing)
             if bank_form.is_valid():
                 instance = bank_form.save(commit=False)
                 instance.employee_id = employee
                 instance.save()
-                messages.success(request, _("Bank details updated."))
+                if instance.is_primary:
+                    EmployeeBankDetails.objects.filter(employee_id=employee).exclude(pk=instance.pk).update(is_primary=False)
+                messages.success(request, _("Bank details saved."))
+                bank_form = EmployeeBankDetailsForm()
+    bank_accounts = EmployeeBankDetails.objects.filter(employee_id=employee)
     return render(
         request,
         "employee/profile/profile.html",
         {
             "form": form,
             "bank_form": bank_form,
+            "bank_accounts": bank_accounts,
         },
     )
 
@@ -1060,13 +1066,16 @@ def employee_profile_bank_details(request):
     This method is used to fill self bank details
     """
     employee = request.user.employee_get
-    instance = EmployeeBankDetails.objects.filter(employee_id=employee).first()
+    bank_id = request.POST.get("bank_id")
+    instance = EmployeeBankDetails.objects.filter(id=bank_id, employee_id=employee).first() if bank_id else None
     form = EmployeeBankDetailsUpdateForm(request.POST, instance=instance)
     if form.is_valid():
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
         bank_info.save()
-        messages.success(request, _("Bank details updated"))
+        if bank_info.is_primary:
+            EmployeeBankDetails.objects.filter(employee_id=employee).exclude(pk=bank_info.pk).update(is_primary=False)
+        messages.success(request, _("Bank details saved"))
     return HorillaRedirect(request)
 
 
@@ -1391,9 +1400,9 @@ def save_employee_bulk_update(request):
                         employee_id=employee_instance
                     )
                 )
-                employee_bank, created = EmployeeBankDetails.objects.get_or_create(
-                    employee_id=employee_instance
-                )
+                employee_bank = EmployeeBankDetails.objects.filter(employee_id=employee_instance).first()
+                if employee_bank is None:
+                    employee_bank = EmployeeBankDetails.objects.create(employee_id=employee_instance)
             except (ValueError, OverflowError):
                 employee_list.remove(id)
 
@@ -1531,9 +1540,7 @@ def employee_view_update(request, obj_id, **kwargs):
                 employee_id=employee
             ).first()
         )
-        bank_form = EmployeeBankDetailsForm(
-            instance=EmployeeBankDetails.objects.filter(employee_id=employee).first()
-        )
+        bank_form = EmployeeBankDetailsForm()
         if request.POST:
             if request.POST.get("form") == "personal":
                 form = EmployeeForm(request.POST, instance=employee)
@@ -1572,17 +1579,20 @@ def employee_view_update(request, obj_id, **kwargs):
                     ).first()
                 )
             elif request.POST.get("form") == "bank":
-                instance = EmployeeBankDetails.objects.filter(
-                    employee_id=employee
-                ).first()
-                bank_form = EmployeeBankDetailsUpdateForm(
-                    request.POST, instance=instance
-                )
+                bank_id = request.POST.get("bank_id")
+                existing = EmployeeBankDetails.objects.filter(id=bank_id, employee_id=employee).first() if bank_id else None
+                bank_form = EmployeeBankDetailsUpdateForm(request.POST, instance=existing)
                 if bank_form.is_valid():
                     instance = bank_form.save(commit=False)
                     instance.employee_id = employee
                     instance.save()
+                    if instance.is_primary:
+                        EmployeeBankDetails.objects.filter(employee_id=employee).exclude(pk=instance.pk).update(is_primary=False)
                     messages.success(request, _("Employee bank details updated."))
+                    bank_form = EmployeeBankDetailsForm()
+        bank_accounts = EmployeeBankDetails.objects.filter(employee_id=employee)
+        insurance_form = EmployeeInsuranceForm()
+        insurance_accounts = EmployeeInsurance.objects.filter(employee_id=employee)
         return render(
             request,
             "employee/update_form/form_view.html",
@@ -1591,6 +1601,9 @@ def employee_view_update(request, obj_id, **kwargs):
                 "form": form,
                 "work_form": work_form,
                 "bank_form": bank_form,
+                "bank_accounts": bank_accounts,
+                "insurance_form": insurance_form,
+                "insurance_accounts": insurance_accounts,
                 "work_info_history": work_info_history,
             },
         )
@@ -1728,11 +1741,7 @@ def employee_create_update_personal_info(request, obj_id=None):
                     employee_id=employee
                 ).first()
             )
-            bank_form = EmployeeBankDetailsForm(
-                instance=EmployeeBankDetails.objects.filter(
-                    employee_id=employee
-                ).first()
-            )
+            bank_form = EmployeeBankDetailsForm()
             return redirect(
                 f"employee-view-update/{form.instance.id}/",
                 data={"form": form, "work_form": work_form, "bank_form": bank_form},
@@ -1810,19 +1819,20 @@ def employee_update_bank_details(request, obj_id=None):
     This method is used to render form to create employee's bank information.
     """
     employee = Employee.objects.filter(id=obj_id).first()
-    form = EmployeeBankDetailsForm(
-        request.POST,
-        instance=EmployeeBankDetails.objects.filter(employee_id=employee).first(),
-    )
+    bank_id = request.POST.get("bank_id")
+    existing = EmployeeBankDetails.objects.filter(id=bank_id, employee_id=employee).first() if bank_id else None
+    form = EmployeeBankDetailsForm(request.POST, instance=existing)
     if form.is_valid() and employee is not None:
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
         bank_info.save()
+        if bank_info.is_primary:
+            EmployeeBankDetails.objects.filter(employee_id=employee).exclude(pk=bank_info.pk).update(is_primary=False)
         return HttpResponse(
             """
             <div class="oh-alert-container">
                 <div class="oh-alert oh-alert--animated oh-alert--success">
-                    Bank details updated
+                    Bank details saved
                 </div>
             </div>
         """
@@ -1979,13 +1989,10 @@ def employee_update(request, obj_id):
     employee = Employee.objects.get(id=obj_id)
     form = EmployeeForm(instance=employee)
     work_info = EmployeeWorkInformation.objects.filter(employee_id=employee).first()
-    bank_info = EmployeeBankDetails.objects.filter(employee_id=employee).first()
     work_form = EmployeeWorkInformationForm()
     bank_form = EmployeeBankDetailsUpdateForm()
     if work_info is not None:
         work_form = EmployeeWorkInformationForm(instance=work_info)
-    if bank_info is not None:
-        bank_form = EmployeeBankDetailsUpdateForm(instance=bank_info)
     if request.method == "POST":
         if request.user.has_perm("employee.change_employee"):
             form = EmployeeForm(request.POST, request.FILES, instance=employee)
@@ -2399,7 +2406,7 @@ def employee_work_info_view_update(request, obj_id):
     work_information = EmployeeWorkInformation.objects.get(id=obj_id)
     form = EmployeeForm(instance=work_information.employee_id)
     bank_form = EmployeeBankDetailsUpdateForm(
-        instance=work_information.employee_id.employee_bank_details
+        instance=work_information.employee_id.get_primary_bank()
     )
     work_form = EmployeeWorkInformationUpdateForm(
         request.POST,
@@ -2491,6 +2498,85 @@ def employee_work_information_delete(request, obj_id):
         messages.error(request, _("You cannot delete this Employee work information"))
 
     return redirect("/employee/employee-work-information-view")
+
+
+@login_required
+@require_http_methods(["POST", "DELETE"])
+def employee_delete_bank_details(request, obj_id):
+    """
+    This method is used to delete a specific employee bank account.
+    args:
+        obj_id : EmployeeBankDetails instance id
+    """
+    user = request.user
+    try:
+        bank = EmployeeBankDetails.objects.get(id=obj_id)
+        employee = bank.employee_id
+        if (
+            user == employee.employee_user_id
+            or user.has_perm("employee.delete_employeebankdetails")
+        ):
+            bank.delete()
+            messages.success(request, _("Bank account deleted"))
+        else:
+            messages.error(request, _("You do not have permission to delete this bank account"))
+    except EmployeeBankDetails.DoesNotExist:
+        messages.error(request, _("Bank account not found"))
+    return HorillaRedirect(request)
+
+
+@login_required
+@require_http_methods(["POST"])
+def employee_save_insurance(request, obj_id=None):
+    """
+    Create or update an employee insurance record.
+    obj_id is the employee id when creating, or reused for employee lookup.
+    """
+    user = request.user
+    insurance_id = request.POST.get("insurance_id")
+    # Determine the employee
+    if obj_id:
+        employee = Employee.objects.filter(id=obj_id).first()
+        if not (user.has_perm("employee.change_employeeinsurance") or (employee and user == employee.employee_user_id)):
+            messages.error(request, _("Permission denied"))
+            return HorillaRedirect(request)
+    else:
+        employee = getattr(user, "employee_get", None)
+    if employee is None:
+        messages.error(request, _("Employee not found"))
+        return HorillaRedirect(request)
+    existing = EmployeeInsurance.objects.filter(id=insurance_id, employee_id=employee).first() if insurance_id else None
+    form = EmployeeInsuranceForm(request.POST, instance=existing)
+    if form.is_valid():
+        record = form.save(commit=False)
+        record.employee_id = employee
+        record.save()
+        messages.success(request, _("Insurance record saved"))
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                messages.error(request, f"{field}: {error}")
+    return HorillaRedirect(request)
+
+
+@login_required
+@require_http_methods(["POST", "DELETE"])
+def employee_delete_insurance(request, obj_id):
+    """
+    Delete a specific employee insurance record.
+    """
+    user = request.user
+    try:
+        record = EmployeeInsurance.objects.get(id=obj_id)
+        employee = record.employee_id
+        if user == employee.employee_user_id or user.has_perm("employee.delete_employeeinsurance"):
+            record.delete()
+            messages.success(request, _("Insurance record deleted"))
+        else:
+            messages.error(request, _("Permission denied"))
+    except EmployeeInsurance.DoesNotExist:
+        messages.error(request, _("Insurance record not found"))
+    return HorillaRedirect(request)
 
 
 @login_required

@@ -84,6 +84,13 @@ class Employee(models.Model):
     employee_last_name = models.CharField(
         max_length=200, null=True, blank=True, verbose_name=_("Last Name")
     )
+    employee_middle_name = models.CharField(
+        max_length=200, null=True, blank=True, verbose_name=_("Middle Name")
+    )
+    employee_extension = models.CharField(
+        max_length=20, null=True, blank=True, verbose_name=_("Extension"),
+        help_text="e.g. Jr., Sr., III"
+    )
     employee_profile = models.ImageField(upload_to=upload_path, null=True, blank=True)
     email = models.EmailField(max_length=254, unique=True)
     phone = models.CharField(
@@ -169,11 +176,15 @@ class Employee(models.Model):
         """
         Method will return employee full name
         """
-        return (
-            f"{self.employee_first_name } {self.employee_last_name}"
-            if self.employee_last_name
-            else self.employee_first_name
-        )
+        parts = [self.employee_first_name]
+        if self.employee_middle_name:
+            parts.append(self.employee_middle_name)
+        if self.employee_last_name:
+            parts.append(self.employee_last_name)
+        name = " ".join(parts)
+        if self.employee_extension:
+            name += f" {self.employee_extension}"
+        return name
 
     def get_company(self):
         """
@@ -450,6 +461,9 @@ class Employee(models.Model):
         )
         badge_id = (f"({self.badge_id})") if self.badge_id is not None else ""
         return f"{self.employee_first_name} {last_name} {badge_id}"
+
+    def get_primary_bank(self):
+        return self.employee_bank_details.filter(is_primary=True).first() or self.employee_bank_details.first()
 
     def check_online(self):
         """
@@ -784,7 +798,7 @@ class EmployeeBankDetails(HorillaModel):
     EmployeeBankDetails model
     """
 
-    employee_id = models.OneToOneField(
+    employee_id = models.ForeignKey(
         Employee,
         on_delete=models.CASCADE,
         null=True,
@@ -797,18 +811,8 @@ class EmployeeBankDetails(HorillaModel):
         null=True,
         blank=False,
     )
-    branch = models.CharField(max_length=50, null=True)
-    address = models.TextField(max_length=255, null=True)
-    country = models.CharField(max_length=50, blank=True, null=True)
-    state = models.CharField(max_length=50, blank=True)
-    city = models.CharField(max_length=50, blank=True)
-    any_other_code1 = models.CharField(
-        max_length=50, verbose_name="Bank Code #1", null=True
-    )
-    any_other_code2 = models.CharField(
-        max_length=50, null=True, blank=True, verbose_name="Bank Code #2"
-    )
     additional_info = models.JSONField(null=True, blank=True)
+    is_primary = models.BooleanField(default=False, verbose_name=_("Primary Account"))
     objects = HorillaCompanyManager(
         related_company_field="employee_id__employee_work_info__company_id"
     )
@@ -823,8 +827,10 @@ class EmployeeBankDetails(HorillaModel):
     def clean(self):
         if self.account_number is not None:
             bank_details = EmployeeBankDetails.objects.exclude(
+                pk=self.pk
+            ).filter(account_number=self.account_number).exclude(
                 employee_id=self.employee_id
-            ).filter(account_number=self.account_number)
+            )
             if bank_details:
                 raise ValidationError(
                     {
@@ -833,6 +839,34 @@ class EmployeeBankDetails(HorillaModel):
                         )
                     }
                 )
+
+
+class EmployeeInsurance(HorillaModel):
+    """
+    EmployeeInsurance model — stores insurance policies per employee.
+    """
+
+    employee_id = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        null=True,
+        related_name="employee_insurance",
+        verbose_name=_("Employee"),
+    )
+    name = models.CharField(max_length=100, verbose_name=_("Insurance Name"))
+    description = models.TextField(null=True, blank=True, verbose_name=_("Description"))
+    start_date = models.DateField(null=True, blank=True, verbose_name=_("Start Date"))
+    end_date = models.DateField(null=True, blank=True, verbose_name=_("End Date"))
+    objects = HorillaCompanyManager(
+        related_company_field="employee_id__employee_work_info__company_id"
+    )
+
+    class Meta:
+        verbose_name = _("Employee Insurance")
+        verbose_name_plural = _("Employee Insurance")
+
+    def __str__(self) -> str:
+        return f"{self.employee_id} - {self.name}"
 
 
 class NoteFiles(HorillaModel):

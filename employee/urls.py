@@ -91,6 +91,26 @@ urlpatterns = [
         name="employee-update-bank-details",
     ),
     path(
+        "employee-delete-bank-details/<int:obj_id>/",
+        views.employee_delete_bank_details,
+        name="employee-delete-bank-details",
+    ),
+    path(
+        "employee-save-insurance",
+        views.employee_save_insurance,
+        name="employee-save-insurance",
+    ),
+    path(
+        "employee-save-insurance/<int:obj_id>/",
+        views.employee_save_insurance,
+        name="employee-save-insurance-manager",
+    ),
+    path(
+        "employee-delete-insurance/<int:obj_id>/",
+        views.employee_delete_insurance,
+        name="employee-delete-insurance",
+    ),
+    path(
         "employee-filter-view", views.employee_filter_view, name="employee-filter-view"
     ),
     path("employee-view-card", views.employee_card, name="employee-view-card"),

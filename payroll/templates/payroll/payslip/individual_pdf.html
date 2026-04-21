@@ -138,7 +138,7 @@
 									>{% trans "Bank Acc./Cheque No. :" %}</span
 								>
 								<span class="oh-payslip__employee-detail-value"
-									>{{employee.employee_bank_details.account_number}}</span
+									>{{employee.get_primary_bank.account_number}}</span
 								>
 							</li>
 						</ul>

@@ -270,7 +270,7 @@
                 </td>
                 <td class="w-50">
                   <span class="oh-payslip-td-head">{% trans "Bank Acc./Cheque No :" %}</span>
-                  <span class="oh-payslip-td-value">{{employee.employee_bank_details.account_number}}</span>
+                  <span class="oh-payslip-td-value">{{employee.get_primary_bank.account_number}}</span>
                 </td>
               </tr>
             </tbody>

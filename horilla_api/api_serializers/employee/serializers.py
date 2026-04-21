@@ -27,9 +27,11 @@ class EmployeeListSerializer(serializers.ModelSerializer):
     employee_work_info_id = serializers.CharField(
         source="employee_work_info.id", read_only=True
     )
-    employee_bank_details_id = serializers.CharField(
-        source="employee_bank_details.id", read_only=True
-    )
+    employee_bank_details_id = serializers.SerializerMethodField()
+
+    def get_employee_bank_details_id(self, obj):
+        bank = obj.get_primary_bank()
+        return bank.id if bank else None
 
     class Meta:
         model = Employee
@@ -61,9 +63,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
     employee_work_info_id = serializers.CharField(
         source="employee_work_info.id", read_only=True
     )
-    employee_bank_details_id = serializers.CharField(
-        source="employee_bank_details.id", read_only=True
-    )
+    employee_bank_details_id = serializers.SerializerMethodField()
+
+    def get_employee_bank_details_id(self, obj):
+        bank = obj.get_primary_bank()
+        return bank.id if bank else None
 
     class Meta:
         model = Employee
