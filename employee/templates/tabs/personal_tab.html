@@ -115,6 +115,38 @@
 						<span
 							class="oh-profile__info-value">{{employee.emergency_contact_relation|default:_("None")}}</span>
 					</li>
+
+					<li class="oh-profile__card-info-item">
+						<span class="oh-profile__info-label mb-1">
+							<ion-icon name="card-outline"></ion-icon>
+							<span>{% trans "TIN Number" %}</span>
+						</span>
+						<span class="oh-profile__info-value">{{employee.tin_number|default:_("None")}}</span>
+					</li>
+
+					<li class="oh-profile__card-info-item">
+						<span class="oh-profile__info-label mb-1">
+							<ion-icon name="card-outline"></ion-icon>
+							<span>{% trans "SSS Number" %}</span>
+						</span>
+						<span class="oh-profile__info-value">{{employee.sss_number|default:_("None")}}</span>
+					</li>
+
+					<li class="oh-profile__card-info-item">
+						<span class="oh-profile__info-label mb-1">
+							<ion-icon name="card-outline"></ion-icon>
+							<span>{% trans "HDMF Number" %}</span>
+						</span>
+						<span class="oh-profile__info-value">{{employee.hdmf_number|default:_("None")}}</span>
+					</li>
+
+					<li class="oh-profile__card-info-item">
+						<span class="oh-profile__info-label mb-1">
+							<ion-icon name="card-outline"></ion-icon>
+							<span>{% trans "PhilHealth Number" %}</span>
+						</span>
+						<span class="oh-profile__info-value">{{employee.philhealth_number|default:_("None")}}</span>
+					</li>
 				</ul>
 			</div>
 		</div>
@@ -274,8 +306,7 @@
 													{% for i in employee.employee_work_info.tags.all %}
 														{% with tag_width=i.title|length %}
 														<span class="oh-profile__info-value mt-1 mb-1 mr-1"
-															style="background-color: {{ i.color }};
-																		font-size: .8rem; padding: 4px 10px; border-radius: 18px; font-weight: 600; width: {{ tag_width }}em;">{{ i.title }}</span>
+															style="background-color: {{ i.color }}; font-size: .8rem; padding: 4px 10px; border-radius: 18px; font-weight: 600; width: {{ tag_width }}em;">{{ i.title }}</span>
 														{% endwith %}
 													{% endfor %}
 												{% else %}

@@ -104,6 +104,18 @@ class Employee(models.Model):
     emergency_contact = models.CharField(max_length=15, null=True, blank=True)
     emergency_contact_name = models.CharField(max_length=20, null=True, blank=True)
     emergency_contact_relation = models.CharField(max_length=20, null=True, blank=True)
+    tin_number = models.CharField(
+        max_length=50, null=True, blank=True, verbose_name=_("TIN Number")
+    )
+    sss_number = models.CharField(
+        max_length=50, null=True, blank=True, verbose_name=_("SSS Number")
+    )
+    hdmf_number = models.CharField(
+        max_length=50, null=True, blank=True, verbose_name=_("HDMF Number")
+    )
+    philhealth_number = models.CharField(
+        max_length=50, null=True, blank=True, verbose_name=_("PhilHealth Number")
+    )
     is_active = models.BooleanField(default=True)
     additional_info = models.JSONField(null=True, blank=True)
     is_from_onboarding = models.BooleanField(

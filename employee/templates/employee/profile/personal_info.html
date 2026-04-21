@@ -123,6 +123,26 @@
                         {{form.children}} {{form.children.errors}}
                     </div>
                 </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label d-block">{% trans "TIN Number" %}</label>
+                        {{form.tin_number}} {{form.tin_number.errors}}
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label d-block">{% trans "SSS Number" %}</label>
+                        {{form.sss_number}} {{form.sss_number.errors}}
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label d-block">{% trans "HDMF Number" %}</label>
+                        {{form.hdmf_number}} {{form.hdmf_number.errors}}
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label d-block">{% trans "PhilHealth Number" %}</label>
+                        {{form.philhealth_number}} {{form.philhealth_number.errors}}
+                    </div>
+                </div>
                 <hr class="mt-5 mb-3" />
                 <div class="w-100 d-flex align-items-center justify-content-end">
                     <button type="submit" class="oh-btn oh-btn--secondary oh-btn--w-100-resp">
