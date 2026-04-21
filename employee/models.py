@@ -25,7 +25,10 @@ from PIL import Image
 from accessibility.accessibility import ACCESSBILITY_FEATURE
 from base.horilla_company_manager import HorillaCompanyManager
 from base.models import (
+    Branch,
+    BusinessUnit,
     Company,
+    CostCenter,
     Department,
     EmployeeShift,
     EmployeeType,
@@ -686,6 +689,27 @@ class EmployeeWorkInformation(models.Model):
         blank=True,
         null=True,
         verbose_name=_("Company"),
+    )
+    branch_id = models.ForeignKey(
+        Branch,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        verbose_name=_("Branch"),
+    )
+    cost_center_id = models.ForeignKey(
+        CostCenter,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        verbose_name=_("Cost Center"),
+    )
+    business_unit_id = models.ForeignKey(
+        BusinessUnit,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        verbose_name=_("Business Unit"),
     )
     email = models.EmailField(
         max_length=254, blank=True, null=True, verbose_name=_("Work Email")

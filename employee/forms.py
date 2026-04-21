@@ -384,6 +384,10 @@ class EmployeeWorkInformationForm(ModelForm):
             "Shift": "#dynamicShift",
         }
 
+        for field_name in ["branch_id", "cost_center_id", "business_unit_id"]:
+            if field_name in self.fields:
+                self.fields[field_name].widget.attrs.update({"class": "oh-select oh-select-2"})
+
         for label, field in self.fields.items():
             if isinstance(field, forms.ModelChoiceField) and field.label in field_names:
                 if field.label is not None:
