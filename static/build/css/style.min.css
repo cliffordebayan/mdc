@@ -7080,7 +7080,7 @@ body {
 }
 
 .oh-navbar__toggle-menu {
-  margin-right: 0.35rem;
+  margin-right: 0.45rem;
 }
 
 .oh-navbar__page-title {
@@ -7089,6 +7089,9 @@ body {
 @media (max-width: 1199.98px) {
   .oh-navbar__page-title {
     display: none;
+  }
+  .oh-navbar__toggle-menu {
+    margin-left: 0.45rem;
   }
 }
 @media (max-width: 767.98px) {
