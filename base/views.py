@@ -66,8 +66,11 @@ from base.forms import (
     AuditTagForm,
     ChangePasswordForm,
     ChangeUsernameForm,
+    BranchForm,
+    BusinessUnitForm,
     CompanyForm,
     CompanyLeaveForm,
+    CostCenterForm,
     DepartmentForm,
     DriverForm,
     DynamicMailConfForm,
@@ -126,7 +129,10 @@ from base.models import (
     AnnouncementExpire,
     BaserequestFile,
     BiometricAttendance,
+    Branch,
+    BusinessUnit,
     Company,
+    CostCenter,
     CompanyLeaves,
     DashboardEmployeeCharts,
     Department,
@@ -1828,6 +1834,134 @@ def company_update(request, id, **kwargs):
             return HorillaRedirect(request)
     return render(
         request, "base/company/company_form.html", {"form": form, "company": company}
+    )
+
+
+@login_required
+@hx_request_required
+@permission_required("base.add_branch")
+def branch_create(request):
+    form = BranchForm()
+    if request.method == "POST":
+        form = BranchForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Branch has been created successfully!"))
+            return HorillaRedirect(request)
+    return render(request, "base/branch/branch_form.html", {"form": form})
+
+
+@login_required
+@permission_required("base.view_branch")
+def branch_view(request):
+    branches = Branch.objects.all()
+    return render(
+        request,
+        "base/branch/branch.html",
+        {"branches": branches, "model": Branch()},
+    )
+
+
+@login_required
+@hx_request_required
+@permission_required("base.change_branch")
+def branch_update(request, id, **kwargs):
+    branch = Branch.objects.get(id=id)
+    form = BranchForm(instance=branch)
+    if request.method == "POST":
+        form = BranchForm(request.POST, instance=branch)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Branch updated"))
+            return HorillaRedirect(request)
+    return render(request, "base/branch/branch_form.html", {"form": form, "branch": branch})
+
+
+@login_required
+@hx_request_required
+@permission_required("base.add_costcenter")
+def cost_center_create(request):
+    form = CostCenterForm()
+    if request.method == "POST":
+        form = CostCenterForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Cost Center has been created successfully!"))
+            return HorillaRedirect(request)
+    return render(request, "base/cost_center/cost_center_form.html", {"form": form})
+
+
+@login_required
+@permission_required("base.view_costcenter")
+def cost_center_view(request):
+    cost_centers = CostCenter.objects.all()
+    return render(
+        request,
+        "base/cost_center/cost_center.html",
+        {"cost_centers": cost_centers, "model": CostCenter()},
+    )
+
+
+@login_required
+@hx_request_required
+@permission_required("base.change_costcenter")
+def cost_center_update(request, id, **kwargs):
+    cost_center = CostCenter.objects.get(id=id)
+    form = CostCenterForm(instance=cost_center)
+    if request.method == "POST":
+        form = CostCenterForm(request.POST, instance=cost_center)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Cost Center updated"))
+            return HorillaRedirect(request)
+    return render(
+        request,
+        "base/cost_center/cost_center_form.html",
+        {"form": form, "cost_center": cost_center},
+    )
+
+
+@login_required
+@hx_request_required
+@permission_required("base.add_businessunit")
+def business_unit_create(request):
+    form = BusinessUnitForm()
+    if request.method == "POST":
+        form = BusinessUnitForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Business Unit has been created successfully!"))
+            return HorillaRedirect(request)
+    return render(request, "base/business_unit/business_unit_form.html", {"form": form})
+
+
+@login_required
+@permission_required("base.view_businessunit")
+def business_unit_view(request):
+    business_units = BusinessUnit.objects.all()
+    return render(
+        request,
+        "base/business_unit/business_unit.html",
+        {"business_units": business_units, "model": BusinessUnit()},
+    )
+
+
+@login_required
+@hx_request_required
+@permission_required("base.change_businessunit")
+def business_unit_update(request, id, **kwargs):
+    business_unit = BusinessUnit.objects.get(id=id)
+    form = BusinessUnitForm(instance=business_unit)
+    if request.method == "POST":
+        form = BusinessUnitForm(request.POST, instance=business_unit)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Business Unit updated"))
+            return HorillaRedirect(request)
+    return render(
+        request,
+        "base/business_unit/business_unit_form.html",
+        {"form": form, "business_unit": business_unit},
     )
 
 

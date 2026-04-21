@@ -1,0 +1,49 @@
+{% load i18n %}
+
+<div class="oh-modal__dialog-header pb-0">
+    <h2 class="oh-modal__dialog-title" id="editModal1ModalLabel">
+        {% if cost_center.id %} {% trans "Update" %} {% else %} {% trans "Create" %} {% endif %} {% trans "Cost Center" %}
+    </h2>
+    <button class="oh-modal__close" aria-label="{% trans 'Close' %}">
+        <ion-icon name="close-outline"></ion-icon>
+    </button>
+</div>
+
+<div class="oh-modal__dialog-body">
+    <form hx-post="{% if cost_center.id %}{% url 'cost-center-update' cost_center.id %}{% else %}{% url 'cost-center-create' %}{% endif %}"
+        hx-target="{% if cost_center.id %}#objectUpdateModalTarget{% else %}#objectCreateModalTarget{% endif %}"
+        class="oh-profile-section"
+    >
+        {% csrf_token %}
+
+        <div class="oh-inner-sidebar-content__body">
+            <div class="col-12">{{form.non_field_errors}}</div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.name.id_for_label }}" class="mb-1">{{ form.name.label }}</label>
+                {{ form.name }} {{ form.name.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.code.id_for_label }}" class="mb-1">{{ form.code.label }}</label>
+                {{ form.code }} {{ form.code.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.description.id_for_label }}" class="mb-1">{{ form.description.label }}</label>
+                {{ form.description }} {{ form.description.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.company.id_for_label }}" class="mb-1">{{ form.company.label }}</label>
+                {{ form.company }} {{ form.company.errors }}
+            </div>
+        </div>
+
+        <div class="oh-modal__dialog-footer p-0 mt-3">
+            <button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">
+                {% trans "Save" %}
+            </button>
+        </div>
+    </form>
+</div>

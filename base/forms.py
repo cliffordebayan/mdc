@@ -40,7 +40,10 @@ from base.models import (
     Attachment,
     AttendanceAllowedIP,
     BaserequestFile,
+    Branch,
+    BusinessUnit,
     Company,
+    CostCenter,
     CompanyLeaves,
     Department,
     DriverViewed,
@@ -522,6 +525,27 @@ class CompanyForm(ModelForm):
         if icon:
             self.validate_image(icon)
         return icon
+
+
+class BranchForm(ModelForm):
+    class Meta:
+        model = Branch
+        fields = "__all__"
+        exclude = ["is_active"]
+
+
+class CostCenterForm(ModelForm):
+    class Meta:
+        model = CostCenter
+        fields = "__all__"
+        exclude = ["is_active"]
+
+
+class BusinessUnitForm(ModelForm):
+    class Meta:
+        model = BusinessUnit
+        fields = "__all__"
+        exclude = ["is_active"]
 
 
 class DepartmentForm(ModelForm):

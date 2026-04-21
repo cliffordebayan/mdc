@@ -210,6 +210,36 @@
 													>
 												{% endif %}
 											</div>
+											<div class="oh-input-group">
+												{% if perms.base.view_branch %}
+													<a
+														id="branch"
+														href="{% url 'branch-view' %}"
+														class="oh-inner-sidebar__link oh-dropdown__link"
+														>{% trans "Branch" %}</a
+													>
+												{% endif %}
+											</div>
+											<div class="oh-input-group">
+												{% if perms.base.view_costcenter %}
+													<a
+														id="costCenter"
+														href="{% url 'cost-center-view' %}"
+														class="oh-inner-sidebar__link oh-dropdown__link"
+														>{% trans "Cost Center" %}</a
+													>
+												{% endif %}
+											</div>
+											<div class="oh-input-group">
+												{% if perms.base.view_businessunit %}
+													<a
+														id="businessUnit"
+														href="{% url 'business-unit-view' %}"
+														class="oh-inner-sidebar__link oh-dropdown__link"
+														>{% trans "Business Unit" %}</a
+													>
+												{% endif %}
+											</div>
 										</div>
 									</div>
 								</div>

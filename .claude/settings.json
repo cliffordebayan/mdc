@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep *)",
+      "Bash(python manage.py makemigrations base)",
+      "Read(//c/Users/CLIFFORD/Music/HRIS//**)",
+      "Read(//c/Users/CLIFFORD/Music/HRIS/**)"
+    ]
+  }
+}

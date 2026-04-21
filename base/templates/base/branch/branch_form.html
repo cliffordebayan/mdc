@@ -1,0 +1,71 @@
+{% load i18n %}
+
+<div class="oh-modal__dialog-header pb-0">
+    <h2 class="oh-modal__dialog-title" id="editModal1ModalLabel">
+        {% if branch.id %} {% trans "Update" %} {% else %} {% trans "Create" %} {% endif %} {% trans "Branch" %}
+    </h2>
+    <button class="oh-modal__close" aria-label="{% trans 'Close' %}">
+        <ion-icon name="close-outline"></ion-icon>
+    </button>
+</div>
+
+<div class="oh-modal__dialog-body">
+    <form hx-post="{% if branch.id %}{% url 'branch-update' branch.id %}{% else %}{% url 'branch-create' %}{% endif %}"
+        hx-target="{% if branch.id %}#objectUpdateModalTarget{% else %}#objectCreateModalTarget{% endif %}"
+        class="oh-profile-section"
+    >
+        {% csrf_token %}
+
+        <div class="oh-inner-sidebar-content__body">
+            <div class="col-12">{{form.non_field_errors}}</div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.branch.id_for_label }}" class="mb-1">{{ form.branch.label }}</label>
+                {{ form.branch }} {{ form.branch.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.branch_code.id_for_label }}" class="mb-1">{{ form.branch_code.label }}</label>
+                {{ form.branch_code }} {{ form.branch_code.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.company.id_for_label }}" class="mb-1">{{ form.company.label }}</label>
+                {{ form.company }} {{ form.company.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.address.id_for_label }}" class="mb-1">{{ form.address.label }}</label>
+                {{ form.address }} {{ form.address.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.country.id_for_label }}" class="mb-1">{{ form.country.label }}</label>
+                <select name="country" id="{{ form.country.id_for_label }}" class="oh-select oh-select-2" data-selected="{{ form.country.value|default:'' }}"></select>
+                {{ form.country.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.state.id_for_label }}" class="mb-1">{{ form.state.label }}</label>
+                <select name="state" id="{{ form.state.id_for_label }}" class="oh-select oh-select-2" data-selected="{{ form.state.value|default:'' }}"></select>
+                {{ form.state.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.city.id_for_label }}" class="mb-1">{{ form.city.label }}</label>
+                {{ form.city }} {{ form.city.errors }}
+            </div>
+
+            <div class="oh-input-group mb-2">
+                <label for="{{ form.zip.id_for_label }}" class="mb-1">{{ form.zip.label }}</label>
+                {{ form.zip }} {{ form.zip.errors }}
+            </div>
+        </div>
+
+        <div class="oh-modal__dialog-footer p-0 mt-3">
+            <button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">
+                {% trans "Save" %}
+            </button>
+        </div>
+    </form>
+</div>

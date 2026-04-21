@@ -4,6 +4,7 @@
 		<div class="oh-sticky-table__thead">
 			<div class="oh-sticky-table__tr">
 				<div class="oh-sticky-table__th">{% trans "Department" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Code" %}</div>
 				{% if perms.base.change_department or perms.base.delete_department %}
 				<div class="oh-sticky-table__th">{% trans "Actions" %}</div>
 				{% endif %}
@@ -13,6 +14,7 @@
 			{% for dep in departments %}
 				<div class="oh-sticky-table__tr" draggable="true" id="departmentTr{{dep.id}}">
 					<div class="oh-sticky-table__td">{{dep}}</div>
+					<div class="oh-sticky-table__td">{{dep.code|default:"-"}}</div>
 					{% if perms.base.change_department or perms.base.delete_department %}
 						<div class="oh-sticky-table__td">
 							<div class="oh-btn-group">

@@ -10,7 +10,10 @@ from simple_history.admin import SimpleHistoryAdmin
 from base.models import (
     Announcement,
     Attachment,
+    Branch,
+    BusinessUnit,
     Company,
+    CostCenter,
     CompanyLeaves,
     DashboardEmployeeCharts,
     Department,
@@ -41,7 +44,10 @@ from base.models import (
 
 # Register your models here.
 
+admin.site.register(Branch)
+admin.site.register(BusinessUnit)
 admin.site.register(Company)
+admin.site.register(CostCenter)
 admin.site.register(Department, SimpleHistoryAdmin)
 admin.site.register(JobPosition)
 admin.site.register(JobRole)

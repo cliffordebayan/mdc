@@ -99,6 +99,81 @@ class Company(HorillaModel):
         return str(self.company)
 
 
+class Branch(HorillaModel):
+    branch = models.CharField(max_length=50, verbose_name=_("Branch Name"))
+    branch_code = models.CharField(max_length=20, verbose_name=_("Branch Code"))
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        verbose_name=_("Company"),
+    )
+    address = models.TextField(max_length=255)
+    country = models.CharField(max_length=50)
+    state = models.CharField(max_length=50)
+    city = models.CharField(max_length=50)
+    zip = models.CharField(max_length=20)
+    objects = models.Manager()
+
+    class Meta:
+        verbose_name = _("Branch")
+        verbose_name_plural = _("Branches")
+        unique_together = ["branch", "branch_code"]
+        app_label = "base"
+
+    def __str__(self):
+        return f"{self.branch} ({self.branch_code})"
+
+
+class CostCenter(HorillaModel):
+    name = models.CharField(max_length=100, verbose_name=_("Name"))
+    code = models.CharField(max_length=20, unique=True, verbose_name=_("Code"))
+    description = models.TextField(
+        max_length=255, blank=True, null=True, verbose_name=_("Description")
+    )
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        verbose_name=_("Company"),
+    )
+    objects = models.Manager()
+
+    class Meta:
+        verbose_name = _("Cost Center")
+        verbose_name_plural = _("Cost Centers")
+        app_label = "base"
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
+class BusinessUnit(HorillaModel):
+    name = models.CharField(max_length=100, verbose_name=_("Name"))
+    code = models.CharField(max_length=20, unique=True, verbose_name=_("Code"))
+    description = models.TextField(
+        max_length=255, blank=True, null=True, verbose_name=_("Description")
+    )
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        verbose_name=_("Company"),
+    )
+    objects = models.Manager()
+
+    class Meta:
+        verbose_name = _("Business Unit")
+        verbose_name_plural = _("Business Units")
+        app_label = "base"
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
 class Department(HorillaModel):
     """
     Department model
@@ -106,6 +181,9 @@ class Department(HorillaModel):
 
     department = models.CharField(
         max_length=50, blank=False, verbose_name=_("Department")
+    )
+    code = models.CharField(
+        max_length=20, blank=True, null=True, verbose_name=_("Code")
     )
     company_id = models.ManyToManyField(Company, blank=True, verbose_name=_("Company"))
 
