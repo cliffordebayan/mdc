@@ -90,6 +90,16 @@
                     {{work_form.employee_status.errors}}
                     {{work_form.employee_status}}
                 </div>
+                <div class="col-md-6 mb-4">
+                    {{work_form.pin.errors}}
+                    <div class="oh-password-input-container">
+                        {{work_form.pin}}
+                        <button type="button" class="oh-btn oh-btn--transparent oh-pin-toggle" style="position:absolute;top:1px;right:1px;height:100%;font-size:1.25rem;">
+                            <ion-icon class="oh-passowrd-input__show-icon" title="Show PIN" name="eye-outline"></ion-icon>
+                            <ion-icon class="oh-passowrd-input__hide-icon d-none" title="Hide PIN" name="eye-off-outline"></ion-icon>
+                        </button>
+                    </div>
+                </div>
             </div>
             {% if perms.employee.change_employeeworkinformation %}
             {% if form.instance.employee_work_info %}

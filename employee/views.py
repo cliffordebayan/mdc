@@ -31,6 +31,7 @@ from django.db import models
 from django.db.models import F, ProtectedError
 from django.db.models.query import QuerySet
 from django.forms import DateInput, Select
+from django.core.mail import EmailMessage
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -3806,3 +3807,55 @@ def employee_tag_update(request, tag_id):
         "base/employee_tag/employee_tag_form.html",
         {"form": form, "tag_id": tag_id},
     )
+
+
+@login_required
+@require_http_methods(["POST"])
+def send_pin_to_email(request, obj_id):
+    """
+    Send the employee's work info PIN to their email address.
+    """
+    employee = get_object_or_404(Employee, id=obj_id)
+    if not (
+        request.user.has_perm("employee.add_employee")
+        or getattr(employee.employee_work_info, "reporting_manager_id", None)
+        == request.user.employee_get
+    ):
+        messages.error(request, _("You do not have permission to perform this action."))
+        return redirect(request.META.get("HTTP_REFERER", "employee-view"))
+
+    work_info = getattr(employee, "employee_work_info", None)
+    pin = getattr(work_info, "pin", None) if work_info else None
+
+    if not pin:
+        messages.warning(request, _("No PIN has been set for this employee."))
+        return redirect(request.META.get("HTTP_REFERER", "employee-view"))
+
+    send_to_mail = (
+        work_info.email
+        if work_info and work_info.email
+        else employee.email
+    )
+
+    if not send_to_mail:
+        messages.error(request, _("No email address found for this employee."))
+        return redirect(request.META.get("HTTP_REFERER", "employee-view"))
+
+    subject = _("Your PIN")
+    body = f"""
+    <p>Hello {employee.get_full_name()},</p>
+    <p>Your 6-digit PIN is: <strong>{pin}</strong></p>
+    <p>Please keep this PIN confidential.</p>
+    """
+    email = EmailMessage(subject=str(subject), body=body, to=[send_to_mail])
+    email.content_subtype = "html"
+    try:
+        email.send()
+        messages.success(
+            request,
+            _("PIN sent to %(email)s") % {"email": send_to_mail},
+        )
+    except Exception:
+        messages.error(request, _("Failed to send PIN email. Please check email configuration."))
+
+    return redirect(request.META.get("HTTP_REFERER", "employee-view"))

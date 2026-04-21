@@ -182,6 +182,14 @@
 									<button type="submit" style="border: none; background: transparent;">{% trans "Send password reset link" %} </button>
 								</form>
 							</li>
+							<li class="oh-dropdown__item">
+								<form action="{% url 'send-pin-email' employee.id %}" method="post"
+									style="display: flex;">
+									<ion-icon name="lock-closed-outline" style="width: 20px; height: 20px;"></ion-icon>
+									{% csrf_token %}
+									<button type="submit" style="border: none; background: transparent;">{% trans "Send PIN to email" %}</button>
+								</form>
+							</li>
 						{% endif %}
 					</ul>
 				</div>

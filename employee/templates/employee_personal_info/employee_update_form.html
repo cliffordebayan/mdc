@@ -1,5 +1,23 @@
 {% load recruitmentfilters %}
 {% csrf_token %}
+<script>
+$(document).off('click.pinToggle').on('click.pinToggle', '.oh-pin-toggle', function(e) {
+    e.preventDefault();
+    var btn = $(this);
+    var inp = btn.closest('.oh-password-input-container').find('.oh-input--password');
+    var show = btn.find('.oh-passowrd-input__show-icon');
+    var hide = btn.find('.oh-passowrd-input__hide-icon');
+    if (inp.attr('type') === 'password') {
+        inp.attr('type', 'text');
+        show.addClass('d-none');
+        hide.removeClass('d-none');
+    } else {
+        inp.attr('type', 'password');
+        show.removeClass('d-none');
+        hide.addClass('d-none');
+    }
+});
+</script>
 
 <div class="container">
     {% if messages %}

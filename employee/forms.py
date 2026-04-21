@@ -23,6 +23,7 @@ class YourForm(forms.Form):
 
 import logging
 import re
+import random
 from datetime import date, datetime
 from typing import Any
 
@@ -353,9 +354,22 @@ class EmployeeWorkInformationForm(ModelForm):
         model = EmployeeWorkInformation
         fields = "__all__"
         exclude = ("employee_id", "additional_info", "experience")
+        widgets = {
+            "pin": forms.PasswordInput(
+                attrs={
+                    "autocomplete": "off",
+                    "maxlength": "6",
+                    "placeholder": "PIN",
+                    "class": "oh-input oh-input--password w-100",
+                },
+                render_value=True,
+            ),
+        }
 
     def __init__(self, *args, disable=False, **kwargs):
         super().__init__(*args, **kwargs)
+        if not self.instance.pk and not self.data.get("pin"):
+            self.initial["pin"] = f"{random.randint(0, 999999):06d}"
         self.fields["email"].widget.attrs["autocomplete"] = "email"
 
         self.fields["job_position_id"].widget.attrs.update(
@@ -439,6 +453,22 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
         model = EmployeeWorkInformation
         fields = "__all__"
         exclude = ("employee_id",)
+        widgets = {
+            "pin": forms.PasswordInput(
+                attrs={
+                    "autocomplete": "off",
+                    "maxlength": "6",
+                    "placeholder": "PIN",
+                    "class": "oh-input oh-input--password w-100",
+                },
+                render_value=True,
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.instance.pk and not self.data.get("pin"):
+            self.initial["pin"] = f"{random.randint(0, 999999):06d}"
 
     def as_p(self, *args, **kwargs):
         context = {"form": self}

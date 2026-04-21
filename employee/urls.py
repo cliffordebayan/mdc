@@ -445,4 +445,9 @@ urlpatterns = [
         name="employee-tag-delete",
         kwargs={"model": EmployeeTag, "HttpResponse": True},
     ),
+    path(
+        "send-pin-email/<int:obj_id>/",
+        views.send_pin_to_email,
+        name="send-pin-email",
+    ),
 ]

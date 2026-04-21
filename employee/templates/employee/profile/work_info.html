@@ -99,6 +99,20 @@
             </div>
             </div>
         </div>
+        <div class="row">
+            <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+            <div class="oh-input-group">
+                <label class="oh-label">{% trans "PIN" %}</label>
+                <div class="oh-password-input-container">
+                    {{work_form.pin}}
+                    <button type="button" class="oh-btn oh-btn--transparent oh-pin-toggle" style="position:absolute;top:1px;right:1px;height:100%;font-size:1.25rem;">
+                        <ion-icon class="oh-passowrd-input__show-icon" title="Show PIN" name="eye-outline"></ion-icon>
+                        <ion-icon class="oh-passowrd-input__hide-icon d-none" title="Hide PIN" name="eye-off-outline"></ion-icon>
+                    </button>
+                </div>
+            </div>
+            </div>
+        </div>
 
 
         </form>

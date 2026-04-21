@@ -744,6 +744,9 @@ class EmployeeWorkInformation(models.Model):
     salary_hour = models.IntegerField(
         null=True, blank=True, default=0, verbose_name=_("Salary Per Hour")
     )
+    pin = models.CharField(
+        max_length=6, null=True, blank=True, verbose_name=_("PIN")
+    )
     additional_info = models.JSONField(null=True, blank=True)
     experience = models.FloatField(null=True, blank=True, default=0)
     choice_employee_status = [
