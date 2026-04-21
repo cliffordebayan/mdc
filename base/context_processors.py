@@ -273,7 +273,7 @@ def get_initial_prefix(request):
     prefix = "PEP"
     if settings:
         instance_id = settings.id
-        prefix = settings.badge_id_prefix
+        prefix = settings.badge_id_prefix or ""
     return {"get_initial_prefix": prefix, "prefix_instance_id": instance_id}
 
 

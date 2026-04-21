@@ -1069,7 +1069,7 @@ class EmployeeGeneralSetting(HorillaModel):
     EmployeeGeneralSetting
     """
 
-    badge_id_prefix = models.CharField(max_length=5, default="PEP")
+    badge_id_prefix = models.CharField(max_length=5, default="PEP", null=True, blank=True)
     company_id = models.ForeignKey(Company, null=True, on_delete=models.CASCADE)
     objects = HorillaCompanyManager("company_id")
 
