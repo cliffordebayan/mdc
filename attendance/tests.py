@@ -4,10 +4,12 @@ from unittest.mock import MagicMock, patch
 
 from django.http import HttpResponse
 from django.test import RequestFactory, SimpleTestCase
+from django.urls import resolve
+from django.urls.exceptions import Resolver404
 
 from attendance.models import Attendance
 from attendance.views.clock_in_out import clock_out_attendance_and_activity
-from attendance.views.self_service import public_clock_out
+from attendance.views.portal import public_clock_out
 from attendance.views import views as attendance_views
 from attendance.views.views import _delete_blocked_message
 
@@ -119,23 +121,25 @@ class ClockOutAttendanceAndActivityTests(SimpleTestCase):
         self.assertFalse(ctx["attendance"].attendance_validated)
 
 
-class SelfServiceClockOutTests(SimpleTestCase):
+class PortalClockOutTests(SimpleTestCase):
     def setUp(self):
         self.factory = RequestFactory()
 
-    @patch("attendance.views.self_service.clock_out_attendance_and_activity")
-    @patch("attendance.views.self_service.get_real_now", return_value=datetime(2026, 4, 10, 17, 0, 0))
-    @patch("attendance.views.self_service.AttendanceActivity")
-    @patch("attendance.views.self_service.Employee")
-    def test_self_service_clock_out_calls_helper_with_auto_validate_false(
+    @patch("attendance.views.portal.clock_out_attendance_and_activity")
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 4, 10, 17, 0, 0))
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_clock_out_calls_helper_with_auto_validate_false(
         self,
+        _ip_allowed_mock,
         employee_model,
         attendance_activity_model,
         _now_mock,
         clock_out_helper_mock,
     ):
         request = self.factory.post(
-            "/attendance/self-service/clock-out/",
+            "/attendance/portal/clock-out/",
             {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
         )
 
@@ -167,6 +171,39 @@ class SelfServiceClockOutTests(SimpleTestCase):
         self.assertTrue(payload["success"])
         clock_out_helper_mock.assert_called_once()
         self.assertFalse(clock_out_helper_mock.call_args.kwargs["auto_validate"])
+
+
+class PortalUrlRoutingTests(SimpleTestCase):
+    def test_portal_urls_resolve(self):
+        self.assertEqual(resolve("/attendance/portal/").url_name, "public-portal")
+        self.assertEqual(
+            resolve("/attendance/portal/employee-lookup/").url_name,
+            "portal-employee-lookup",
+        )
+        self.assertEqual(
+            resolve("/attendance/portal/clock-in/").url_name,
+            "portal-clock-in",
+        )
+        self.assertEqual(
+            resolve("/attendance/portal/clock-out/").url_name,
+            "portal-clock-out",
+        )
+        self.assertEqual(
+            resolve("/attendance/portal/server-time/").url_name,
+            "portal-server-time",
+        )
+
+    def test_self_service_urls_do_not_resolve_after_hard_cutover(self):
+        with self.assertRaises(Resolver404):
+            resolve("/attendance/self-service/")
+        with self.assertRaises(Resolver404):
+            resolve("/attendance/self-service/employee-lookup/")
+        with self.assertRaises(Resolver404):
+            resolve("/attendance/self-service/clock-in/")
+        with self.assertRaises(Resolver404):
+            resolve("/attendance/self-service/clock-out/")
+        with self.assertRaises(Resolver404):
+            resolve("/attendance/self-service/server-time/")
 
 
 class AttendanceDeleteTests(SimpleTestCase):

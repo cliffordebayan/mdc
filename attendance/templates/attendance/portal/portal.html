@@ -7,7 +7,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{% trans "Employee Self Service" %} - Clock In/Out</title>
+    <title>{% trans "Employee Portal" %} - Clock In/Out</title>
     <link rel="apple-touch-icon" sizes="180x180"
         href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}">
     <link rel="icon" type="image/png" sizes="32x32"
@@ -589,18 +589,21 @@
                 </div>
 
                 <h1 class="oh-onboarding-card__title oh-onboarding-card__title--h2 text-center my-3">
-                    {% trans "Employee Self Service" %}
+                    {% trans "Employee Portal" %}
                 </h1>
-                <p class="text-muted text-center">
-                    {% trans "Clock in or out with your selfie and location" %}
-                </p>
 
                 <!-- Step 1: Employee Search -->
                 <div class="self-service-step active" id="step-search">
                     <p class="info-text">{% trans "Enter your Employee ID:" %}</p>
                     <div class="search-container">
-                        <input type="text" id="employee-search" class="oh-input w-100"
-                            placeholder="{% trans 'Employee ID...' %}" autocomplete="off" />
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="employee-search" class="oh-input w-100"
+                                placeholder="{% trans 'Employee ID...' %}" autocomplete="off" />
+                            <button type="button" id="search-btn" class="oh-btn oh-btn--secondary" style="white-space: nowrap;">
+                                <ion-icon name="search-outline" style="margin-right: 4px;"></ion-icon>
+                                {% trans "Search" %}
+                            </button>
+                        </div>
                         <div class="search-results" id="search-results"></div>
                     </div>
                 </div>
@@ -727,7 +730,7 @@
         let serverTimeOffset = new Date('{{ server_time_iso }}').getTime() - Date.now();
 
         function resyncServerTime() {
-            fetch('/attendance/self-service/server-time/')
+            fetch('/attendance/portal/server-time/')
                 .then(r => r.json())
                 .then(data => {
                     serverTimeOffset = new Date(data.server_time_iso).getTime() - Date.now();
@@ -845,20 +848,25 @@
 
         // Setup event listeners
         function setupEventListeners() {
-            // Employee search
-            let searchTimeout;
-            $('#employee-search').on('keyup', function () {
-                clearTimeout(searchTimeout);
-                const query = $(this).val().trim();
-
-                if (!/^\d{7}$/.test(query)) {
-                    $('#search-results').empty();
+            // Employee search — triggered by button click or Enter key
+            function triggerSearch() {
+                const query = $('#employee-search').val().trim();
+                if (!query) {
+                    $('#search-results').html('<div class="search-result-item" style="cursor: default;">{% trans "Please enter an Employee ID." %}</div>');
                     return;
                 }
+                searchEmployees(query);
+            }
 
-                searchTimeout = setTimeout(function () {
-                    searchEmployees(query);
-                }, 300);
+            $('#search-btn').on('click', function () {
+                triggerSearch();
+            });
+
+            $('#employee-search').on('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    triggerSearch();
+                }
             });
 
             // Back button
@@ -907,7 +915,7 @@
             const formData = new FormData();
             formData.append('query', query);
 
-            fetch('{% url "self-service-employee-lookup" %}', {
+            fetch('{% url "portal-employee-lookup" %}', {
                 method: 'POST',
                 body: formData
             })
@@ -1196,7 +1204,7 @@
             const originalText = btn.html();
             btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
 
-            fetch('{% url "self-service-clock-in" %}', {
+            fetch('{% url "portal-clock-in" %}', {
                 method: 'POST',
                 body: formData
             })
@@ -1241,7 +1249,7 @@
             const originalText = btn.html();
             btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
 
-            fetch('{% url "self-service-clock-out" %}', {
+            fetch('{% url "portal-clock-out" %}', {
                 method: 'POST',
                 body: formData
             })

@@ -13,7 +13,7 @@ import attendance.views.geofaceconfig
 import attendance.views.penalty
 import attendance.views.requests
 import attendance.views.search
-import attendance.views.self_service
+import attendance.views.portal
 import base
 from base.forms import AttendanceAllowedIPForm
 from base.models import AttendanceAllowedIP
@@ -21,31 +21,31 @@ from base.models import AttendanceAllowedIP
 from .views import views
 
 urlpatterns = [
-    # Public self-service endpoints
+    # Public portal endpoints
     path(
-        "self-service/",
-        attendance.views.self_service.public_self_service,
-        name="public-self-service",
+        "portal/",
+        attendance.views.portal.public_portal,
+        name="public-portal",
     ),
     path(
-        "self-service/employee-lookup/",
-        attendance.views.self_service.employee_lookup,
-        name="self-service-employee-lookup",
+        "portal/employee-lookup/",
+        attendance.views.portal.employee_lookup,
+        name="portal-employee-lookup",
     ),
     path(
-        "self-service/clock-in/",
-        attendance.views.self_service.public_clock_in,
-        name="self-service-clock-in",
+        "portal/clock-in/",
+        attendance.views.portal.public_clock_in,
+        name="portal-clock-in",
     ),
     path(
-        "self-service/clock-out/",
-        attendance.views.self_service.public_clock_out,
-        name="self-service-clock-out",
+        "portal/clock-out/",
+        attendance.views.portal.public_clock_out,
+        name="portal-clock-out",
     ),
     path(
-        "self-service/server-time/",
-        attendance.views.self_service.server_time,
-        name="self-service-server-time",
+        "portal/server-time/",
+        attendance.views.portal.server_time,
+        name="portal-server-time",
     ),
     path(
         "profile-attendance-tab",

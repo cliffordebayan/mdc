@@ -1,7 +1,7 @@
 """
-self_service.py
+portal.py
 
-Public employee self-service clock in/out views.
+Public employee portal clock in/out views.
 No authentication required - suitable for kiosk-style access.
 Employees identify themselves by badge ID or name.
 """
@@ -135,9 +135,9 @@ def _ip_is_allowed(request):
     return False
 
 
-def public_self_service(request):
+def public_portal(request):
     """
-    Render the public self-service clock in/out page.
+    Render the public portal clock in/out page.
     No authentication required.
     """
     if not _ip_is_allowed(request):
@@ -220,7 +220,7 @@ def public_self_service(request):
       </svg>
     </div>
     <h1>Access Denied</h1>
-    <p>This self-service kiosk is not accessible.<br>Restricted to allowed networks only.</p>
+    <p>This portal kiosk is not accessible.<br>Restricted to allowed networks only.</p>
     <hr class="divider" />
     <span class="contact">
       <svg viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -237,7 +237,7 @@ def public_self_service(request):
     aware_now = tz.localize(real_now)
     return render(
         request,
-        "attendance/self_service/self_service.html",
+        "attendance/portal/portal.html",
         {
             "server_time_iso": aware_now.isoformat(),
             "TIME_ZONE": settings.TIME_ZONE,
