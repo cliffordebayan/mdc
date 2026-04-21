@@ -55,7 +55,9 @@
             <div class="row mt-2">
                 <div class="col-12">
                     <div class="oh-input-group d-flex align-items-center gap-2">
-                        {{ bank_form.is_primary }}
+                        <div class="oh-switch" style="width: 30px;">
+                            {{ bank_form.is_primary }}
+                        </div>
                         <label class="oh-label mb-0" for="{{ bank_form.is_primary.id_for_label }}">{% trans "Set as Primary Account" %}</label>
                     </div>
                 </div>

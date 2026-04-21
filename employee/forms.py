@@ -466,7 +466,10 @@ class EmployeeBankDetailsForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for visible in self.visible_fields():
-            visible.field.widget.attrs["class"] = "oh-input w-100"
+            if visible.field.widget.input_type == "checkbox":
+                visible.field.widget.attrs["class"] = "oh-switch__checkbox"
+            else:
+                visible.field.widget.attrs["class"] = "oh-input w-100"
 
     def as_p(self, *args, **kwargs):
         context = {"form": self}

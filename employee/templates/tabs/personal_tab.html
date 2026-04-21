@@ -372,6 +372,14 @@
 											<span class="oh-profile__info-value">{{employee.employee_work_info.business_unit_id|default:_("None")}}</span>
 										</li>
 
+										<li class="oh-profile__card-info-item">
+											<span class="oh-profile__info-label mb-1">
+												<ion-icon name="person-outline"></ion-icon>
+												<span>{% trans "Employee Status" %}</span>
+											</span>
+											<span class="oh-profile__info-value">{{employee.employee_work_info.get_employee_status_display|default:_("None")}}</span>
+										</li>
+
 									</ul>
 								</div>
 							</div>

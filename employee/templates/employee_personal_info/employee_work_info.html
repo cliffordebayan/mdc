@@ -86,6 +86,10 @@
                     {{work_form.business_unit_id.errors}}
                     {{work_form.business_unit_id}}
                 </div>
+                <div class="col-md-6 mb-4">
+                    {{work_form.employee_status.errors}}
+                    {{work_form.employee_status}}
+                </div>
             </div>
             {% if perms.employee.change_employeeworkinformation %}
             {% if form.instance.employee_work_info %}

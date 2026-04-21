@@ -746,6 +746,21 @@ class EmployeeWorkInformation(models.Model):
     )
     additional_info = models.JSONField(null=True, blank=True)
     experience = models.FloatField(null=True, blank=True, default=0)
+    choice_employee_status = [
+        ("active", _("Active")),
+        ("resigned", _("Resigned")),
+        ("awol", _("AWOL")),
+        ("terminated", _("Terminated")),
+        ("retired", _("Retired")),
+    ]
+    employee_status = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        choices=choice_employee_status,
+        default="active",
+        verbose_name=_("Employee Status"),
+    )
     history = HorillaAuditLog(
         related_name="history_set",
         bases=[
