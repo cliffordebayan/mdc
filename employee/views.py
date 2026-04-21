@@ -3841,10 +3841,12 @@ def send_pin_to_email(request, obj_id):
         messages.error(request, _("No email address found for this employee."))
         return redirect(request.META.get("HTTP_REFERER", "employee-view"))
 
-    subject = _("Your PIN")
+    portal_url = request.build_absolute_uri(reverse("public-portal"))
+    subject = _("MDC ATTENDANCE PIN")
     body = f"""
     <p>Hello {employee.get_full_name()},</p>
     <p>Your 6-digit PIN is: <strong>{pin}</strong></p>
+    <p>Attendance Portal: <a href="{portal_url}">{portal_url}</a></p>
     <p>Please keep this PIN confidential.</p>
     """
     email = EmailMessage(subject=str(subject), body=body, to=[send_to_mail])
