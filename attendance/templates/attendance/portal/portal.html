@@ -86,6 +86,171 @@
             margin-bottom: 15px;
         }
 
+        #step-pin {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            background: rgba(16, 24, 40, 0.58);
+            backdrop-filter: blur(4px);
+            padding: 24px 14px;
+            overflow-y: auto;
+        }
+
+        .pin-fullscreen {
+            min-height: calc(100vh - 48px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pin-step-card {
+            border: 1px solid #dbe4f4;
+            border-radius: 16px;
+            background: linear-gradient(180deg, #ffffff 0%, #f6faff 100%);
+            padding: 22px;
+            width: 100%;
+            max-width: 460px;
+            margin: 0 auto;
+            box-shadow: 0 28px 55px rgba(14, 32, 66, 0.28);
+        }
+
+        .pin-title {
+            text-align: center;
+            color: #334155;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .pin-employee-summary {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .pin-employee-summary img {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #e0e0e0;
+            background: #e0e0e0;
+            flex-shrink: 0;
+        }
+
+        .pin-employee-summary h4 {
+            margin: 0;
+            font-size: 16px;
+            color: #1f2937;
+        }
+
+        .pin-employee-summary p {
+            margin: 2px 0 0;
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .pin-slots {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .pin-slot {
+            height: 40px;
+            border: 1px solid #d9dee8;
+            border-radius: 8px;
+            background: #f8f9fb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: transparent;
+            user-select: none;
+        }
+
+        .pin-slot.filled {
+            border-color: #4f9cff;
+            background: #eaf3ff;
+            color: #1f2937;
+        }
+
+        .pin-message {
+            min-height: 20px;
+            margin: 4px 0 12px;
+            text-align: center;
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .pin-message.error {
+            color: #b91c1c;
+        }
+
+        .pin-message.success {
+            color: #15803d;
+        }
+
+        .pin-keypad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .pin-keypad button {
+            height: 50px;
+            border: 1px solid #d9dee8;
+            border-radius: 10px;
+            background: #f5f7fb;
+            font-size: 20px;
+            font-weight: 700;
+            color: #1f2937;
+            cursor: pointer;
+            transition: transform .08s, background-color .12s;
+        }
+
+        .pin-keypad button:hover {
+            background: #edf2ff;
+        }
+
+        .pin-keypad button:active {
+            transform: scale(.98);
+        }
+
+        .pin-actions {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .pin-actions .oh-btn {
+            width: 100%;
+            min-height: 42px;
+            padding: 8px;
+            font-size: 13px;
+            border-radius: 8px;
+        }
+
+        #pin-back-btn {
+            margin-top: 4px;
+        }
+
+        #pin-submit-btn:disabled {
+            opacity: .55;
+            cursor: not-allowed;
+        }
+
+        #pin-submit-btn:not(:disabled) {
+            background: #28a745;
+            border-color: #28a745;
+            color: #fff;
+        }
+
         .swal-toast-above {
             z-index: 10000 !important;
         }
@@ -439,6 +604,36 @@
 
         /* Phone */
         @media (max-width: 600px) {
+            #step-pin {
+                padding: 16px 10px;
+            }
+
+            .pin-fullscreen {
+                min-height: calc(100vh - 32px);
+            }
+
+            .pin-step-card {
+                padding: 14px;
+            }
+
+            .pin-slots {
+                gap: 6px;
+            }
+
+            .pin-slot {
+                height: 34px;
+                font-size: 18px;
+            }
+
+            .pin-keypad button {
+                height: 44px;
+                font-size: 18px;
+            }
+
+            .pin-actions {
+                grid-template-columns: 1fr;
+            }
+
             .clock-fullscreen {
                 grid-template-rows: 35vh 1fr;
             }
@@ -598,7 +793,7 @@
                     <div class="search-container">
                         <div style="display: flex; gap: 8px;">
                             <input type="text" id="employee-search" class="oh-input w-100"
-                                placeholder="{% trans 'Employee ID...' %}" autocomplete="off" />
+                                placeholder="{% trans 'Employee ID...' %}" autocomplete="off" autofocus />
                             <button type="button" id="search-btn" class="oh-btn oh-btn--secondary" style="white-space: nowrap;">
                                 <ion-icon name="search-outline" style="margin-right: 4px;"></ion-icon>
                                 {% trans "Search" %}
@@ -608,7 +803,57 @@
                     </div>
                 </div>
 
-                <!-- Step 2: Fullscreen Clock In/Out -->
+                <!-- Step 2: PIN Verification -->
+                <div class="self-service-step" id="step-pin">
+                    <div class="pin-fullscreen">
+                        <div class="pin-step-card">
+                            <p class="info-text pin-title">{% trans "Enter your 6-digit PIN:" %}</p>
+                            <div class="pin-employee-summary">
+                                <img id="pin-employee-avatar" src="" alt="Avatar" />
+                                <div>
+                                    <h4 id="pin-employee-name"></h4>
+                                    <p id="pin-employee-badge"></p>
+                                </div>
+                            </div>
+
+                            <div class="pin-slots" id="pin-slots">
+                                <div class="pin-slot"></div>
+                                <div class="pin-slot"></div>
+                                <div class="pin-slot"></div>
+                                <div class="pin-slot"></div>
+                                <div class="pin-slot"></div>
+                                <div class="pin-slot"></div>
+                            </div>
+                            <div class="pin-message" id="pin-message">{% trans "Use the keypad to enter PIN." %}</div>
+
+                            <div class="pin-keypad">
+                                <button type="button" class="pin-digit-btn" data-digit="1">1</button>
+                                <button type="button" class="pin-digit-btn" data-digit="2">2</button>
+                                <button type="button" class="pin-digit-btn" data-digit="3">3</button>
+                                <button type="button" class="pin-digit-btn" data-digit="4">4</button>
+                                <button type="button" class="pin-digit-btn" data-digit="5">5</button>
+                                <button type="button" class="pin-digit-btn" data-digit="6">6</button>
+                                <button type="button" class="pin-digit-btn" data-digit="7">7</button>
+                                <button type="button" class="pin-digit-btn" data-digit="8">8</button>
+                                <button type="button" class="pin-digit-btn" data-digit="9">9</button>
+                                <button type="button" class="pin-digit-btn" data-digit="0" style="grid-column: 2 / span 1;">0</button>
+                            </div>
+
+                            <div class="pin-actions">
+                                <button type="button" class="oh-btn oh-btn--secondary" id="pin-clear-btn">{% trans "Clear" %}</button>
+                                <button type="button" class="oh-btn oh-btn--secondary" id="pin-backspace-btn">{% trans "Backspace" %}</button>
+                                <button type="button" class="oh-btn oh-btn--secondary" id="pin-submit-btn" disabled>{% trans "Continue" %}</button>
+                            </div>
+
+                            <button type="button" class="btn-back" id="pin-back-btn" style="width:100%;">
+                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                {% trans "Back to Search" %}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Fullscreen Clock In/Out -->
                 <div class="self-service-step" id="step-clock">
                     <div class="clock-fullscreen">
                         <!-- LEFT: Camera -->
@@ -625,17 +870,6 @@
                                 </div>
                             </div>
 
-                            <!-- Camera capture / retake buttons -->
-                            <div class="camera-controls-bar">
-                                <button type="button" class="btn-capture" id="capture-btn" style="display:none;">
-                                    <ion-icon name="camera-outline"></ion-icon>
-                                    {% trans "Capture Selfie" %}
-                                </button>
-                                <button type="button" class="btn-retake" id="retake-btn" style="display:none;">
-                                    <ion-icon name="refresh-outline"></ion-icon>
-                                    {% trans "Retake" %}
-                                </button>
-                            </div>
                         </div>
 
                         <!-- RIGHT: Info panel -->
@@ -696,7 +930,7 @@
                     </div>
                 </div>
 
-                <!-- Step 3: Confirmation -->
+                <!-- Step 4: Confirmation -->
                 <div class="self-service-step" id="step-confirmation">
                     <div id="confirmation-content"></div>
                     <button type="button" class="oh-btn oh-btn--secondary w-100 mt-3" id="new-clock-btn">
@@ -718,11 +952,12 @@
         const CSRF_TOKEN = '{{ csrf_token }}';
         let selectedEmployee = null;
         let videoStream = null;
-        let capturedPhotoBlob = null;
         let latitude = null;
         let longitude = null;
         let capturedAddress = null;
         let locationAccuracy = null;
+        let pinInput = '';
+        const PIN_LENGTH = 6;
 
         // Server time offset: difference between server clock and client clock
         // This is re-synced from the server every 30 seconds so employees
@@ -754,7 +989,24 @@
             initializeLocationCapture();
             setupEventListeners();
             startLiveClock();
+            updatePinUi();
+            focusSearchInput();
         });
+
+        function focusSearchInput() {
+            const focusInput = function () {
+                const input = document.getElementById('employee-search');
+                if (!input) {
+                    return;
+                }
+                input.focus();
+                input.select();
+            };
+
+            // Delay to allow step transitions/render completion.
+            setTimeout(focusInput, 0);
+            setTimeout(focusInput, 120);
+        }
 
         // Live clock using server time in Asia/Manila
         const SERVER_TZ = '{{ TIME_ZONE }}';
@@ -869,21 +1121,33 @@
                 }
             });
 
-            // Back button
-            $('#back-btn').on('click', function () {
+            $('#pin-back-btn').on('click', function () {
                 resetForm();
                 showStep('search');
             });
 
-            // Capture button
-            $('#capture-btn').on('click', function () {
-                capturePhoto();
+            $('.pin-digit-btn').on('click', function () {
+                const digitAttr = $(this).attr('data-digit');
+                const digit = digitAttr === undefined ? '' : String(digitAttr);
+                appendPinDigit(digit);
             });
 
-            // Retake button
-            $('#retake-btn').on('click', function () {
-                capturedPhotoBlob = null;
-                startCamera();
+            $('#pin-clear-btn').on('click', function () {
+                clearPinInput();
+            });
+
+            $('#pin-backspace-btn').on('click', function () {
+                removePinDigit();
+            });
+
+            $('#pin-submit-btn').on('click', function () {
+                verifyEmployeePin();
+            });
+
+            // Back button
+            $('#back-btn').on('click', function () {
+                resetForm();
+                showStep('search');
             });
 
             // Clock in/out buttons
@@ -908,6 +1172,29 @@
                 $('#retry-location-btn').hide();
                 initializeLocationCapture();
             });
+
+            $(document).on('keydown', function (e) {
+                if (!$('#step-pin').hasClass('active')) {
+                    return;
+                }
+
+                if (/^[0-9]$/.test(e.key)) {
+                    e.preventDefault();
+                    appendPinDigit(e.key);
+                    return;
+                }
+
+                if (e.key === 'Backspace') {
+                    e.preventDefault();
+                    removePinDigit();
+                    return;
+                }
+
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    verifyEmployeePin();
+                }
+            });
         }
 
         // Search for employees
@@ -927,13 +1214,22 @@
                 })
                 .then(data => {
                     if (data.success && data.results.length > 0) {
+                        if (data.results.length === 1) {
+                            const emp = data.results[0];
+                            selectEmployee(emp.id, emp.name, emp.badge_id, emp.avatar, emp.is_clocked_in);
+                            return;
+                        }
+
                         let html = '';
                         data.results.forEach(function (emp) {
+                            const safeName = String(emp.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                            const safeBadge = String(emp.badge_id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                            const safeAvatar = String(emp.avatar || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                             const badge = emp.badge_id ? `<span class="badge-badge">${emp.badge_id}</span>` : '';
                             const status = emp.is_clocked_in ?
                                 `<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>` : '';
                             html += `
-                            <div class="search-result-item" onclick="selectEmployee(${emp.id}, '${emp.name}', '${emp.badge_id}', '${emp.avatar}', ${emp.is_clocked_in})">
+                            <div class="search-result-item" onclick="selectEmployee(${emp.id}, '${safeName}', '${safeBadge}', '${safeAvatar}', ${emp.is_clocked_in})">
                                 <img src="${emp.avatar}" class="search-result-avatar" />
                                 <div style="flex: 1; text-align: left;">
                                     <div>${emp.name}</div>
@@ -944,7 +1240,8 @@
                         });
                         $('#search-results').html(html);
                     } else {
-                        $('#search-results').html('<div class="search-result-item" style="cursor: default;">{% trans "No employees found" %}</div>');
+                        const message = data.message || '{% trans "No employees found" %}';
+                        $('#search-results').html(`<div class="search-result-item" style="cursor: default;">${message}</div>`);
                     }
                 })
                 .catch(error => {
@@ -964,25 +1261,145 @@
             };
 
             $('#search-results').empty();
-            $('#employee-search').val(empName).blur();
-            $('#employee-info').css('display', 'block');
-            $('#employee-name').text(empName);
-            $('#employee-badge').text(empBadge ? `#${empBadge}` : '');
-            $('#employee-avatar').attr('src', empAvatar);
+            $('#employee-search').val(empBadge || empName).blur();
+            $('#pin-employee-name').text(empName);
+            $('#pin-employee-badge').text(empBadge ? `#${empBadge}` : '');
+            $('#pin-employee-avatar').attr('src', empAvatar);
+            clearPinInput();
+            setPinMessage('{% trans "Use the keypad to enter PIN." %}');
+            showStep('pin');
+        }
 
-            if (isClockedIn) {
+        function setPinMessage(message, statusClass) {
+            const $message = $('#pin-message');
+            $message.removeClass('error success');
+            if (statusClass) {
+                $message.addClass(statusClass);
+            }
+            $message.text(message);
+        }
+
+        function updatePinUi() {
+            const slots = $('#pin-slots .pin-slot');
+            slots.removeClass('filled').text('');
+            for (let i = 0; i < pinInput.length; i++) {
+                slots.eq(i).addClass('filled').text('*');
+            }
+            $('#pin-submit-btn').prop('disabled', pinInput.length !== PIN_LENGTH);
+        }
+
+        function appendPinDigit(digit) {
+            if (!/^[0-9]$/.test(digit)) {
+                return;
+            }
+            if (pinInput.length >= PIN_LENGTH) {
+                return;
+            }
+            pinInput += digit;
+            updatePinUi();
+        }
+
+        function removePinDigit() {
+            if (!pinInput.length) {
+                return;
+            }
+            pinInput = pinInput.slice(0, -1);
+            updatePinUi();
+        }
+
+        function clearPinInput() {
+            pinInput = '';
+            updatePinUi();
+        }
+
+        function verifyEmployeePin() {
+            if (!selectedEmployee) {
+                setPinMessage('{% trans "Please search employee again." %}', 'error');
+                resetForm();
+                showStep('search');
+                return;
+            }
+
+            if (pinInput.length !== PIN_LENGTH) {
+                setPinMessage('{% trans "PIN must be exactly 6 digits." %}', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('employee_id', selectedEmployee.id);
+            formData.append('pin', pinInput);
+
+            const $submit = $('#pin-submit-btn');
+            const originalSubmitText = $submit.text();
+            $submit.prop('disabled', true).text('{% trans "Verifying..." %}');
+            $('.pin-digit-btn, #pin-clear-btn, #pin-backspace-btn').prop('disabled', true);
+
+            fetch('{% url "portal-verify-pin" %}', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        setPinMessage(data.message || '{% trans "PIN verified successfully." %}', 'success');
+                        clearPinInput();
+                        setTimeout(function () {
+                            openClockStep();
+                        }, 120);
+                        return;
+                    }
+
+                    setPinMessage(data.message || '{% trans "Invalid PIN." %}', 'error');
+                    clearPinInput();
+
+                    if (data.reset_required || data.attempts_remaining === 0) {
+                        setTimeout(function () {
+                            resetForm();
+                            showStep('search');
+                        }, 900);
+                    }
+                })
+                .catch(error => {
+                    console.error('PIN verification error:', error);
+                    setPinMessage(`{% trans "PIN verification failed" %}: ${error.message}`, 'error');
+                })
+                .finally(() => {
+                    $('.pin-digit-btn, #pin-clear-btn, #pin-backspace-btn').prop('disabled', false);
+                    $submit.text(originalSubmitText);
+                    updatePinUi();
+                });
+        }
+
+        function openClockStep() {
+            if (!selectedEmployee) {
+                return;
+            }
+
+            $('#employee-info').css('display', 'block');
+            $('#employee-name').text(selectedEmployee.name);
+            $('#employee-badge').text(selectedEmployee.badge ? `#${selectedEmployee.badge}` : '');
+            $('#employee-avatar').attr('src', selectedEmployee.avatar);
+
+            if (selectedEmployee.is_clocked_in) {
                 $('#employee-status').html('<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>');
             } else {
                 $('#employee-status').empty();
             }
 
-            // Show clock step
             showStep('clock');
-
-            // Re-attempt location capture when employee is selected
             initializeLocationCapture();
+            capturedAddress = null;
 
-            // Start camera after a brief delay to ensure UI is rendered
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+
             setTimeout(function () {
                 startCamera();
             }, 100);
@@ -999,8 +1416,6 @@
                         $('#video-preview').css('display', 'block');
                         $('#captured-photo').css('display', 'none');
                         $('#location-overlay').css('display', 'none');
-                        $('#capture-btn').css('display', 'flex');
-                        $('#retake-btn').css('display', 'none');
                         $('#action-buttons').css('display', 'flex');
 
                         // Show appropriate clock in/out button based on status
@@ -1021,39 +1436,51 @@
             }
         }
 
-        // Capture photo
-        function capturePhoto() {
-            const video = document.getElementById('video-preview');
-            const canvas = document.getElementById('canvas');
-            const context = canvas.getContext('2d');
+        // Capture a stamped selfie from the current live camera frame.
+        function capturePhotoBlobFromLiveVideo() {
+            return new Promise(function (resolve, reject) {
+                if (!latitude || !longitude) {
+                    reject(new Error('{% trans "Location is required. Please enable location access and retry." %}'));
+                    return;
+                }
 
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            context.save();
-            context.translate(canvas.width, 0);
-            context.scale(-1, 1);
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            context.restore();
+                const video = document.getElementById('video-preview');
+                if (!video || !videoStream) {
+                    reject(new Error('{% trans "Camera is not ready. Please allow camera permissions and try again." %}'));
+                    return;
+                }
 
-            // Show loading state on capture button
-            $('#capture-btn').html('<span class="loading"></span>').prop('disabled', true);
+                if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+                    reject(new Error('{% trans "Camera is still initializing. Please try again." %}'));
+                    return;
+                }
 
-            // Use captured address to stamp the image
-            const addressToStamp = capturedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-            stampLocationOnCanvas(canvas, context, addressToStamp);
+                const canvas = document.getElementById('canvas');
+                const context = canvas.getContext('2d');
 
-            canvas.toBlob(function (blob) {
-                capturedPhotoBlob = blob;
-                const url = URL.createObjectURL(blob);
-                $('#captured-photo').attr('src', url).css('display', 'block');
-                $('#video-preview').css('display', 'none');
-                $('#capture-btn').html('<ion-icon name="camera-outline"></ion-icon> {% trans "Capture Selfie" %}').prop('disabled', false).css('display', 'none');
-                $('#retake-btn').css('display', 'flex');
-                $('#location-overlay').css('display', 'none'); // hidden since it's already burned in
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.save();
+                context.translate(canvas.width, 0);
+                context.scale(-1, 1);
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                context.restore();
 
-                updateLocationOverlay();
-            }, 'image/jpeg', 0.92);
+                const addressToStamp = capturedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                stampLocationOnCanvas(canvas, context, addressToStamp);
+
+                canvas.toBlob(function (blob) {
+                    if (!blob) {
+                        reject(new Error('{% trans "Unable to capture selfie. Please try again." %}'));
+                        return;
+                    }
+                    resolve(blob);
+                }, 'image/jpeg', 0.92);
+            });
         }
+
+        // Capture photo (legacy helper kept for compatibility)
+        function capturePhoto() {}
 
         // Reverse geocode lat/lng → address string using Nominatim
         function reverseGeocode(lat, lng) {
@@ -1182,10 +1609,10 @@
             $('#location-overlay-text').html(locationText);
         }
 
-        // Clock in
-        function clockInEmployee() {
-            if (!selectedEmployee || !capturedPhotoBlob) {
-                Toast.fire({ icon: 'warning', title: '{% trans "Please take a selfie first." %}' });
+        // Clock in (selfie is captured automatically on click)
+        async function clockInEmployee() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
                 return;
             }
 
@@ -1193,44 +1620,43 @@
                 Toast.fire({ icon: 'error', title: '{% trans "Location is required. Please enable location access and retry." %}' });
                 return;
             }
-
-            const formData = new FormData();
-            formData.append('employee_id', selectedEmployee.id);
-            formData.append('selfie', capturedPhotoBlob, 'selfie.jpg');
-            formData.append('latitude', latitude || '');
-            formData.append('longitude', longitude || '');
 
             const btn = $('#clock-in-btn');
             const originalText = btn.html();
             btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
 
-            fetch('{% url "portal-clock-in" %}', {
-                method: 'POST',
-                body: formData
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        showConfirmation(data, 'success');
-                    } else {
-                        showConfirmation(data, 'error');
-                    }
-                })
-                .catch(error => {
-                    console.error('Clock in error:', error);
-                    showConfirmation({
-                        message: `{% trans "Clock in failed" %}: ${error.message}`
-                    }, 'error');
-                })
-                .finally(() => {
-                    btn.html(originalText).prop('disabled', false);
+            try {
+                const selfieBlob = await capturePhotoBlobFromLiveVideo();
+
+                const formData = new FormData();
+                formData.append('employee_id', selectedEmployee.id);
+                formData.append('selfie', selfieBlob, 'selfie.jpg');
+                formData.append('latitude', latitude || '');
+                formData.append('longitude', longitude || '');
+
+                const response = await fetch('{% url "portal-clock-in" %}', {
+                    method: 'POST',
+                    body: formData
                 });
+                const data = await response.json();
+
+                if (data.success) {
+                    showConfirmation(data, 'success');
+                } else {
+                    showConfirmation(data, 'error');
+                }
+            } catch (error) {
+                console.error('Clock in error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Clock in failed." %}' });
+            } finally {
+                btn.html(originalText).prop('disabled', false);
+            }
         }
 
-        // Clock out
-        function clockOutEmployee() {
-            if (!selectedEmployee || !capturedPhotoBlob) {
-                Toast.fire({ icon: 'warning', title: '{% trans "Please take a selfie first." %}' });
+        // Clock out (selfie is captured automatically on click)
+        async function clockOutEmployee() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
                 return;
             }
 
@@ -1239,37 +1665,36 @@
                 return;
             }
 
-            const formData = new FormData();
-            formData.append('employee_id', selectedEmployee.id);
-            formData.append('selfie', capturedPhotoBlob, 'selfie.jpg');
-            formData.append('latitude', latitude || '');
-            formData.append('longitude', longitude || '');
-
             const btn = $('#clock-out-btn');
             const originalText = btn.html();
             btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
 
-            fetch('{% url "portal-clock-out" %}', {
-                method: 'POST',
-                body: formData
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        showConfirmation(data, 'success');
-                    } else {
-                        showConfirmation(data, 'error');
-                    }
-                })
-                .catch(error => {
-                    console.error('Clock out error:', error);
-                    showConfirmation({
-                        message: `{% trans "Clock out failed" %}: ${error.message}`
-                    }, 'error');
-                })
-                .finally(() => {
-                    btn.html(originalText).prop('disabled', false);
+            try {
+                const selfieBlob = await capturePhotoBlobFromLiveVideo();
+
+                const formData = new FormData();
+                formData.append('employee_id', selectedEmployee.id);
+                formData.append('selfie', selfieBlob, 'selfie.jpg');
+                formData.append('latitude', latitude || '');
+                formData.append('longitude', longitude || '');
+
+                const response = await fetch('{% url "portal-clock-out" %}', {
+                    method: 'POST',
+                    body: formData
                 });
+                const data = await response.json();
+
+                if (data.success) {
+                    showConfirmation(data, 'success');
+                } else {
+                    showConfirmation(data, 'error');
+                }
+            } catch (error) {
+                console.error('Clock out error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Clock out failed." %}' });
+            } finally {
+                btn.html(originalText).prop('disabled', false);
+            }
         }
 
         // Show confirmation
@@ -1323,20 +1748,27 @@
         function showStep(step) {
             $('.self-service-step').css('display', 'none').removeClass('active');
             $('#step-' + step).css('display', 'block').addClass('active');
+            if (step === 'search') {
+                focusSearchInput();
+            }
         }
 
         // Reset form
         function resetForm() {
             selectedEmployee = null;
-            capturedPhotoBlob = null;
             capturedAddress = null;
+            pinInput = '';
             $('#employee-search').val('');
+            $('#search-results').empty();
+            $('#pin-employee-name').text('');
+            $('#pin-employee-badge').text('');
+            $('#pin-employee-avatar').attr('src', '');
+            setPinMessage('{% trans "Use the keypad to enter PIN." %}');
+            updatePinUi();
             $('#employee-info').css('display', 'none');
             $('#video-preview').css('display', 'none');
             $('#captured-photo').css('display', 'none');
             $('#location-overlay').css('display', 'none');
-            $('#capture-btn').css('display', 'none');
-            $('#retake-btn').css('display', 'none');
             $('#action-buttons').css('display', 'none');
             $('#clock-in-btn').css('display', 'none');
             $('#clock-out-btn').css('display', 'none');

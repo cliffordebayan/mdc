@@ -46,6 +46,10 @@ logger = logging.getLogger(__name__)
 # NTP servers to try in order
 _NTP_SERVERS = ["time.cloudflare.com", "pool.ntp.org", "time.google.com"]
 _NTP_DELTA = 2208988800  # seconds between NTP epoch (1900) and Unix epoch (1970)
+_PORTAL_PIN_ATTEMPTS_MAX = 3
+_PORTAL_PIN_VERIFICATION_TTL_SECONDS = 120
+_PORTAL_PIN_ATTEMPTS_SESSION_KEY = "portal_pin_attempts"
+_PORTAL_PIN_VERIFICATION_SESSION_KEY = "portal_pin_verification"
 
 
 def get_real_now():
@@ -133,6 +137,143 @@ def _ip_is_allowed(request):
         except ValueError:
             continue
     return False
+
+
+def _get_pin_attempts(request):
+    """
+    Return PIN attempts map from session.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return {}
+
+    attempts = session.get(_PORTAL_PIN_ATTEMPTS_SESSION_KEY, {})
+    return attempts if isinstance(attempts, dict) else {}
+
+
+def _set_pin_attempts(request, attempts):
+    """
+    Persist PIN attempts map to session.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+
+    session[_PORTAL_PIN_ATTEMPTS_SESSION_KEY] = attempts
+    session.modified = True
+
+
+def _clear_pin_attempts(request, employee_id=None):
+    """
+    Clear PIN attempts for one employee or all employees.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+
+    if employee_id is None:
+        session.pop(_PORTAL_PIN_ATTEMPTS_SESSION_KEY, None)
+        session.modified = True
+        return
+
+    attempts = _get_pin_attempts(request)
+    key = str(employee_id)
+    if key in attempts:
+        attempts.pop(key, None)
+        _set_pin_attempts(request, attempts)
+
+
+def _increment_pin_attempts(request, employee_id):
+    """
+    Increment PIN attempts for an employee and return remaining attempts.
+    """
+    attempts = _get_pin_attempts(request)
+    key = str(employee_id)
+    current_count = int(attempts.get(key, 0)) + 1
+
+    if current_count >= _PORTAL_PIN_ATTEMPTS_MAX:
+        attempts.pop(key, None)
+        _set_pin_attempts(request, attempts)
+        return 0
+
+    attempts[key] = current_count
+    _set_pin_attempts(request, attempts)
+    return _PORTAL_PIN_ATTEMPTS_MAX - current_count
+
+
+def _clear_pin_verification(request):
+    """
+    Remove active PIN verification from session.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+
+    session.pop(_PORTAL_PIN_VERIFICATION_SESSION_KEY, None)
+    session.modified = True
+
+
+def _set_pin_verification(request, employee_id):
+    """
+    Store successful PIN verification in session with timestamp.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+
+    session[_PORTAL_PIN_VERIFICATION_SESSION_KEY] = {
+        "employee_id": str(employee_id),
+        "verified_at": timezone.now().timestamp(),
+    }
+    session.modified = True
+
+
+def _get_pin_verification(request):
+    """
+    Return active PIN verification from session, or None if invalid/expired.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return None
+
+    verification = session.get(_PORTAL_PIN_VERIFICATION_SESSION_KEY)
+    if not isinstance(verification, dict):
+        return None
+
+    employee_id = verification.get("employee_id")
+    verified_at = verification.get("verified_at")
+
+    if employee_id is None or not isinstance(verified_at, (int, float)):
+        _clear_pin_verification(request)
+        return None
+
+    age_seconds = timezone.now().timestamp() - float(verified_at)
+    if age_seconds > _PORTAL_PIN_VERIFICATION_TTL_SECONDS:
+        _clear_pin_verification(request)
+        return None
+
+    return verification
+
+
+def _require_verified_pin(request, employee_id):
+    """
+    Check if a valid PIN verification exists for the given employee.
+    """
+    verification = _get_pin_verification(request)
+    if not verification:
+        return (
+            False,
+            "PIN verification required. Please search and enter your 6-digit PIN.",
+        )
+
+    if str(verification.get("employee_id")) != str(employee_id):
+        _clear_pin_verification(request)
+        return (
+            False,
+            "PIN verification does not match the selected employee. Please search again.",
+        )
+
+    return True, ""
 
 
 def public_portal(request):
@@ -285,6 +426,7 @@ def employee_lookup(request):
     try:
         # Handle both POST data and FormData
         query = request.POST.get("query", "").strip()
+        _clear_pin_verification(request)
 
         logger.info(f"Employee lookup query: {query}, POST data: {request.POST}")
 
@@ -322,6 +464,126 @@ def employee_lookup(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def verify_pin(request):
+    """
+    Verify 6-digit employee PIN before allowing clock in/out actions.
+
+    POST params:
+        employee_id (int): Employee ID
+        pin (str): 6-digit numeric PIN
+
+    Returns:
+        JSON: {
+            "success": bool,
+            "message": str,
+            "attempts_remaining": int,
+            "reset_required": bool
+        }
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    pin = request.POST.get("pin", "").strip()
+
+    if not employee_id:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Employee ID required",
+                "attempts_remaining": _PORTAL_PIN_ATTEMPTS_MAX,
+                "reset_required": False,
+            },
+            status=200,
+        )
+
+    if not re.fullmatch(r"\d{6}", pin):
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "PIN must be exactly 6 digits.",
+                "attempts_remaining": _PORTAL_PIN_ATTEMPTS_MAX,
+                "reset_required": False,
+            },
+            status=200,
+        )
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Employee not found",
+                "attempts_remaining": _PORTAL_PIN_ATTEMPTS_MAX,
+                "reset_required": False,
+            },
+            status=200,
+        )
+
+    work_info = getattr(employee, "employee_work_info", None)
+    stored_pin = getattr(work_info, "pin", None) if work_info else None
+    stored_pin = str(stored_pin).strip() if stored_pin is not None else ""
+
+    if not stored_pin:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Employee PIN is not configured.",
+                "attempts_remaining": _PORTAL_PIN_ATTEMPTS_MAX,
+                "reset_required": False,
+            },
+            status=200,
+        )
+
+    if not re.fullmatch(r"\d{6}", stored_pin):
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Employee PIN is invalid. Please contact HR.",
+                "attempts_remaining": _PORTAL_PIN_ATTEMPTS_MAX,
+                "reset_required": False,
+            },
+            status=200,
+        )
+
+    if pin != stored_pin:
+        _clear_pin_verification(request)
+        attempts_remaining = _increment_pin_attempts(request, employee.id)
+        reset_required = attempts_remaining == 0
+        message = (
+            "Invalid PIN. Maximum attempts reached. Please search again."
+            if reset_required
+            else f"Invalid PIN. Attempts remaining: {attempts_remaining}."
+        )
+        return JsonResponse(
+            {
+                "success": False,
+                "message": message,
+                "attempts_remaining": attempts_remaining,
+                "reset_required": reset_required,
+            },
+            status=200,
+        )
+
+    _clear_pin_attempts(request, employee.id)
+    _set_pin_verification(request, employee.id)
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "PIN verified successfully.",
+            "attempts_remaining": _PORTAL_PIN_ATTEMPTS_MAX,
+            "reset_required": False,
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
 def public_clock_in(request):
     """
     Clock in an employee with selfie photo and GPS location.
@@ -355,6 +617,10 @@ def public_clock_in(request):
             return JsonResponse(
                 {"success": False, "message": "Employee ID required"}, status=200
             )
+
+        has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+        if not has_verified_pin:
+            return JsonResponse({"success": False, "message": pin_message}, status=200)
 
         # Require GPS location
         latitude = request.POST.get("latitude")
@@ -500,6 +766,7 @@ def public_clock_in(request):
             activity.location_verified = False
 
         activity.save()
+        _clear_pin_verification(request)
 
         return JsonResponse({
             "success": True,
@@ -551,6 +818,10 @@ def public_clock_out(request):
             return JsonResponse(
                 {"success": False, "message": "Employee ID required"}, status=200
             )
+
+        has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+        if not has_verified_pin:
+            return JsonResponse({"success": False, "message": pin_message}, status=200)
 
         # Require GPS location
         latitude = request.POST.get("latitude")
@@ -637,6 +908,7 @@ def public_clock_out(request):
 
             closed_activity.save()
 
+        _clear_pin_verification(request)
         return JsonResponse({
             "success": True,
             "message": f"{employee.get_full_name()} clocked out successfully",

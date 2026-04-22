@@ -1,7 +1,8 @@
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+from django.contrib.sessions.middleware import SessionMiddleware
 from django.http import HttpResponse
 from django.test import RequestFactory, SimpleTestCase
 from django.urls import resolve
@@ -9,9 +10,15 @@ from django.urls.exceptions import Resolver404
 
 from attendance.models import Attendance
 from attendance.views.clock_in_out import clock_out_attendance_and_activity
-from attendance.views.portal import public_clock_out
+from attendance.views.portal import public_clock_in, public_clock_out, verify_pin
 from attendance.views import views as attendance_views
 from attendance.views.views import _delete_blocked_message
+
+
+def attach_session(request):
+    middleware = SessionMiddleware(lambda req: HttpResponse())
+    middleware.process_request(request)
+    return request
 
 
 class ClockOutAttendanceAndActivityTests(SimpleTestCase):
@@ -142,8 +149,14 @@ class PortalClockOutTests(SimpleTestCase):
             "/attendance/portal/clock-out/",
             {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
         )
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": "1",
+            "verified_at": datetime.now().timestamp(),
+        }
 
         employee = MagicMock()
+        employee.id = 1
         employee.get_full_name.return_value = "Test Employee"
         employee_model.objects.get.return_value = employee
 
@@ -173,12 +186,255 @@ class PortalClockOutTests(SimpleTestCase):
         self.assertFalse(clock_out_helper_mock.call_args.kwargs["auto_validate"])
 
 
+class PortalPinVerificationTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_verify_pin_success_sets_session(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/verify-pin/",
+            {"employee_id": "1", "pin": "123456"},
+        )
+        attach_session(request)
+
+        employee = MagicMock()
+        employee.id = 1
+        employee.employee_work_info = MagicMock(pin="123456")
+        employee_model.objects.get.return_value = employee
+
+        response = verify_pin(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["attempts_remaining"], 3)
+        self.assertEqual(
+            request.session["portal_pin_verification"]["employee_id"],
+            "1",
+        )
+
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_verify_pin_wrong_pin_tracks_attempts_and_resets_on_third(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/verify-pin/",
+            {"employee_id": "1", "pin": "000000"},
+        )
+        attach_session(request)
+
+        employee = MagicMock()
+        employee.id = 1
+        employee.employee_work_info = MagicMock(pin="123456")
+        employee_model.objects.get.return_value = employee
+
+        first = json.loads(verify_pin(request).content)
+        second = json.loads(verify_pin(request).content)
+        third = json.loads(verify_pin(request).content)
+
+        self.assertFalse(first["success"])
+        self.assertEqual(first["attempts_remaining"], 2)
+        self.assertFalse(second["success"])
+        self.assertEqual(second["attempts_remaining"], 1)
+        self.assertFalse(third["success"])
+        self.assertEqual(third["attempts_remaining"], 0)
+        self.assertTrue(third["reset_required"])
+        self.assertNotIn("1", request.session.get("portal_pin_attempts", {}))
+
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_verify_pin_rejects_non_six_digit_pin(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/verify-pin/",
+            {"employee_id": "1", "pin": "12345"},
+        )
+        attach_session(request)
+
+        response = verify_pin(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["attempts_remaining"], 3)
+        self.assertIn("exactly 6 digits", payload["message"])
+        employee_model.objects.get.assert_not_called()
+
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_verify_pin_rejects_missing_stored_pin(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/verify-pin/",
+            {"employee_id": "1", "pin": "123456"},
+        )
+        attach_session(request)
+
+        employee = MagicMock()
+        employee.id = 1
+        employee.employee_work_info = MagicMock(pin=None)
+        employee_model.objects.get.return_value = employee
+
+        response = verify_pin(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertIn("not configured", payload["message"])
+
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_verify_pin_rejects_invalid_stored_pin_format(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/verify-pin/",
+            {"employee_id": "1", "pin": "123456"},
+        )
+        attach_session(request)
+
+        employee = MagicMock()
+        employee.id = 1
+        employee.employee_work_info = MagicMock(pin="12AB56")
+        employee_model.objects.get.return_value = employee
+
+        response = verify_pin(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertIn("invalid", payload["message"])
+
+
+class PortalPinGateTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_out_requires_verified_pin(
+        self,
+        _ip_allowed_mock,
+    ):
+        request = self.factory.post("/attendance/portal/clock-out/", {"employee_id": "1"})
+        attach_session(request)
+
+        response = public_clock_out(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertIn("PIN verification required", payload["message"])
+
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_out_rejects_mismatched_pin_session(
+        self,
+        _ip_allowed_mock,
+    ):
+        request = self.factory.post("/attendance/portal/clock-out/", {"employee_id": "1"})
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": "2",
+            "verified_at": datetime.now().timestamp(),
+        }
+
+        response = public_clock_out(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertIn("does not match", payload["message"])
+
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_out_rejects_expired_pin_session(
+        self,
+        _ip_allowed_mock,
+    ):
+        request = self.factory.post("/attendance/portal/clock-out/", {"employee_id": "1"})
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": "1",
+            "verified_at": (datetime.now() - timedelta(minutes=5)).timestamp(),
+        }
+
+        response = public_clock_out(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertIn("PIN verification required", payload["message"])
+
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_out_allows_flow_after_valid_pin_session(
+        self,
+        _ip_allowed_mock,
+    ):
+        request = self.factory.post("/attendance/portal/clock-out/", {"employee_id": "1"})
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": "1",
+            "verified_at": datetime.now().timestamp(),
+        }
+
+        response = public_clock_out(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertIn("Location is required", payload["message"])
+
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_in_requires_verified_pin(
+        self,
+        _ip_allowed_mock,
+    ):
+        request = self.factory.post("/attendance/portal/clock-in/", {"employee_id": "1"})
+        attach_session(request)
+
+        response = public_clock_in(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertIn("PIN verification required", payload["message"])
+
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_in_allows_flow_after_valid_pin_session(
+        self,
+        _ip_allowed_mock,
+    ):
+        request = self.factory.post("/attendance/portal/clock-in/", {"employee_id": "1"})
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": "1",
+            "verified_at": datetime.now().timestamp(),
+        }
+
+        response = public_clock_in(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertIn("Location is required", payload["message"])
+
+
 class PortalUrlRoutingTests(SimpleTestCase):
     def test_portal_urls_resolve(self):
         self.assertEqual(resolve("/attendance/portal/").url_name, "public-portal")
         self.assertEqual(
             resolve("/attendance/portal/employee-lookup/").url_name,
             "portal-employee-lookup",
+        )
+        self.assertEqual(
+            resolve("/attendance/portal/verify-pin/").url_name,
+            "portal-verify-pin",
         )
         self.assertEqual(
             resolve("/attendance/portal/clock-in/").url_name,

@@ -33,6 +33,11 @@ urlpatterns = [
         name="portal-employee-lookup",
     ),
     path(
+        "portal/verify-pin/",
+        attendance.views.portal.verify_pin,
+        name="portal-verify-pin",
+    ),
+    path(
         "portal/clock-in/",
         attendance.views.portal.public_clock_in,
         name="portal-clock-in",
