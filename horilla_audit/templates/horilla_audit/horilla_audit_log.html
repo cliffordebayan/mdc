@@ -38,7 +38,7 @@
 </div>
 <script>
     $("#historyModalBody").ready(function () {
-        $("form[method=post] button").click(function (e) {
+        $("form[method=post] button[type=submit]").click(function (e) {
             if ($(this).closest("form").find("#historyModal").length && !$(this).closest("form").find("#historyModal.oh-modal--show").length) {
                 e.preventDefault();
                 $("#historyModal").addClass("oh-modal--show");
