@@ -1,5 +1,8 @@
+import base64
+import hashlib
 import json
 import os
+import secrets
 from datetime import datetime, timedelta
 
 from django.utils import timezone
@@ -112,20 +115,30 @@ def refresh_credentials(google_drive_backup, creds):
 
 def get_authorization_url(oauth_credentials_file_path, redirect_uri):
     """
-    Generate OAuth authorization URL.
-    Returns (authorization_url, flow) tuple.
+    Generate OAuth authorization URL with PKCE.
+    Returns (authorization_url, flow, state, code_verifier) tuple.
     """
     with open(oauth_credentials_file_path, "r") as f:
         client_config = json.load(f)
 
-    # Use Flow for web applications
     flow = Flow.from_client_config(client_config, SCOPES, redirect_uri=redirect_uri)
 
-    authorization_url, state = flow.authorization_url(
-        access_type="offline", include_granted_scopes="true", prompt="consent"
+    code_verifier = secrets.token_urlsafe(32)
+    code_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
     )
 
-    return authorization_url, flow, state
+    authorization_url, state = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+        code_challenge=code_challenge,
+        code_challenge_method="S256",
+    )
+
+    return authorization_url, flow, state, code_verifier
 
 
 def exchange_code_for_tokens(flow, authorization_response_url):

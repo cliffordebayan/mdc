@@ -277,12 +277,12 @@ def gdrive_authorize(request):
         request.session["gdrive_oauth_redirect_uri"] = redirect_uri
 
         # Generate authorization URL
-        authorization_url, flow, state = get_authorization_url(
+        authorization_url, flow, state, code_verifier = get_authorization_url(
             oauth_file_path, redirect_uri
         )
 
-        # Store state in session for verification
         request.session["gdrive_oauth_state"] = state
+        request.session["gdrive_oauth_code_verifier"] = code_verifier
 
         return redirect(authorization_url)
     except Exception as e:
@@ -332,7 +332,8 @@ def gdrive_callback(request):
 
         # Exchange authorization code for tokens
         full_url = request.build_absolute_uri()
-        flow.fetch_token(authorization_response=full_url)
+        code_verifier = request.session.get("gdrive_oauth_code_verifier")
+        flow.fetch_token(authorization_response=full_url, code_verifier=code_verifier)
         creds = flow.credentials
 
         # Store tokens in model
