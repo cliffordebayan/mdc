@@ -16,7 +16,10 @@ from django.utils.translation import gettext as _
 
 from base.context_processors import get_initial_prefix
 from base.models import (
+    Branch,
+    BusinessUnit,
     Company,
+    CostCenter,
     Department,
     EmployeeShift,
     EmployeeType,
@@ -473,10 +476,13 @@ def bulk_create_employee_import(success_lists):
             employee_user_id=existing_users[row["Email"]],
             badge_id=row["Badge ID"],
             employee_first_name=convert_nan("First Name", row),
+            employee_middle_name=convert_nan("Middle Name", row) or None,
             employee_last_name=convert_nan("Last Name", row),
+            employee_extension=convert_nan("Extension", row) or None,
             email=row["Email"],
             phone=row["Phone"],
             gender=row.get("Gender", "").lower(),
+            qualification=convert_nan("Qualification", row) or None,
         )
         for row in success_lists
         if row["Email"] in existing_users
@@ -762,6 +768,9 @@ def bulk_create_work_info_import(success_lists):
     employee_types = set(row.get("Employee Type") for row in success_lists)
     shifts = set(row.get("Shift") for row in success_lists)
     companies = set(row.get("Company") for row in success_lists)
+    branches = set(row.get("Branch") for row in success_lists if row.get("Branch"))
+    cost_centers = set(row.get("Cost Center") for row in success_lists if row.get("Cost Center"))
+    business_units = set(row.get("Business Unit") for row in success_lists if row.get("Business Unit"))
 
     chunk_size = None if is_postgres else 999
     employee_qs = (
@@ -829,6 +838,18 @@ def bulk_create_work_info_import(success_lists):
         comp.company: comp
         for comp in Company.objects.filter(company__in=companies).only("company")
     }
+    existing_branches = {
+        b.branch: b
+        for b in Branch.objects.filter(branch__in=branches).only("branch")
+    }
+    existing_cost_centers = {
+        cc.name: cc
+        for cc in CostCenter.objects.filter(name__in=cost_centers).only("name")
+    }
+    existing_business_units = {
+        bu.name: bu
+        for bu in BusinessUnit.objects.filter(name__in=business_units).only("name")
+    }
     reporting_manager_dict = optimize_reporting_manager_lookup()
 
     for work_info in success_lists:
@@ -863,6 +884,10 @@ def bulk_create_work_info_import(success_lists):
                 reporting_manager_obj = reporting_manager_dict[reporting_manager]
 
         company_obj = existing_companies.get(work_info.get("Company"))
+        branch_obj = existing_branches.get(work_info.get("Branch"))
+        cost_center_obj = existing_cost_centers.get(work_info.get("Cost Center"))
+        business_unit_obj = existing_business_units.get(work_info.get("Business Unit"))
+        employee_status = work_info.get("Employee Status") or None
         location = work_info.get("Location")
 
         # Parsing dates and salary
@@ -901,6 +926,10 @@ def bulk_create_work_info_import(success_lists):
                 shift_id=shift_obj,
                 reporting_manager_id=reporting_manager_obj,
                 company_id=company_obj,
+                branch_id=branch_obj,
+                cost_center_id=cost_center_obj,
+                business_unit_id=business_unit_obj,
+                employee_status=employee_status,
                 location=location,
                 date_joining=(
                     date_joining if not pd.isnull(date_joining) else datetime.today()
@@ -923,6 +952,10 @@ def bulk_create_work_info_import(success_lists):
             employee_work_info.shift_id = shift_obj
             employee_work_info.reporting_manager_id = reporting_manager_obj
             employee_work_info.company_id = company_obj
+            employee_work_info.branch_id = branch_obj
+            employee_work_info.cost_center_id = cost_center_obj
+            employee_work_info.business_unit_id = business_unit_obj
+            employee_work_info.employee_status = employee_status
             employee_work_info.location = location
             employee_work_info.date_joining = (
                 date_joining if not pd.isnull(date_joining) else datetime.today()
@@ -950,6 +983,10 @@ def bulk_create_work_info_import(success_lists):
                 "shift_id",
                 "reporting_manager_id",
                 "company_id",
+                "branch_id",
+                "cost_center_id",
+                "business_unit_id",
+                "employee_status",
                 "location",
                 "date_joining",
                 "contract_end_date",

@@ -93,6 +93,7 @@
                             hx-target='#activity-table' hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=clock_out_date">
                             {% trans "Out Date" %}
                         </div>
+                        <div data-cell-index="9" data-cell-title="{% trans 'Work Hours' %}" class='oh-sticky-table__th'>{% trans "Work Hours" %}</div>
                         {% if perms.attendance.delete_attendanceactivity %}
                             <div class='oh-sticky-table__th oh-sticky-table__right' scope="col" style="width: 86px;">{% trans "Actions" %}</div>
                         {% endif %}
@@ -145,6 +146,7 @@
                                 {% endif %}
                             </div>
                             <div data-cell-index="8" class="oh-sticky-table__td dateformat_changer">{{activity.clock_out_date}}</div>
+                            <div data-cell-index="9" class="oh-sticky-table__td">{{activity.work_hours}}</div>
                             {% if perms.attendance.delete_attendanceactivity %}
                                 <div class="oh-sticky-table__td oh-sticky-table__right">
                                     <form hx-confirm="{% trans 'Are you sure want to delete this attendance?' %}"

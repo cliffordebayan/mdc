@@ -2686,29 +2686,63 @@ def work_info_import_file(request):
     """
     This method is used to return the excel file of import Employee instances
     """
-    data_frame = pd.DataFrame(
-        columns=[
-            "Badge ID",
-            "First Name",
-            "Last Name",
-            "Email",
-            "Phone",
-            "Gender",
-            "Department",
-            "Job Position",
-            "Job Role",
-            "Shift",
-            "Work Type",
-            "Reporting Manager",
-            "Employee Type",
-            "Location",
-            "Date Joining",
-            "Basic Salary",
-            "Salary Hour",
-            "Contract End Date",
-            "Company",
-        ]
-    )
+    columns = [
+        "Badge ID",
+        "First Name",
+        "Middle Name",
+        "Last Name",
+        "Extension",
+        "Email",
+        "Phone",
+        "Gender",
+        "Qualification",
+        "Department",
+        "Job Position",
+        "Job Role",
+        "Shift",
+        "Work Type",
+        "Reporting Manager",
+        "Employee Type",
+        "Location",
+        "Date Joining",
+        "Basic Salary",
+        "Salary Hour",
+        "Contract End Date",
+        "Company",
+        "Branch",
+        "Cost Center",
+        "Business Unit",
+        "Employee Status",
+    ]
+    example = {
+        "Badge ID": "EMP001",
+        "First Name": "Juan",
+        "Middle Name": "Santos",
+        "Last Name": "Dela Cruz",
+        "Extension": "Jr.",
+        "Email": "juan.delacruz@company.com",
+        "Phone": "09171234567",
+        "Gender": "male",
+        "Qualification": "Bachelor of Science",
+        "Department": "Engineering",
+        "Job Position": "Software Engineer",
+        "Job Role": "Backend Developer",
+        "Shift": "Morning Shift 8-5 (M-F)",
+        "Work Type": "Full-time",
+        "Reporting Manager": "Maria Garcia",
+        "Employee Type": "Regular",
+        "Location": "Makati",
+        "Date Joining": "2024-01-15",
+        "Basic Salary": 30000,
+        "Salary Hour": 0,
+        "Contract End Date": "2025-01-14",
+        "Company": "ABC Corporation",
+        "Branch": "Main Branch",
+        "Cost Center": "IT Cost Center",
+        "Business Unit": "Technology",
+        "Employee Status": "active",
+    }
+    data_frame = pd.DataFrame([example], columns=columns)
 
     response = HttpResponse(content_type="application/ms-excel")
     response["Content-Disposition"] = 'attachment; filename="work_info_template.xlsx"'
@@ -2841,6 +2875,9 @@ def work_info_export(request):
         "employee_work_info__work_type_id": "employee_work_info__work_type_id__work_type",
         "employee_work_info__reporting_manager_id": "employee_work_info__reporting_manager_id__get_full_name",
         "employee_work_info__employee_type_id": "employee_work_info__employee_type_id__employee_type",
+        "employee_work_info__branch_id": "employee_work_info__branch_id__branch",
+        "employee_work_info__cost_center_id": "employee_work_info__cost_center_id__name",
+        "employee_work_info__business_unit_id": "employee_work_info__business_unit_id__name",
     }
     employees = EmployeeFilter(request.GET).qs
     employees = filtersubordinatesemployeemodel(
@@ -2853,9 +2890,14 @@ def work_info_export(request):
         id_list = json.loads(ids)
         employees = Employee.objects.filter(id__in=id_list)
 
-    prefetch_fields = list(set(f.split("__")[0] for f in selected_fields if "__" in f))
+    reverse_fk_relations = {"employee_bank_details"}
+    all_relation_fields = list(set(f.split("__")[0] for f in selected_fields if "__" in f))
+    select_fields = [f for f in all_relation_fields if f not in reverse_fk_relations]
+    prefetch_fields = [f for f in all_relation_fields if f in reverse_fk_relations]
+    if select_fields:
+        employees = employees.select_related(*select_fields)
     if prefetch_fields:
-        employees = employees.select_related(*prefetch_fields)
+        employees = employees.prefetch_related(*prefetch_fields)
 
     for value, key in excel_columns:
         if value in selected_fields:
@@ -2871,9 +2913,108 @@ def work_info_export(request):
             if company and company.date_format:
                 date_format = company.date_format
 
-    employees_data = {column_name: [] for _, column_name in selected_columns}
+    bank_detail_fields = [
+        (f.split("__", 1)[1], lbl)
+        for f, lbl in selected_columns
+        if f.startswith("employee_bank_details__")
+    ]
+    has_insurance = any(f == "employee_insurance" for f, _ in selected_columns)
+
+    employee_ids = list(employees.values_list("id", flat=True))
+    all_bank_names = []
+    all_insurance_names = []
+
+    if bank_detail_fields and employee_ids:
+        all_bank_names = list(
+            EmployeeBankDetails.objects.filter(employee_id__in=employee_ids)
+            .values_list("bank_name", flat=True)
+            .distinct()
+            .order_by("bank_name")
+        )
+
+    if has_insurance and employee_ids:
+        all_insurance_names = list(
+            EmployeeInsurance.objects.filter(employee_id__in=employee_ids)
+            .values_list("name", flat=True)
+            .distinct()
+            .order_by("name")
+        )
+
+    employees_data = {}
+    bank_cols_added = False
+    for col_value, col_name in selected_columns:
+        if col_value.startswith("employee_bank_details__"):
+            if not bank_cols_added:
+                for bank_name in all_bank_names:
+                    employees_data[bank_name] = []
+                bank_cols_added = True
+        elif col_value == "employee_insurance":
+            for ins_name in all_insurance_names:
+                employees_data[f"{ins_name} - Start Date"] = []
+                employees_data[f"{ins_name} - End Date"] = []
+        else:
+            employees_data[col_name] = []
+
+    today = date.today()
+    date_fmt = HORILLA_DATE_FORMATS.get(date_format, "%Y-%m-%d")
     for employee in employees:
+        # Cache bank accounts and insurances per employee (primary first).
+        emp_banks = list(employee.employee_bank_details.order_by("-is_primary", "id")) if bank_detail_fields else []
+        emp_insurances = list(employee.employee_insurance.all()) if has_insurance else []
+        bank_written = False
+
         for column_value, column_name in selected_columns:
+            if column_value == "age":
+                if employee.dob:
+                    age_val = today.year - employee.dob.year - (
+                        (today.month, today.day) < (employee.dob.month, employee.dob.day)
+                    )
+                    data = str(age_val)
+                else:
+                    data = ""
+                employees_data[column_name].append(data)
+                continue
+
+            if column_value == "years_of_service":
+                work_info = getattr(employee, "employee_work_info", None)
+                if work_info and work_info.date_joining:
+                    delta = today - work_info.date_joining
+                    data = str(delta.days // 365)
+                else:
+                    data = ""
+                employees_data[column_name].append(data)
+                continue
+
+            if column_value == "employee_work_info__tags":
+                work_info = getattr(employee, "employee_work_info", None)
+                if work_info:
+                    data = ", ".join(str(tag) for tag in work_info.tags.all())
+                else:
+                    data = ""
+                employees_data[column_name].append(data)
+                continue
+
+            if column_value == "employee_insurance":
+                for ins_name in all_insurance_names:
+                    ins = next((i for i in emp_insurances if i.name == ins_name), None)
+                    employees_data[f"{ins_name} - Start Date"].append(
+                        ins.start_date.strftime(date_fmt) if ins and ins.start_date else ""
+                    )
+                    employees_data[f"{ins_name} - End Date"].append(
+                        ins.end_date.strftime(date_fmt) if ins and ins.end_date else ""
+                    )
+                continue
+
+            if column_value.startswith("employee_bank_details__"):
+                if not bank_written:
+                    for bank_name in all_bank_names:
+                        bank = next((b for b in emp_banks if b.bank_name == bank_name), None)
+                        employees_data[bank_name].append(
+                            str(bank.account_number or "") if bank else ""
+                        )
+                    bank_written = True
+                continue
+
             if column_value in field_overrides:
                 column_value = field_overrides[column_value]
 
@@ -2895,9 +3036,7 @@ def work_info_export(request):
 
             if isinstance(value, date):
                 try:
-                    data = value.strftime(
-                        HORILLA_DATE_FORMATS.get(date_format, "%Y-%m-%d")
-                    )
+                    data = value.strftime(date_fmt)
                 except Exception:
                     data = str(value)
 

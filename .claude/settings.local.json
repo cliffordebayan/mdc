@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/CLIFFORD/AppData/Roaming/**)",
+      "Read(//c/Users/CLIFFORD/AppData/Local/Packages/**)",
+      "Bash(py -3 -c \"import django; print\\(django.__version__\\)\")",
+      "Bash(wmic process *)",
+      "Bash(horillavenv/Scripts/python.exe -c ' *)"
+    ]
+  }
+}

@@ -113,6 +113,22 @@ class AttendanceActivity(HorillaModel):
 
         return time_difference.total_seconds()
 
+    @property
+    def work_hours(self):
+        try:
+            if not self.clock_in_date or not self.clock_in:
+                return "00:00"
+            clock_out_date = self.clock_out_date or datetime.today().date()
+            clock_out = self.clock_out or datetime.now().time()
+            clock_in_dt = datetime.combine(self.clock_in_date, self.clock_in)
+            clock_out_dt = datetime.combine(clock_out_date, clock_out)
+            seconds = (clock_out_dt - clock_in_dt).total_seconds()
+            if seconds < 0:
+                return "00:00"
+            return format_time(seconds)
+        except Exception:
+            return "00:00"
+
     def __str__(self):
         return f"{self.employee_id} - {self.attendance_date} - {self.clock_in} - {self.clock_out}"
 
