@@ -52,6 +52,10 @@ SUBMENUS = [
         "menu": _("My Attendances"),
         "redirect": reverse("view-my-attendance"),
     },
+    {
+        "menu": _("Portal"),
+        "redirect": reverse("public-portal"),
+    },
 ]
 
 
