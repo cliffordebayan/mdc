@@ -894,6 +894,9 @@
                                     <h4 id="employee-name"></h4>
                                     <p id="employee-badge"></p>
                                     <div id="employee-status" style="margin-top: 4px;"></div>
+                                    <div id="clock-live-work-hours" style="display:none; margin-top:6px; font-size:13px; color:#666;">
+                                        {% trans "Work time" %}: <strong id="clock-work-hours-value">00:00:00</strong>
+                                    </div>
                                 </div>
                             </div>
 
@@ -963,6 +966,17 @@
         // This is re-synced from the server every 30 seconds so employees
         // cannot manipulate the displayed time by changing their computer clock.
         let serverTimeOffset = new Date('{{ server_time_iso }}').getTime() - Date.now();
+        let liveWorkHoursInterval = null;
+        let searchLiveHoursInterval = null;
+
+        function formatElapsedTime(ms) {
+            if (ms < 0) ms = 0;
+            const s = Math.floor(ms / 1000);
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = s % 60;
+            return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+        }
 
         function resyncServerTime() {
             fetch('/attendance/portal/server-time/')
@@ -1146,6 +1160,8 @@
 
             // Back button
             $('#back-btn').on('click', function () {
+                clearInterval(liveWorkHoursInterval);
+                liveWorkHoursInterval = null;
                 resetForm();
                 showStep('search');
             });
@@ -1216,7 +1232,7 @@
                     if (data.success && data.results.length > 0) {
                         if (data.results.length === 1) {
                             const emp = data.results[0];
-                            selectEmployee(emp.id, emp.name, emp.badge_id, emp.avatar, emp.is_clocked_in);
+                            selectEmployee(emp.id, emp.name, emp.badge_id, emp.avatar, emp.is_clocked_in, emp.clock_in_datetime);
                             return;
                         }
 
@@ -1225,11 +1241,14 @@
                             const safeName = String(emp.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                             const safeBadge = String(emp.badge_id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                             const safeAvatar = String(emp.avatar || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                            const safeClockIn = String(emp.clock_in_datetime || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                             const badge = emp.badge_id ? `<span class="badge-badge">${emp.badge_id}</span>` : '';
-                            const status = emp.is_clocked_in ?
-                                `<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>` : '';
+                            const status = emp.is_clocked_in
+                                ? `<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>` +
+                                  (emp.clock_in_datetime ? ` <span class="live-work-hours" data-clock-in="${emp.clock_in_datetime}">--:--:--</span>` : '')
+                                : '';
                             html += `
-                            <div class="search-result-item" onclick="selectEmployee(${emp.id}, '${safeName}', '${safeBadge}', '${safeAvatar}', ${emp.is_clocked_in})">
+                            <div class="search-result-item" onclick="selectEmployee(${emp.id}, '${safeName}', '${safeBadge}', '${safeAvatar}', ${emp.is_clocked_in}, '${safeClockIn}')">
                                 <img src="${emp.avatar}" class="search-result-avatar" />
                                 <div style="flex: 1; text-align: left;">
                                     <div>${emp.name}</div>
@@ -1239,6 +1258,13 @@
                         `;
                         });
                         $('#search-results').html(html);
+                        clearInterval(searchLiveHoursInterval);
+                        searchLiveHoursInterval = setInterval(function () {
+                            document.querySelectorAll('.live-work-hours[data-clock-in]').forEach(function (el) {
+                                const elapsed = (Date.now() + serverTimeOffset) - new Date(el.dataset.clockIn).getTime();
+                                el.textContent = formatElapsedTime(elapsed);
+                            });
+                        }, 1000);
                     } else {
                         const message = data.message || '{% trans "No employees found" %}';
                         $('#search-results').html(`<div class="search-result-item" style="cursor: default;">${message}</div>`);
@@ -1251,15 +1277,18 @@
         }
 
         // Select employee
-        function selectEmployee(empId, empName, empBadge, empAvatar, isClockedIn) {
+        function selectEmployee(empId, empName, empBadge, empAvatar, isClockedIn, clockInDatetime) {
             selectedEmployee = {
                 id: empId,
                 name: empName,
                 badge: empBadge,
                 avatar: empAvatar,
-                is_clocked_in: isClockedIn
+                is_clocked_in: isClockedIn,
+                clock_in_datetime: clockInDatetime || null
             };
 
+            clearInterval(searchLiveHoursInterval);
+            searchLiveHoursInterval = null;
             $('#search-results').empty();
             $('#employee-search').val(empBadge || empName).blur();
             $('#pin-employee-name').text(empName);
@@ -1385,10 +1414,26 @@
             $('#employee-badge').text(selectedEmployee.badge ? `#${selectedEmployee.badge}` : '');
             $('#employee-avatar').attr('src', selectedEmployee.avatar);
 
+            clearInterval(liveWorkHoursInterval);
+            liveWorkHoursInterval = null;
+
             if (selectedEmployee.is_clocked_in) {
                 $('#employee-status').html('<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>');
+                if (selectedEmployee.clock_in_datetime) {
+                    $('#clock-live-work-hours').show();
+                    const _clockIn = new Date(selectedEmployee.clock_in_datetime);
+                    function _updateWorkHours() {
+                        const elapsed = (Date.now() + serverTimeOffset) - _clockIn.getTime();
+                        $('#clock-work-hours-value').text(formatElapsedTime(elapsed));
+                    }
+                    _updateWorkHours();
+                    liveWorkHoursInterval = setInterval(_updateWorkHours, 1000);
+                } else {
+                    $('#clock-live-work-hours').hide();
+                }
             } else {
                 $('#employee-status').empty();
+                $('#clock-live-work-hours').hide();
             }
 
             showStep('clock');
@@ -1699,6 +1744,8 @@
 
         // Show confirmation
         function showConfirmation(response, type) {
+            clearInterval(liveWorkHoursInterval);
+            liveWorkHoursInterval = null;
             let html = '';
             if (type === 'success') {
                 const action = response.worked_hours ? '{% trans "Clocked Out" %}' : '{% trans "Clocked In" %}';

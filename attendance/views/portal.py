@@ -441,10 +441,20 @@ def employee_lookup(request):
 
         results = []
         for emp in employees:
-            # Check if employee is currently clocked in
-            is_clocked_in = AttendanceActivity.objects.filter(
+            active_activity = AttendanceActivity.objects.filter(
                 employee_id=emp, clock_out__isnull=True
-            ).exists()
+            ).order_by('-clock_in_date', '-clock_in').first()
+
+            is_clocked_in = active_activity is not None
+            clock_in_datetime = None
+            if active_activity:
+                if active_activity.in_datetime:
+                    clock_in_datetime = active_activity.in_datetime.isoformat()
+                elif active_activity.clock_in_date and active_activity.clock_in:
+                    from datetime import datetime as _dt
+                    clock_in_datetime = _dt.combine(
+                        active_activity.clock_in_date, active_activity.clock_in
+                    ).isoformat()
 
             results.append({
                 "id": emp.id,
@@ -452,6 +462,7 @@ def employee_lookup(request):
                 "name": emp.get_full_name(),
                 "avatar": emp.get_avatar(),
                 "is_clocked_in": is_clocked_in,
+                "clock_in_datetime": clock_in_datetime,
             })
 
         return JsonResponse({"success": True, "results": results})
