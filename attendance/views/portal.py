@@ -401,17 +401,17 @@ def server_time(request):
 @require_http_methods(["POST"])
 def employee_lookup(request):
     """
-    Search for employees by badge_id or name.
+    Search for employees by employee_no or name.
     Returns JSON list of matching employees.
 
     POST params:
-        query (str): Search string (name or badge ID)
+        query (str): Search string (name or employee no)
 
     Returns:
         JSON: [
             {
                 "id": int,
-                "badge_id": str,
+                "employee_no": str,
                 "name": str,
                 "avatar": str,
                 "is_clocked_in": bool
@@ -433,9 +433,9 @@ def employee_lookup(request):
         if not query or not re.fullmatch(r"\d{7}", query):
             return JsonResponse({"success": True, "results": []})
 
-        # Search by badge_id only (exact match on complete 7-digit ID)
+        # Search by employee_no only (exact match on complete 7-digit ID)
         employees = Employee.objects.filter(
-            badge_id__exact=query,
+            employee_no__exact=query,
             is_active=True,
         )[:10]
 
@@ -458,7 +458,7 @@ def employee_lookup(request):
 
             results.append({
                 "id": emp.id,
-                "badge_id": emp.badge_id or "",
+                "employee_no": emp.employee_no or "",
                 "name": emp.get_full_name(),
                 "avatar": emp.get_avatar(),
                 "is_clocked_in": is_clocked_in,

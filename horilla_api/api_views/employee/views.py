@@ -25,7 +25,7 @@ from employee.models import (
 from employee.views import work_info_export, work_info_import
 from horilla.decorators import owner_can_enter
 from horilla_api.api_decorators.base.decorators import permission_required
-from horilla_api.api_methods.employee.methods import get_next_badge_id
+from horilla_api.api_methods.employee.methods import get_next_employee_no
 from horilla_documents.models import Document, DocumentRequest
 from notifications.signals import notify
 
@@ -442,7 +442,7 @@ class EmployeeBulkUpdateView(APIView):
         employee_data = request.data.get("employee_data", {})
         work_info_data = request.data.get("employee_work_info", {})
         fields_to_remove = [
-            "badge_id",
+            "employee_no",
             "employee_first_name",
             "employee_last_name",
             "is_active",

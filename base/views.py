@@ -356,7 +356,7 @@ def initialize_database_user(request):
             return render(request, "initialize_database/horilla_user_signup.html")
         first_name = form_data.get("firstname")
         last_name = form_data.get("lastname")
-        badge_id = form_data.get("badge_id")
+        employee_no = form_data.get("employee_no")
         email = form_data.get("email")
         phone = form_data.get("phone")
         user = User.objects.filter(username=username).first()
@@ -367,7 +367,7 @@ def initialize_database_user(request):
         )
         employee = Employee()
         employee.employee_user_id = user
-        employee.badge_id = badge_id
+        employee.employee_no = employee_no
         employee.employee_first_name = first_name
         employee.employee_last_name = last_name
         employee.email = email
@@ -3242,7 +3242,7 @@ def rotating_shift_assign_import(request):
             start_date = parser.parse(str(start_date), dayfirst=True).date()
 
         for total_rows, row in enumerate(work_info_dicts, start=1):
-            employee_ids.append(row["Badge Id"])
+            employee_ids.append(row["Employee No"])
             current_list = list(row.values())[3:]
             current_list = normalize_list(current_list)
             if start_date < datetime.today().date():
@@ -3296,7 +3296,7 @@ def rotating_shift_assign_import(request):
                             rotating_shift_obj_list.append(rotating_shift_obj)
                             break
 
-        employee_list = Employee.objects.filter(badge_id__in=employee_ids)
+        employee_list = Employee.objects.filter(employee_no__in=employee_ids)
         r_shifts = RotatingShiftAssign.objects.all()
         if start_date and employee_ids:
             for employee, rshift in zip(employee_list, rotating_shift_obj_list):
@@ -3316,7 +3316,7 @@ def rotating_shift_assign_import(request):
                 else:
                     error_message = f"Rotating Shift with ID {rshift.name} is already assigned to employee {employee}"
                     for row in work_info_dicts:
-                        if row["Badge Id"] == employee.badge_id:
+                        if row["Employee No"] == employee.employee_no:
                             row["Employee Error"] = error_message
                             error_list.append(row)
                             break
@@ -3333,10 +3333,10 @@ def rotating_shift_assign_import(request):
         unique_error_list = []
 
         for row in error_list:
-            badge_id = row["Badge Id"]
-            if badge_id not in flg:
+            employee_no = row["Employee No"]
+            if employee_no not in flg:
                 unique_error_list.append(row)
-                flg.add(badge_id)
+                flg.add(employee_no)
 
         if unique_error_list:
             for item in unique_error_list:

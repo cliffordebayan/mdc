@@ -416,9 +416,9 @@ urlpatterns = [
     ),
     path("initial-prefix", views.initial_prefix, name="initial-prefix"),
     path(
-        "get-first-last-badge-id",
-        views.first_last_badge,
-        name="get-first-last-badge-id",
+        "get-first-last-employee-no",
+        views.first_last_employee_no,
+        name="get-first-last-employee-no",
     ),
     path(
         "employee-get-mail-log",

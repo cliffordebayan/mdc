@@ -23,7 +23,7 @@ def handle_attendance_errors(error_list):
     """
     keys_to_remove = []
     error_data = {
-        "Badge ID": [],
+        "Employee No": [],
         "Shift": [],
         "Work type": [],
         "Attendance date": [],
@@ -33,7 +33,7 @@ def handle_attendance_errors(error_list):
         "Check-out": [],
         "Worked hour": [],
         "Minimum hour": [],
-        "Badge ID Error": [],
+        "Employee No Error": [],
         "Shift Error": [],
         "Work Type Error": [],
         "Check-in Validation Error": [],

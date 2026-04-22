@@ -313,7 +313,7 @@ class AttendanceActivityFilter(FilterSet):
             "out_till",
             "clock_in_date",
             "clock_out_date",
-            "employee_id__badge_id",
+            "employee_id__employee_no",
             "employee_id__employee_work_info__department_id",
             "employee_id__employee_work_info__company_id",
             "employee_id__employee_work_info__shift_id",

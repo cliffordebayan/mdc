@@ -5025,7 +5025,7 @@ msgstr "رقم المنفذ"
 msgid "Options"
 msgstr "خيارات"
 
-msgid "Badge ID"
+msgid "Employee No"
 msgstr "معرف الشارة"
 
 msgid "Fingerprint"

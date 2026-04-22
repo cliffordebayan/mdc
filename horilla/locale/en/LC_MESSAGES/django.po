@@ -5475,7 +5475,7 @@ msgstr ""
 msgid "Options"
 msgstr ""
 
-msgid "Badge ID"
+msgid "Employee No"
 msgstr ""
 
 msgid "Fingerprint"

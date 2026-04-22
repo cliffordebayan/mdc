@@ -23,7 +23,7 @@ class PayslipSerializer(serializers.ModelSerializer):
         source="employee_id.employee_last_name", read_only=True
     )
     shift_name = serializers.CharField(source="shift_id.employee_shift", read_only=True)
-    badge_id = serializers.CharField(source="employee_id.badge_id", read_only=True)
+    employee_no = serializers.CharField(source="employee_id.employee_no", read_only=True)
     employee_profile_url = serializers.SerializerMethodField(read_only=True)
     department_name = serializers.CharField(
         source="employee_id.employee_work_info.department_id.department", read_only=True
@@ -57,7 +57,7 @@ class ContractSerializer(serializers.ModelSerializer):
         source="employee_id.employee_last_name", read_only=True
     )
     shift_name = serializers.CharField(source="shift_id.employee_shift", read_only=True)
-    badge_id = serializers.CharField(source="employee_id.badge_id", read_only=True)
+    employee_no = serializers.CharField(source="employee_id.employee_no", read_only=True)
     employee_profile_url = serializers.SerializerMethodField(read_only=True)
 
     job_position_name = serializers.CharField(
@@ -183,7 +183,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
     employee_full_name = serializers.CharField(
         source="employee_id.get_full_name", read_only=True
     )
-    badge_id = serializers.CharField(source="employee_id.badge_id", read_only=True)
+    employee_no = serializers.CharField(source="employee_id.employee_no", read_only=True)
     job_position_name = serializers.CharField(
         source="employee_id.get_job_position", read_only=True
     )
@@ -204,7 +204,7 @@ class ReimbursementSerializer(serializers.ModelSerializer):
     other_attachements = serializers.SerializerMethodField()
     leave_type_name = serializers.CharField(source="leave_type_id.name", read_only=True)
     employee_profile_url = serializers.SerializerMethodField(read_only=True)
-    badge_id = serializers.CharField(source="employee_id.badge_id")
+    employee_no = serializers.CharField(source="employee_id.employee_no")
     employee_full_name = serializers.CharField(source="employee_id.get_full_name")
 
     def get_employee_profile_url(self, obj):

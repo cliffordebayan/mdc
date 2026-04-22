@@ -5,15 +5,15 @@ from base.models import *
 from employee.models import *
 
 
-def get_next_badge_id():
+def get_next_employee_no():
     """
-    This method is used to generate badge id
+    This method is used to generate employee no
     """
     from base.context_processors import get_initial_prefix
-    from employee.methods.methods import get_ordered_badge_ids
+    from employee.methods.methods import get_ordered_employee_nos
 
     prefix = get_initial_prefix(None)["get_initial_prefix"]
-    data = get_ordered_badge_ids()
+    data = get_ordered_employee_nos()
     result = []
     try:
         for sublist in data:

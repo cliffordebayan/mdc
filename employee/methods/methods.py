@@ -36,7 +36,7 @@ is_postgres = connection.vendor == "postgresql"
 error_data_template = {
     field: []
     for field in [
-        "Badge ID",
+        "Employee No",
         "First Name",
         "Last Name",
         "Phone",
@@ -62,7 +62,7 @@ error_data_template = {
         "Gender Error",
         "Joining Date Error",
         "Contract Date Error",
-        "Badge ID Error",
+        "Employee No Error",
         "Basic Salary Error",
         "Salary Hour Error",
         "User ID Error",
@@ -105,9 +105,9 @@ def import_valid_date(date_value, field_label, errors_dict, error_key):
     return None
 
 
-def clean_badge_id(value):
+def clean_employee_no(value):
     """
-    Cleans and converts a badge ID value from Excel import.
+    Cleans and converts an employee no value from Excel import.
 
     - If the value is a whole number (e.g., 5480.0), returns it as an integer string ("5480").
     - If the value is a decimal (e.g., 567.67), returns it as a float string ("567.67").
@@ -150,15 +150,15 @@ def dynamic_prefix_sort(item):
     return item[:prefix_length]
 
 
-def get_ordered_badge_ids():
+def get_ordered_employee_nos():
     """
-    This method is used to return ordered badge ids
+    This method is used to return ordered employee nos
     """
     employees = Employee.objects.entire()
     data = (
-        employees.exclude(badge_id=None)
-        .order_by("badge_id")
-        .values_list("badge_id", flat=True)
+        employees.exclude(employee_no=None)
+        .order_by("employee_no")
+        .values_list("employee_no", flat=True)
     )
     if not data.first():
         data = [
@@ -223,7 +223,7 @@ def valid_import_file_headers(data_frame):
         return False, message
 
     required_keys = [
-        "Badge ID",
+        "Employee No",
         "First Name",
         "Last Name",
         "Phone",
@@ -258,9 +258,9 @@ def process_employee_records(data_frame):
     email_regex = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
     phone_regex = re.compile(r"^\+?\d{10,15}$")
     allowed_genders = frozenset(choice[0] for choice in Employee.choice_gender)
-    # Preload entire badge IDs for duplicate validation during import
-    existing_badge_ids = frozenset(
-        Employee.objects.entire().values_list("badge_id", flat=True)
+    # Preload entire employee nos for duplicate validation during import
+    existing_employee_nos = frozenset(
+        Employee.objects.entire().values_list("employee_no", flat=True)
     )
     existing_usernames = frozenset(User.objects.values_list("username", flat=True))
     existing_name_emails = frozenset(
@@ -274,7 +274,7 @@ def process_employee_records(data_frame):
     employee_dicts = data_frame.to_dict("records")
 
     created_count = 0
-    seen_badge_ids = set(existing_badge_ids)
+    seen_employee_nos = set(existing_employee_nos)
     seen_usernames = set(existing_usernames)
     seen_name_emails = set(existing_name_emails)
 
@@ -287,7 +287,7 @@ def process_employee_records(data_frame):
         email = str(emp.get("Email", "")).strip().lower()
         raw_phone = emp.get("Phone", "")
         phone = normalize_phone(raw_phone)
-        badge_id = clean_badge_id(emp.get("Badge ID"))
+        employee_no = clean_employee_no(emp.get("Employee No"))
         first_name = convert_nan("First Name", emp)
         last_name = convert_nan("Last Name", emp)
         gender = str(emp.get("Gender") or "").strip().lower()
@@ -331,20 +331,20 @@ def process_employee_records(data_frame):
             errors["Phone Error"] = "Invalid phone number format."
             save = False
 
-        # Badge ID validation
-        if not badge_id:
-            errors["Badge ID Error"] = "Badge ID cannot be empty."
+        # Employee No validation
+        if not employee_no:
+            errors["Employee No Error"] = "Employee No cannot be empty."
             save = False
 
-        elif badge_id in seen_badge_ids:
-            errors["Badge ID Error"] = "An employee with this badge ID already exists."
+        elif employee_no in seen_employee_nos:
+            errors["Employee No Error"] = "An employee with this employee no already exists."
             save = False
 
         else:
             # Ensure consistent type (convert to string if needed)
-            badge_id = str(badge_id).strip()
-            emp["Badge ID"] = badge_id
-            seen_badge_ids.add(badge_id)
+            employee_no = str(employee_no).strip()
+            emp["Employee No"] = employee_no
+            seen_employee_nos.add(employee_no)
 
         # Username/email uniqueness
         if email in seen_usernames:
@@ -474,7 +474,7 @@ def bulk_create_employee_import(success_lists):
     employees_to_create = [
         Employee(
             employee_user_id=existing_users[row["Email"]],
-            badge_id=row["Badge ID"],
+            employee_no=row["Employee No"],
             employee_first_name=convert_nan("First Name", row),
             employee_middle_name=convert_nan("Middle Name", row) or None,
             employee_last_name=convert_nan("Last Name", row),
@@ -760,7 +760,7 @@ def bulk_create_work_info_import(success_lists):
     new_work_info_list = []
     update_work_info_list = []
 
-    badge_ids = [row["Badge ID"] for row in success_lists]
+    employee_nos = [row["Employee No"] for row in success_lists]
     departments = set(row.get("Department") for row in success_lists)
     job_positions = set(row.get("Job Position") for row in success_lists)
     job_roles = set(row.get("Job Role") for row in success_lists)
@@ -775,14 +775,14 @@ def bulk_create_work_info_import(success_lists):
     chunk_size = None if is_postgres else 999
     employee_qs = (
         chain.from_iterable(
-            Employee.objects.entire().filter(badge_id__in=chunk).only("badge_id")
-            for chunk in chunked(badge_ids, chunk_size)
+            Employee.objects.entire().filter(employee_no__in=chunk).only("employee_no")
+            for chunk in chunked(employee_nos, chunk_size)
         )
         if chunk_size
-        else Employee.objects.entire().filter(badge_id__in=badge_ids).only("badge_id")
+        else Employee.objects.entire().filter(employee_no__in=employee_nos).only("employee_no")
     )
 
-    existing_employees = {emp.badge_id: emp for emp in employee_qs}
+    existing_employees = {emp.employee_no: emp for emp in employee_qs}
 
     existing_employee_work_infos = {
         emp.employee_id: emp
@@ -853,8 +853,8 @@ def bulk_create_work_info_import(success_lists):
     reporting_manager_dict = optimize_reporting_manager_lookup()
 
     for work_info in success_lists:
-        badge_id = work_info["Badge ID"]
-        employee_obj = existing_employees.get(badge_id)
+        employee_no = work_info["Employee No"]
+        employee_obj = existing_employees.get(employee_no)
         if not employee_obj:
             continue
 

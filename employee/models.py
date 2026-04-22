@@ -69,7 +69,7 @@ class Employee(models.Model):
         ("married", trans("Married")),
         ("divorced", trans("Divorced")),
     )
-    badge_id = models.CharField(max_length=50, null=True, blank=True)
+    employee_no = models.CharField(max_length=50, null=True, blank=True)
     employee_user_id = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -459,8 +459,8 @@ class Employee(models.Model):
         last_name = (
             self.employee_last_name if self.employee_last_name is not None else ""
         )
-        badge_id = (f"({self.badge_id})") if self.badge_id is not None else ""
-        return f"{self.employee_first_name} {last_name} {badge_id}"
+        employee_no = (f"({self.employee_no})") if self.employee_no is not None else ""
+        return f"{self.employee_first_name} {last_name} {employee_no}"
 
     def get_primary_bank(self):
         return self.employee_bank_details.filter(is_primary=True).first() or self.employee_bank_details.first()
@@ -505,9 +505,9 @@ class Employee(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["badge_id"],
-                condition=models.Q(badge_id__isnull=False),
-                name="unique_badge_id",
+                fields=["employee_no"],
+                condition=models.Q(employee_no__isnull=False),
+                name="unique_employee_no",
             )
         ]
 
@@ -1072,7 +1072,7 @@ class EmployeeGeneralSetting(HorillaModel):
     EmployeeGeneralSetting
     """
 
-    badge_id_prefix = models.CharField(max_length=5, default="PEP", null=True, blank=True)
+    employee_no_prefix = models.CharField(max_length=5, default="PEP", null=True, blank=True)
     company_id = models.ForeignKey(Company, null=True, on_delete=models.CASCADE)
     objects = HorillaCompanyManager("company_id")
 

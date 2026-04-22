@@ -12,7 +12,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
         source="employee_id.employee_last_name", read_only=True
     )
     shift_name = serializers.CharField(source="shift_id.employee_shift", read_only=True)
-    badge_id = serializers.CharField(source="employee_id.badge_id", read_only=True)
+    employee_no = serializers.CharField(source="employee_id.employee_no", read_only=True)
     employee_profile_url = serializers.SerializerMethodField(read_only=True)
     work_type = serializers.CharField(source="work_type_id.work_type", read_only=True)
 
@@ -61,7 +61,7 @@ class AttendanceRequestSerializer(serializers.ModelSerializer):
         source="employee_id.employee_last_name", read_only=True
     )
     shift_name = serializers.CharField(source="shift_id.employee_shift", read_only=True)
-    badge_id = serializers.CharField(source="employee_id.badge_id", read_only=True)
+    employee_no = serializers.CharField(source="employee_id.employee_no", read_only=True)
     employee_profile_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -147,7 +147,7 @@ class AttendanceRequestSerializer(serializers.ModelSerializer):
 
 
 class AttendanceOverTimeSerializer(serializers.ModelSerializer):
-    badge_id = serializers.CharField(source="employee_id.badge_id", read_only=True)
+    employee_no = serializers.CharField(source="employee_id.employee_no", read_only=True)
     employee_first_name = serializers.CharField(
         source="employee_id.employee_first_name", read_only=True
     )
@@ -163,7 +163,7 @@ class AttendanceOverTimeSerializer(serializers.ModelSerializer):
             "employee_first_name",
             "employee_last_name",
             "employee_profile_url",
-            "badge_id",
+            "employee_no",
             "employee_id",
             "month",
             "year",

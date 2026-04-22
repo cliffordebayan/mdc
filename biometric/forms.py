@@ -277,7 +277,7 @@ class DahuaUserForm(Form):
                 "hx-target": "#id_user_id",
                 "hx-swap": "outerHTML",
                 "hx-trigger": "change",
-                "hx-get": "/biometric/find-employee-badge-id",
+                "hx-get": "/biometric/find-employee-no",
             }
         )
 

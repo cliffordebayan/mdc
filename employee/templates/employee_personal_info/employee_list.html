@@ -87,11 +87,11 @@
         <div class="oh-sticky-table__th" data-cell-index="2" data-cell-title='{% trans "Phone" %}'>{% trans "Phone" %}</div>
         {% endif %}
         <div
-          class="oh-sticky-table__th {% if request.sort_option.order == '-badge_id' %}arrow-up {% elif request.sort_option.order == 'badge_id' %}arrow-down {% else %}arrow-up-down {% endif %}" data-cell-index="3" data-cell-title='{% trans "Badge Id" %}'
+          class="oh-sticky-table__th {% if request.sort_option.order == '-employee_no' %}arrow-up {% elif request.sort_option.order == 'employee_no' %}arrow-down {% else %}arrow-up-down {% endif %}" data-cell-index="3" data-cell-title='{% trans "Employee No" %}'
           hx-target="#view-container"
-          hx-get="{% url 'employee-filter-view' %}?{{pd}}&orderby=badge_id"
+          hx-get="{% url 'employee-filter-view' %}?{{pd}}&orderby=employee_no"
         >
-          {% trans "Badge Id" %}
+          {% trans "Employee No" %}
         </div>
         <div class="oh-sticky-table__th" data-cell-index="4" data-cell-title='{% trans "Job Position" %}'>{% trans "Job Position" %}</div>
         <div class="oh-sticky-table__th" data-cell-index="5" data-cell-title='{% trans "Department" %}'>{% trans "Department" %}</div>
@@ -162,7 +162,7 @@
           href="{% url 'employee-view-individual' emp.id %}"
           style="color: inherit; text-decoration: none"
           class="oh-sticky-table__td"
-          >{{emp.badge_id}}</a
+          >{{emp.employee_no}}</a
         >
         <a data-cell-index="4"
           href="{% url 'employee-view-individual' emp.id %}"

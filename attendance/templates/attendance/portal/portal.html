@@ -1218,17 +1218,17 @@
                     if (data.success && data.results.length > 0) {
                         if (data.results.length === 1) {
                             const emp = data.results[0];
-                            selectEmployee(emp.id, emp.name, emp.badge_id, emp.avatar, emp.is_clocked_in, emp.clock_in_datetime);
+                            selectEmployee(emp.id, emp.name, emp.employee_no, emp.avatar, emp.is_clocked_in, emp.clock_in_datetime);
                             return;
                         }
 
                         let html = '';
                         data.results.forEach(function (emp) {
                             const safeName = String(emp.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                            const safeBadge = String(emp.badge_id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                            const safeBadge = String(emp.employee_no || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                             const safeAvatar = String(emp.avatar || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                             const safeClockIn = String(emp.clock_in_datetime || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                            const badge = emp.badge_id ? `<span class="badge-badge">${emp.badge_id}</span>` : '';
+                            const badge = emp.employee_no ? `<span class="badge-badge">${emp.employee_no}</span>` : '';
                             const status = emp.is_clocked_in
                                 ? `<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>` +
                                   (emp.clock_in_datetime ? ` <span class="live-work-hours" data-clock-in="${emp.clock_in_datetime}">--:--:--</span>` : '')

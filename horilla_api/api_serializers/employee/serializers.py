@@ -11,7 +11,7 @@ from employee.models import (
 )
 from horilla_documents.models import Document, DocumentRequest
 
-from ...api_methods.employee.methods import get_next_badge_id
+from ...api_methods.employee.methods import get_next_employee_no
 
 
 class ActiontypeSerializer(serializers.ModelSerializer):
@@ -74,7 +74,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
     def create(self, validated_data):
-        validated_data["badge_id"] = get_next_badge_id()
+        validated_data["employee_no"] = get_next_employee_no()
         return super().create(validated_data)
 
 
@@ -177,6 +177,6 @@ class EmployeeSelectorSerializer(serializers.ModelSerializer):
             "id",
             "employee_first_name",
             "employee_last_name",
-            "badge_id",
+            "employee_no",
             "employee_profile",
         ]

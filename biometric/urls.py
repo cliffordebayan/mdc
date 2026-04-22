@@ -84,9 +84,9 @@ urlpatterns = [
         name="search-employee-in-device",
     ),
     path(
-        "find-employee-badge-id",
-        views.find_employee_badge_id,
-        name="find-employee-badge-id",
+        "find-employee-no",
+        views.find_employee_no,
+        name="find-employee-no",
     ),
     path(
         "add-biometric-user/<uuid:device_id>/",

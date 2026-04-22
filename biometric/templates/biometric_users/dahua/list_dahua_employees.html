@@ -10,7 +10,7 @@
                     </div>
                 </div>
                 <div class="oh-sticky-table__th">{% trans "Employee" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Badge ID" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Employee No" %}</div>
                 <div class="oh-sticky-table__th">{% trans "User ID" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Work Email" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Phone" %}</div>
@@ -33,7 +33,7 @@
                         {{employee.employee_id.get_full_name}}
                     </div>
                     <div class="oh-sticky-table__td">
-                        {{employee.employee_id.badge_id}}
+                        {{employee.employee_id.employee_no}}
                     </div>
                     <div class="oh-sticky-table__td">
                         {{employee.user_id}}

@@ -49,7 +49,7 @@ class EmployeeWorkInformationAdmin(SimpleHistoryAdmin):
 
 class EmployeeAdmin(admin.ModelAdmin):
     list_display = (
-        "badge_id",
+        "employee_no",
         "employee_first_name",
         "employee_last_name",
         "employee_user_id",
@@ -57,7 +57,7 @@ class EmployeeAdmin(admin.ModelAdmin):
     )
 
     search_fields = (
-        "badge_id",
+        "employee_no",
         "employee_user_id__username",
         "employee_first_name",
         "employee_last_name",

@@ -5245,7 +5245,7 @@ msgstr "端口号"
 msgid "Options"
 msgstr "选项"
 
-msgid "Badge ID"
+msgid "Employee No"
 msgstr "工牌ID"
 
 msgid "Fingerprint"

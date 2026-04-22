@@ -34,31 +34,31 @@ def process_attendance_data(attendance_dicts):
     today = datetime.today().date()
 
     # Cache all necessary data in bulk to reduce DB hits
-    badge_ids = [d["Badge ID"] for d in attendance_dicts]
+    employee_nos = [d["Employee No"] for d in attendance_dicts]
     employees = {
-        emp.badge_id: emp
+        emp.employee_no: emp
         for emp in Employee.objects.filter(
-            badge_id__in=[d["Badge ID"] for d in attendance_dicts], is_active=True
+            employee_no__in=[d["Employee No"] for d in attendance_dicts], is_active=True
         )
     }
     shifts = {shift.employee_shift: shift for shift in EmployeeShift.objects.all()}
     work_types = {wt.work_type: wt for wt in WorkType.objects.all()}
     existing_attendance_records = {
-        (att.employee_id.badge_id, att.attendance_date): att
+        (att.employee_id.employee_no, att.attendance_date): att
         for att in Attendance.objects.filter(
-            employee_id__badge_id__in=badge_ids
+            employee_id__employee_no__in=employee_nos
         ).select_related("employee_id")
     }
 
     for attendance_data in attendance_dicts:
         save = True
         try:
-            badge_id = attendance_data["Badge ID"]
+            employee_no = attendance_data["Employee No"]
             shift_id = attendance_data["Shift"]
             work_type_id = attendance_data["Work type"]
 
             # Retrieve objects from cached dictionaries
-            employee = employees.get(badge_id)
+            employee = employees.get(employee_no)
             shift = shifts.get(shift_id)
             work_type = work_types.get(work_type_id)
 
@@ -70,7 +70,7 @@ def process_attendance_data(attendance_dicts):
                 attendance_date = pd.to_datetime(
                     attendance_data["Attendance date"]
                 ).date()
-                if (badge_id, attendance_date) in existing_attendance_records:
+                if (employee_no, attendance_date) in existing_attendance_records:
                     attendance_data["Attendance Error"] = (
                         "This employee's attendance for this date already exists."
                     )
@@ -132,7 +132,7 @@ def process_attendance_data(attendance_dicts):
                 save = False
 
             if employee is None or not employee.is_active:
-                attendance_data["Badge ID Error"] = f"Invalid Badge ID given {badge_id}"
+                attendance_data["Employee No Error"] = f"Invalid Employee No given {employee_no}"
                 save = False
 
             if shift is None:
@@ -195,7 +195,7 @@ def process_attendance_data(attendance_dicts):
                         minimum_hour=format_time(minimum_hour),
                     )
                 )
-                existing_attendance_records[(badge_id, attendance_date)] = (
+                existing_attendance_records[(employee_no, attendance_date)] = (
                     employee,
                     attendance_date,
                 )

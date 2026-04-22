@@ -5243,7 +5243,7 @@ msgstr "連接埠號"
 msgid "Options"
 msgstr "選項"
 
-msgid "Badge ID"
+msgid "Employee No"
 msgstr "徽章 ID"
 
 msgid "Fingerprint"

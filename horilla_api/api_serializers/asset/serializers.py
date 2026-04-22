@@ -99,7 +99,7 @@ class EmployeeGetSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Employee
-        fields = ["id", "full_name", "employee_profile", "badge_id"]
+        fields = ["id", "full_name", "employee_profile", "employee_no"]
 
     def get_full_name(self, obj):
         return obj.get_full_name()

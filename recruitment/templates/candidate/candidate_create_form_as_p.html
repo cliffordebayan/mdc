@@ -3,7 +3,7 @@
 
 <div class="row">
     {% for field in form %}
-        {% if field.name != 'profile' and field.name != 'country' and field.name != 'state' and field.name != 'badge_id' %}
+        {% if field.name != 'profile' and field.name != 'country' and field.name != 'state' and field.name != 'employee_no' %}
             <div class="col-lg-6">
                 <div class="oh-input__group">
                     <label class="oh-label {% if field.field.required %}required-star{% endif %}" for="{{field.id_for_label}}"

@@ -95,7 +95,7 @@ from employee.methods.methods import (
     bulk_create_work_info_import,
     bulk_create_work_types,
     error_data_template,
-    get_ordered_badge_ids,
+    get_ordered_employee_nos,
     process_employee_records,
     set_initial_password,
     valid_import_file_headers,
@@ -262,7 +262,7 @@ def self_info_update(request):
     """
     user = request.user
     employee = Employee.objects.filter(employee_user_id=user).first()
-    badge_id = employee.badge_id
+    employee_no = employee.employee_no
     bank_form = EmployeeBankDetailsForm()
     form = EmployeeForm(instance=Employee.objects.filter(employee_user_id=user).first())
     if request.POST:
@@ -272,8 +272,8 @@ def self_info_update(request):
             if form.is_valid():
                 instance = form.save(commit=False)
                 instance.employee_user_id = user
-                if instance.badge_id is None:
-                    instance.badge_id = badge_id
+                if instance.employee_no is None:
+                    instance.employee_no = employee_no
                 instance.save()
                 messages.success(request, _("Profile updated."))
         elif request.POST.get("any_other_code1") is not None:
@@ -2687,7 +2687,7 @@ def work_info_import_file(request):
     This method is used to return the excel file of import Employee instances
     """
     columns = [
-        "Badge ID",
+        "Employee No",
         "First Name",
         "Middle Name",
         "Last Name",
@@ -2715,7 +2715,7 @@ def work_info_import_file(request):
         "Employee Status",
     ]
     example = {
-        "Badge ID": "EMP001",
+        "Employee No": "EMP001",
         "First Name": "Juan",
         "Middle Name": "Santos",
         "Last Name": "Dela Cruz",
@@ -3824,16 +3824,16 @@ def initial_prefix(request):
 
 @login_required
 @manager_can_enter("employee.view_employee")
-def first_last_badge(request):
+def first_last_employee_no(request):
     """
-    This method is used to return the first last badge ids in grouped and ordere
+    This method is used to return the first last employee nos in grouped and ordered
     """
-    badge_ids = get_ordered_badge_ids()
+    employee_nos = get_ordered_employee_nos()
 
     return render(
         request,
         "employee_personal_info/first_last_badge.html",
-        {"badge_ids": badge_ids},
+        {"employee_nos": employee_nos},
     )
 
 

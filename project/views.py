@@ -375,8 +375,8 @@ def project_import(request):
             try:
                 # getting datas from imported file
                 title = project["Title"]
-                manager_badge_id = convert_nan("Manager Badge id", project)
-                member_badge_id = convert_nan("Member Badge id", project)
+                manager_employee_no = convert_nan("Manager Employee No", project)
+                member_employee_no = convert_nan("Member Employee No", project)
                 status = project["Status"]
                 start_date = project["Start Date"]
                 end_date = project["End Date"]
@@ -384,14 +384,14 @@ def project_import(request):
 
                 # checcking all the imported values
                 is_save = True
-                # getting employee using badge id, for manager
-                if manager_badge_id:
-                    ids = manager_badge_id.split(",")
+                # getting employee using employee no, for manager
+                if manager_employee_no:
+                    ids = manager_employee_no.split(",")
                     error_ids = []
                     managers = []
                     for id in ids:
-                        if Employee.objects.filter(badge_id=id).exists():
-                            employee = Employee.objects.filter(badge_id=id).first()
+                        if Employee.objects.filter(employee_no=id).exists():
+                            employee = Employee.objects.filter(employee_no=id).first()
                             managers.append(employee)
                         else:
                             error_ids.append(id)
@@ -399,24 +399,15 @@ def project_import(request):
                     if error_ids:
                         ids = ",".join(map(str, error_ids))
                         project["Manager error"] = f"{ids} - This id not exists"
-                    # if Employee.objects.filter(badge_id=manager_badge_id).exists():
-                    #     manager = Employee.objects.filter(
-                    #         badge_id=manager_badge_id
-                    #     ).first()
-                    # else:
-                    #     project["Manager error"] = (
-                    #         f"{manager_badge_id} - This badge not exist"
-                    #     )
-                    #     is_save = False
 
-                # getting employee using badge id, for member
-                if member_badge_id:
-                    ids = member_badge_id.split(",")
+                # getting employee using employee no, for member
+                if member_employee_no:
+                    ids = member_employee_no.split(",")
                     error_ids = []
                     employees = []
                     for id in ids:
-                        if Employee.objects.filter(badge_id=id).exists():
-                            employee = Employee.objects.filter(badge_id=id).first()
+                        if Employee.objects.filter(employee_no=id).exists():
+                            employee = Employee.objects.filter(employee_no=id).first()
                             employees.append(employee)
                         else:
                             error_ids.append(id)

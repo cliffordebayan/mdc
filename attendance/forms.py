@@ -878,7 +878,7 @@ class AttendanceActivityExportForm(forms.Form):
         ("employee_id__employee_work_info__company_id", _("Company")),
         ("employee_id__employee_work_info__branch_id", _("Branch")),
         ("employee_id__employee_work_info__department_id", _("Department")),
-        ("employee_id__badge_id", _("Badge ID")),
+        ("employee_id__employee_no", _("Employee No")),
     ] + [
         (field.name, field.verbose_name)
         for field in model_fields
@@ -893,7 +893,7 @@ class AttendanceActivityExportForm(forms.Form):
             "employee_id__employee_work_info__company_id",
             "employee_id__employee_work_info__branch_id",
             "employee_id__employee_work_info__department_id",
-            "employee_id__badge_id",
+            "employee_id__employee_no",
             "employee_id",
             "attendance_date",
             "clock_in_date",

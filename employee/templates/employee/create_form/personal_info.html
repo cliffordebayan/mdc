@@ -68,13 +68,13 @@
 
             <div class="row">
                   <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                    <label class="oh-label" for="firstname">{% trans "Badge Id" %}
-                      <div hx-get="{% url 'get-first-last-badge-id' %}" hx-target="#badgeModalBody" data-target="#badgeModal" data-toggle="oh-modal-toggle" class="oh-checkpoint-badge text-success mb-2" id="selectAllInstances" style="cursor: pointer">
+                    <label class="oh-label" for="firstname">{% trans "Employee No" %}
+                      <div hx-get="{% url 'get-first-last-employee-no' %}" hx-target="#badgeModalBody" data-target="#badgeModal" data-toggle="oh-modal-toggle" class="oh-checkpoint-badge text-success mb-2" id="selectAllInstances" style="cursor: pointer">
                         {% trans "Show" %}
                       </div>
                     </label>
-                    {{form.badge_id}}
-                    {{form.badge_id.errors}}
+                    {{form.employee_no}}
+                    {{form.employee_no.errors}}
                   </div>
               </div>
               {{form.as_p}}

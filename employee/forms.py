@@ -237,7 +237,7 @@ class EmployeeForm(ModelForm):
                 initial["dob"] = instance.dob.strftime("%H:%M")
             kwargs["initial"] = initial
         else:
-            self.initial = {"badge_id": self.get_next_badge_id()}
+            self.initial = {"employee_no": self.get_next_employee_no()}
 
     def as_p(self, *args, **kwargs):
         context = {"form": self}
@@ -271,15 +271,15 @@ class EmployeeForm(ModelForm):
 
             raise forms.ValidationError({"email": error_message})
 
-    def get_next_badge_id(self):
+    def get_next_employee_no(self):
         """
-        This method is used to generate badge id
+        This method is used to generate employee no
         """
         from base.context_processors import get_initial_prefix
-        from employee.methods.methods import get_ordered_badge_ids
+        from employee.methods.methods import get_ordered_employee_nos
 
         prefix = get_initial_prefix(None)["get_initial_prefix"]
-        data = get_ordered_badge_ids()
+        data = get_ordered_employee_nos()
         result = []
         try:
             for sublist in data:
@@ -322,23 +322,23 @@ class EmployeeForm(ModelForm):
             prefix = get_initial_prefix(None)["get_initial_prefix"]
         return prefix
 
-    def clean_badge_id(self):
+    def clean_employee_no(self):
         """
-        This method is used to clean the badge id
+        This method is used to clean the employee no
         """
-        badge_id = self.cleaned_data["badge_id"]
-        if badge_id:
+        employee_no = self.cleaned_data["employee_no"]
+        if employee_no:
             all_employees = Employee.objects.entire()
-            queryset = all_employees.filter(badge_id=badge_id).exclude(
+            queryset = all_employees.filter(employee_no=employee_no).exclude(
                 pk=self.instance.pk if self.instance else None
             )
             if queryset.exists():
-                raise forms.ValidationError(trans("Badge ID must be unique."))
-            if not re.search(r"\d", badge_id):
+                raise forms.ValidationError(trans("Employee No must be unique."))
+            if not re.search(r"\d", employee_no):
                 raise forms.ValidationError(
-                    trans("Badge ID must contain at least one digit.")
+                    trans("Employee No must contain at least one digit.")
                 )
-        return badge_id
+        return employee_no
 
 
 class EmployeeWorkInformationForm(ModelForm):
@@ -556,7 +556,7 @@ class EmployeeInsuranceForm(ModelForm):
 
 
 excel_columns = [
-    ("badge_id", trans("Badge ID")),
+    ("employee_no", trans("Employee No")),
     ("get_full_name", trans("Complete Name")),
     ("employee_first_name", trans("First Name")),
     ("employee_middle_name", trans("Middle Name")),
@@ -610,7 +610,7 @@ excel_columns = [
     ("employee_insurance", trans("Insurance")),
 ]
 fields_to_remove = [
-    "badge_id",
+    "employee_no",
     "employee_first_name",
     "employee_last_name",
     "is_active",
@@ -845,6 +845,6 @@ class EmployeeGeneralSettingPrefixForm(forms.ModelForm):
         model = EmployeeGeneralSetting
         exclude = ["objects"]
         widgets = {
-            "badge_id_prefix": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "employee_no_prefix": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "company_id": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
         }

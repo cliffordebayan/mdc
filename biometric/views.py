@@ -1088,7 +1088,7 @@ def zk_employees_fetch(device):
                 user.__dict__["phone"] = None
                 user.__dict__["job_position"] = None
             user.__dict__["employee"] = employee
-            user.__dict__["badge_id"] = employee.badge_id
+            user.__dict__["employee_no"] = employee.employee_no
             finger_print = []
             for finger in fingers:
                 if finger.uid == uid:
@@ -1147,7 +1147,7 @@ def find_employees_in_cosec(device_id):
         device_id (uuid): The ID of the biometric device to synchronize with.
     """
     device = BiometricDevices.objects.get(id=device_id)
-    employees = Employee.objects.filter(is_active=True).values_list("id", "badge_id")
+    employees = Employee.objects.filter(is_active=True).values_list("id", "employee_no")
     cosec = COSECBiometric(
         device.machine_ip, device.port, device.bio_username, device.bio_password
     )
@@ -1155,9 +1155,9 @@ def find_employees_in_cosec(device_id):
         "user_id", flat=True
     )
     biometric_employees_to_create = []
-    for employee_id, badge_id in employees:
-        if badge_id and badge_id.isalnum() and len(badge_id) <= 15:
-            user = cosec.get_cosec_user(user_id=badge_id)
+    for employee_id, employee_no in employees:
+        if employee_no and employee_no.isalnum() and len(employee_no) <= 15:
+            user = cosec.get_cosec_user(user_id=employee_no)
             if user.get("user-id") and user.get("user-id") not in existing_user_ids:
                 biometric_employees_to_create.append(
                     BiometricEmployees(
@@ -1182,7 +1182,7 @@ def find_employees_in_zk(device_id):
         device_id (uuid): The ID of the biometric device to synchronize with.
     """
     device = BiometricDevices.objects.get(id=device_id)
-    employees = Employee.objects.filter(is_active=True).values_list("id", "badge_id")
+    employees = Employee.objects.filter(is_active=True).values_list("id", "employee_no")
     existing_user_ids = set(
         BiometricEmployees.objects.filter(device_id=device_id).values_list(
             "user_id", flat=True
@@ -1195,13 +1195,13 @@ def find_employees_in_zk(device_id):
     zk_users = {user.user_id: user.uid for user in conn.get_users()}
     biometric_employees_to_create = [
         BiometricEmployees(
-            uid=zk_users[badge_id],
-            user_id=badge_id,
+            uid=zk_users[employee_no],
+            user_id=employee_no,
             employee_id_id=employee_id,
             device_id_id=device_id,
         )
-        for employee_id, badge_id in employees
-        if badge_id and badge_id in zk_users and badge_id not in existing_user_ids
+        for employee_id, employee_no in employees
+        if employee_no and employee_no in zk_users and employee_no not in existing_user_ids
     ]
     BiometricEmployees.objects.bulk_create(biometric_employees_to_create)
     conn.disconnect()
@@ -1782,7 +1782,7 @@ def add_biometric_user(request, device_id):
                     for obj_id in employee_ids:
                         employee = Employee.objects.get(id=obj_id)
                         employee_name = employee.get_full_name()
-                        user_id = employee.badge_id
+                        user_id = employee.employee_no
                         ref_user_id = 100
                         while ref_user_id in existing_ref_user_ids:
                             ref_user_id += 1
@@ -1925,12 +1925,12 @@ def add_dahua_biometric_user(request, device_id):
 @login_required
 @hx_request_required
 @install_required
-def find_employee_badge_id(request):
+def find_employee_no(request):
     """
-    Retrieves the badge ID of an employee based on their employee ID.
+    Retrieves the employee no of an employee based on their employee ID.
     """
     employee_id = request.GET.get("employee")
-    user_id = Employee.objects.get(id=employee_id).badge_id if employee_id else ""
+    user_id = Employee.objects.get(id=employee_id).employee_no if employee_id else ""
     input_field = f"""
     <input type="text" name="user_id" maxlength="50" class="oh-input w-100"
            placeholder="User ID" required="" id="id_user_id" value="{user_id}">
@@ -2304,7 +2304,7 @@ def anviz_biometric_attendance_logs(device):
     processed_count = 0
 
     for attendance in attendance_records.get("list", []):
-        badge_id = attendance["employee"]["workno"]
+        employee_no = attendance["employee"]["workno"]
         punch_code = attendance["checktype"]
 
         date_time_utc = datetime.strptime(
@@ -2312,7 +2312,7 @@ def anviz_biometric_attendance_logs(device):
         )
         date_time_obj = date_time_utc.astimezone(django_timezone.get_current_timezone())
 
-        employee = Employee.objects.filter(badge_id=badge_id).first()
+        employee = Employee.objects.filter(employee_no=employee_no).first()
         if not employee:
             continue
 

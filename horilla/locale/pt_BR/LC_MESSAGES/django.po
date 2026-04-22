@@ -5025,7 +5025,7 @@ msgstr "Número da Porta"
 msgid "Options"
 msgstr "Opções"
 
-msgid "Badge ID"
+msgid "Employee No"
 msgstr "ID do Emblema"
 
 msgid "Fingerprint"

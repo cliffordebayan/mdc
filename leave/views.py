@@ -1768,7 +1768,7 @@ def assign_leave_type_excel(_request):
     """
     try:
         columns = [
-            "Employee Badge ID",
+            "Employee No",
             "Leave Type",
             "Available Days",  # 779
             "Carryforward Days",
@@ -1795,9 +1795,9 @@ def assign_leave_type_import(request):
     or generates an error report in the form of an Excel file.
     """
     error_data = {
-        "Employee Badge ID": [],
+        "Employee No": [],
         "Leave Type": [],
-        "Badge ID Error": [],
+        "Employee No Error": [],
         "Leave Type Error": [],
         "Available Days": [],
         "Carry Forward Days": [],
@@ -1812,7 +1812,7 @@ def assign_leave_type_import(request):
 
         # Pre-fetch all employees and leave types
         employees = {
-            emp.badge_id.lower(): emp for emp in Employee.objects.all() if emp.badge_id
+            emp.employee_no.lower(): emp for emp in Employee.objects.all() if emp.employee_no
         }
         leave_types = {lt.name.lower(): lt for lt in LeaveType.objects.all()}
         existing = {
@@ -1823,13 +1823,13 @@ def assign_leave_type_import(request):
         assign_leave_list, error_list = [], []
 
         for row in assign_leave_dicts:
-            badge_id = str(row.get("Employee Badge ID", "")).strip().lower()
+            employee_no = str(row.get("Employee No", "")).strip().lower()
             leave_type_name = str(row.get("Leave Type", "")).strip().lower()
-            employee = employees.get(badge_id)
+            employee = employees.get(employee_no)
             leave_type = leave_types.get(leave_type_name)
 
             if not employee:
-                row["Badge ID Error"] = _("This badge id does not exist.")
+                row["Employee No Error"] = _("This employee no does not exist.")
                 error_list.append(row)
                 continue
             if not leave_type:

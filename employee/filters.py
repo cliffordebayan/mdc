@@ -113,7 +113,7 @@ class EmployeeFilter(HorillaFilterSet):
             "employee_first_name",
             "employee_last_name",
             "email",
-            "badge_id",
+            "employee_no",
             "phone",
             "country",
             "gender",
