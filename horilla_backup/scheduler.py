@@ -84,6 +84,11 @@ scheduler = BackgroundScheduler()
 def google_drive_backup():
     if GoogleDriveBackup.objects.exists():
         google_drive = GoogleDriveBackup.objects.first()
+
+        if not google_drive.active:
+            print("Google Drive backup skipped: backup is not active.")
+            return
+
         gdrive_folder_id = google_drive.gdrive_folder_id
 
         # Check if OAuth tokens exist
@@ -231,6 +236,9 @@ def start_gdrive_backup_job():
     # Check if any Gdrive Backup object exists
     if GoogleDriveBackup.objects.exists():
         gdrive_backup = GoogleDriveBackup.objects.first()
+
+        if not gdrive_backup.active:
+            return
 
         # Remove existing job if it exists
         try:
