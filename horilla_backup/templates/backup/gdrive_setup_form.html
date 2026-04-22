@@ -13,7 +13,7 @@
     </div>
 </div>
 {% endif %}
-{% if needs_auth %}
+{% if needs_auth and not messages %}
 <div class="oh-wrapper">
     <div class="oh-alert-container">
         <div class="oh-alert oh-alert--animated oh-alert--warning">
