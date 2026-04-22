@@ -166,7 +166,8 @@
                 				{% endif %}
               				{% endif %}
 
-							{% if "payroll"|app_installed %}
+							{# Payroll tab hidden #}
+							{# {% if "payroll"|app_installed %}
 								<li data-cell-index="16" data-cell-title="{% trans 'Payroll' %}" class="oh-general__tab">
 									<a
 									href="#"
@@ -176,9 +177,10 @@
 									>{% trans "Payroll" %}</a
 									>
 								</li>
-							{% endif %}
+							{% endif %} #}
 
-							{% if "payroll"|app_installed %}
+							{# Allowance & Deduction tab hidden #}
+							{# {% if "payroll"|app_installed %}
 								<li data-cell-index="15" data-cell-title="{% trans 'Allowance & Deduction' %}" class="oh-general__tab">
 									<a
 									hx-get="{% url 'allowances-deductions-tab' employee.id %}"
@@ -190,9 +192,10 @@
 									>{% trans "Allowance & Deduction" %}</a
 									>
 								</li>
-							{% endif %}
+							{% endif %} #}
 
-							{% if "attendance"|app_installed %}
+							{# Penalty Account tab hidden #}
+							{# {% if "attendance"|app_installed %}
 							<li data-cell-index="14" data-cell-title="{% trans "Penalty Account" %}" class="oh-general__tab">
 								<a
 								data-action="general-tab"
@@ -203,7 +206,7 @@
 								>{% trans "Penalty Account" %}</a
 								>
 							</li>
-							{% endif %}
+							{% endif %} #}
 
 							{% if "asset"|app_installed %}
 								<li data-cell-index="13" data-cell-title="{% trans 'Assets' %}" class="oh-general__tab">
@@ -247,7 +250,8 @@
 								>
 							</li>
 
-							{% if "payroll"|app_installed %}
+							{# Bonus Points tab hidden #}
+							{# {% if "payroll"|app_installed %}
 							<li data-cell-index="10" data-cell-title="{% trans 'Bonus Points' %}" class="oh-general__tab">
 								<a
 								hx-get="{% url 'bonus-points-tab' employee.id %}"
@@ -259,7 +263,7 @@
 								>{% trans "Bonus Points" %}</a
 								>
 							</li>
-							{% endif %}
+							{% endif %} #}
 
 							{% if "recruitment"|app_installed %}
 								<li data-cell-index="20" data-cell-title="{% trans "Interview" %}" class="oh-general__tab">
