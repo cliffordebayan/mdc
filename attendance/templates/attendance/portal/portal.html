@@ -221,34 +221,35 @@
             transform: scale(.98);
         }
 
-        .pin-actions {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-            margin-bottom: 12px;
-        }
-
-        .pin-actions .oh-btn {
-            width: 100%;
-            min-height: 42px;
-            padding: 8px;
-            font-size: 13px;
-            border-radius: 8px;
-        }
-
         #pin-back-btn {
             margin-top: 4px;
         }
 
-        #pin-submit-btn:disabled {
-            opacity: .55;
-            cursor: not-allowed;
+        .pin-keypad .pin-util-btn {
+            height: 50px;
+            border: 1px solid #d9dee8;
+            border-radius: 10px;
+            background: #f5f7fb;
+            font-size: 13px;
+            font-weight: 600;
+            color: #6b7280;
+            cursor: pointer;
+            transition: transform .08s, background-color .12s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        #pin-submit-btn:not(:disabled) {
-            background: #28a745;
-            border-color: #28a745;
-            color: #fff;
+        .pin-keypad .pin-util-btn:hover {
+            background: #edf2ff;
+        }
+
+        .pin-keypad .pin-util-btn:active {
+            transform: scale(.98);
+        }
+
+        #pin-backspace-btn ion-icon {
+            font-size: 22px;
         }
 
         .swal-toast-above {
@@ -630,10 +631,6 @@
                 font-size: 18px;
             }
 
-            .pin-actions {
-                grid-template-columns: 1fr;
-            }
-
             .clock-fullscreen {
                 grid-template-rows: 35vh 1fr;
             }
@@ -836,13 +833,9 @@
                                 <button type="button" class="pin-digit-btn" data-digit="7">7</button>
                                 <button type="button" class="pin-digit-btn" data-digit="8">8</button>
                                 <button type="button" class="pin-digit-btn" data-digit="9">9</button>
-                                <button type="button" class="pin-digit-btn" data-digit="0" style="grid-column: 2 / span 1;">0</button>
-                            </div>
-
-                            <div class="pin-actions">
-                                <button type="button" class="oh-btn oh-btn--secondary" id="pin-clear-btn">{% trans "Clear" %}</button>
-                                <button type="button" class="oh-btn oh-btn--secondary" id="pin-backspace-btn">{% trans "Backspace" %}</button>
-                                <button type="button" class="oh-btn oh-btn--secondary" id="pin-submit-btn" disabled>{% trans "Continue" %}</button>
+                                <button type="button" class="pin-util-btn" id="pin-clear-btn">{% trans "Clear" %}</button>
+                                <button type="button" class="pin-digit-btn" data-digit="0">0</button>
+                                <button type="button" class="pin-util-btn" id="pin-backspace-btn"><ion-icon name="backspace-outline"></ion-icon></button>
                             </div>
 
                             <button type="button" class="btn-back" id="pin-back-btn" style="width:100%;">
@@ -1154,10 +1147,6 @@
                 removePinDigit();
             });
 
-            $('#pin-submit-btn').on('click', function () {
-                verifyEmployeePin();
-            });
-
             // Back button
             $('#back-btn').on('click', function () {
                 clearInterval(liveWorkHoursInterval);
@@ -1206,10 +1195,7 @@
                     return;
                 }
 
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    verifyEmployeePin();
-                }
+                // Enter key intentionally not bound — PIN auto-submits when 6 digits are entered
             });
         }
 
@@ -1314,7 +1300,6 @@
             for (let i = 0; i < pinInput.length; i++) {
                 slots.eq(i).addClass('filled').text('*');
             }
-            $('#pin-submit-btn').prop('disabled', pinInput.length !== PIN_LENGTH);
         }
 
         function appendPinDigit(digit) {
@@ -1326,6 +1311,9 @@
             }
             pinInput += digit;
             updatePinUi();
+            if (pinInput.length === PIN_LENGTH) {
+                verifyEmployeePin();
+            }
         }
 
         function removePinDigit() {
@@ -1358,10 +1346,8 @@
             formData.append('employee_id', selectedEmployee.id);
             formData.append('pin', pinInput);
 
-            const $submit = $('#pin-submit-btn');
-            const originalSubmitText = $submit.text();
-            $submit.prop('disabled', true).text('{% trans "Verifying..." %}');
             $('.pin-digit-btn, #pin-clear-btn, #pin-backspace-btn').prop('disabled', true);
+            setPinMessage('{% trans "Verifying..." %}');
 
             fetch('{% url "portal-verify-pin" %}', {
                 method: 'POST',
@@ -1399,7 +1385,6 @@
                 })
                 .finally(() => {
                     $('.pin-digit-btn, #pin-clear-btn, #pin-backspace-btn').prop('disabled', false);
-                    $submit.text(originalSubmitText);
                     updatePinUi();
                 });
         }
