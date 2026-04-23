@@ -950,6 +950,7 @@
         let latitude = null;
         let longitude = null;
         let capturedAddress = null;
+        let geocodingPromise = null;
         let locationAccuracy = null;
         let pinInput = '';
         const PIN_LENGTH = 6;
@@ -1051,10 +1052,11 @@
                         enableClockButtons();
 
                         // Get address immediately and display it
-                        reverseGeocode(latitude, longitude).then(function (address) {
+                        geocodingPromise = reverseGeocode(latitude, longitude).then(function (address) {
                             capturedAddress = address;
                             $('#location-text').html(`✓ {% trans "Location captured" %}<br><small>${address}</small>`);
                             console.info(`Location address: ${address}`);
+                            return address;
                         });
 
                         console.info(`Location captured: ${latitude}, ${longitude}, accuracy: ${locationAccuracy}m`);
@@ -1435,6 +1437,7 @@
             showStep('clock');
             initializeLocationCapture();
             capturedAddress = null;
+            geocodingPromise = null;
             cameraReady = false;
 
             if (videoStream) {
@@ -1493,38 +1496,40 @@
         }
 
         // Capture a stamped selfie from the current live camera frame.
-        function capturePhotoBlobFromLiveVideo() {
+        async function capturePhotoBlobFromLiveVideo() {
+            if (!latitude || !longitude) {
+                throw new Error('{% trans "Location is required. Please enable location access and retry." %}');
+            }
+
+            const video = document.getElementById('video-preview');
+            if (!video || !videoStream) {
+                throw new Error('{% trans "Camera is not ready. Please allow camera permissions and try again." %}');
+            }
+
+            if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+                throw new Error('{% trans "Camera is still initializing. Please try again." %}');
+            }
+
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.save();
+            context.translate(canvas.width, 0);
+            context.scale(-1, 1);
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            context.restore();
+
+            // If geocoding is still in-flight, wait for it so the address is on the image
+            if (!capturedAddress && geocodingPromise) {
+                try { await geocodingPromise; } catch (e) { /* falls back to coordinates */ }
+            }
+
+            const addressToStamp = capturedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+            stampLocationOnCanvas(canvas, context, addressToStamp);
+
             return new Promise(function (resolve, reject) {
-                if (!latitude || !longitude) {
-                    reject(new Error('{% trans "Location is required. Please enable location access and retry." %}'));
-                    return;
-                }
-
-                const video = document.getElementById('video-preview');
-                if (!video || !videoStream) {
-                    reject(new Error('{% trans "Camera is not ready. Please allow camera permissions and try again." %}'));
-                    return;
-                }
-
-                if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
-                    reject(new Error('{% trans "Camera is still initializing. Please try again." %}'));
-                    return;
-                }
-
-                const canvas = document.getElementById('canvas');
-                const context = canvas.getContext('2d');
-
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                context.save();
-                context.translate(canvas.width, 0);
-                context.scale(-1, 1);
-                context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                context.restore();
-
-                const addressToStamp = capturedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-                stampLocationOnCanvas(canvas, context, addressToStamp);
-
                 canvas.toBlob(function (blob) {
                     if (!blob) {
                         reject(new Error('{% trans "Unable to capture selfie. Please try again." %}'));
