@@ -1684,7 +1684,13 @@
 
             const btn = $('#clock-in-btn');
             const originalText = btn.html();
-            btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
+            btn.prop('disabled', true);
+
+            if (!capturedAddress && geocodingPromise) {
+                btn.html('<span class="loading"></span> {% trans "Getting address..." %}');
+                try { await geocodingPromise; } catch (e) {}
+            }
+            btn.html('<span class="loading"></span> {% trans "Processing..." %}');
 
             try {
                 const selfieBlob = await capturePhotoBlobFromLiveVideo();
@@ -1728,7 +1734,13 @@
 
             const btn = $('#clock-out-btn');
             const originalText = btn.html();
-            btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
+            btn.prop('disabled', true);
+
+            if (!capturedAddress && geocodingPromise) {
+                btn.html('<span class="loading"></span> {% trans "Getting address..." %}');
+                try { await geocodingPromise; } catch (e) {}
+            }
+            btn.html('<span class="loading"></span> {% trans "Processing..." %}');
 
             try {
                 const selfieBlob = await capturePhotoBlobFromLiveVideo();
