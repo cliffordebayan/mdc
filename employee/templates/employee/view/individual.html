@@ -356,6 +356,7 @@
 								{% endif %}
 							{% endif %}
 
+							{% comment %}
 							{% if "payroll"|app_installed %}
 								{% if perms.payroll.view_payslip or request.user == employee.employee_user_id %}
 									<li data-cell-index="13" data-cell-title="{% trans 'Payroll' %}" class="oh-general__tab">
@@ -383,6 +384,7 @@
 									</li>
 								{% endif %}
 							{% endif %}
+							{% endcomment %}
 
 							{% if perms.employee.view_historicalemployeeworkinformation or request.user|check_manager:employee %}
 								<li data-cell-index="15" data-cell-title="{% trans 'History' %}" class="oh-general__tab">
@@ -402,6 +404,7 @@
 								{% endif %}
 							{% endif %}
 
+							{% comment %}
 							{% if "pms"|app_installed %}
 								{% if perms.pms.view_feedback or request.user|check_manager:employee or request.user == employee.employee_user_id %}
 									<li data-cell-index="17" data-cell-title="{% trans 'Performance' %}" class="oh-general__tab">
@@ -412,6 +415,7 @@
 									</li>
 								{% endif %}
 							{% endif %}
+							{% endcomment %}
 
 							{% if perms.auth.view_permission or perms.auth.view_group %}
 							<li data-cell-index="18" data-cell-title="{% trans 'Groups & Permissions' %}"
@@ -451,6 +455,7 @@
 							</li>
 							{% endif %}
 
+							{% comment %}
 							{% if "payroll"|app_installed %}
 								{% if perms.employee.view_bonuspoint or request.user|check_manager:employee or request.user == employee.employee_user_id %}
 									<li data-cell-index="21" data-cell-title="{% trans 'Bonus' %}" class="oh-general__tab">
@@ -460,6 +465,7 @@
 									</li>
 								{% endif %}
 							{% endif %}
+							{% endcomment %}
 						</ul>
 						<button
 							hx-get={% url 'bonus-points-tab' employee.id %} hx-target="#bonus_points_target" id="bonus-tab-button" hidden>
