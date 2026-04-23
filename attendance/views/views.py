@@ -144,6 +144,7 @@ ACTIVITY_IMPORT_HEADERS = [
     "Work Hours",
     "Pending Hour",
     "Overtime",
+    "Approved By",
     "Location",
     "Maps",
 ]
@@ -167,6 +168,7 @@ ACTIVITY_IMPORT_SAMPLE_ROW = {
     "Work Hours": "09:00",
     "Pending Hour": "00:00",
     "Overtime": "01:00",
+    "Approved By": "EMP-002",
     "Location": "Main Office",
     "Maps": "https://www.google.com/maps?q=14.5995,120.9842",
 }
@@ -178,6 +180,92 @@ def _delete_blocked_message(protected_objects):
     }
     model_names_str = ", ".join(model_verbose_names_set)
     return _("Deletion blocked by related records: {}.").format(model_names_str)
+
+
+def build_my_attendance_activity_meta(paginated_attendances):
+    """
+    Build activity-derived metadata for own-attendance daily rows.
+    """
+    activity_meta_by_attendance = {}
+    if not paginated_attendances:
+        return activity_meta_by_attendance
+
+    attendance_rows = list(getattr(paginated_attendances, "object_list", []))
+    if not attendance_rows:
+        return activity_meta_by_attendance
+
+    employee_ids = {row.employee_id_id for row in attendance_rows if row.employee_id_id}
+    attendance_dates = {row.attendance_date for row in attendance_rows if row.attendance_date}
+    if not employee_ids or not attendance_dates:
+        return activity_meta_by_attendance
+
+    activities = (
+        AttendanceActivity.objects.filter(
+            employee_id_id__in=employee_ids,
+            attendance_date__in=attendance_dates,
+        )
+        .order_by("clock_in_date", "clock_in", "id")
+    )
+
+    activities_by_key = defaultdict(list)
+    for activity in activities:
+        key = f"{activity.employee_id_id}|{activity.attendance_date}"
+        activities_by_key[key].append(activity)
+
+    for attendance in attendance_rows:
+        key = f"{attendance.employee_id_id}|{attendance.attendance_date}"
+        row_activities = activities_by_key.get(key, [])
+
+        first_check_in_image_activity = next(
+            (activity for activity in row_activities if activity.clock_in_selfie),
+            None,
+        )
+        last_check_out_image_activity = next(
+            (
+                activity
+                for activity in reversed(row_activities)
+                if activity.clock_out_selfie
+            ),
+            None,
+        )
+        latest_location_activity = next(
+            (activity for activity in reversed(row_activities) if activity.gps_address),
+            None,
+        )
+        latest_maps_activity = next(
+            (
+                activity
+                for activity in reversed(row_activities)
+                if activity.latitude and activity.longitude
+            ),
+            None,
+        )
+
+        meta = {
+            "check_in_image_url": (
+                first_check_in_image_activity.clock_in_selfie.url
+                if first_check_in_image_activity
+                else None
+            ),
+            "check_out_image_url": (
+                last_check_out_image_activity.clock_out_selfie.url
+                if last_check_out_image_activity
+                else None
+            ),
+            "location": (
+                latest_location_activity.gps_address if latest_location_activity else None
+            ),
+            "maps_url": (
+                f"https://www.google.com/maps?q={latest_maps_activity.latitude},{latest_maps_activity.longitude}"
+                if latest_maps_activity
+                else None
+            ),
+        }
+
+        attendance.activity_meta = meta
+        activity_meta_by_attendance[attendance.id] = meta
+
+    return activity_meta_by_attendance
 
 
 def attendance_validate(attendance):
@@ -305,8 +393,22 @@ def attendance_excel(_request):
             "Check-out",
             "Worked hour",
             "Minimum hour",
+            "Approved By",
         ]
-        data_frame = pd.DataFrame(columns=columns)
+        sample_row = {
+            "Employee No": "EMP-001",
+            "Shift": "Day Shift",
+            "Work type": "Office",
+            "Attendance date": "2026-04-01",
+            "Check-in date": "2026-04-01",
+            "Check-in": "08:00",
+            "Check-out date": "2026-04-01",
+            "Check-out": "17:00",
+            "Worked hour": "09:00",
+            "Minimum hour": "08:00",
+            "Approved By": "EMP-002",
+        }
+        data_frame = pd.DataFrame([sample_row], columns=columns)
         response = HttpResponse(content_type="application/ms-excel")
         response["Content-Disposition"] = 'attachment; filename="my_excel_file.xlsx"'
         data_frame.to_excel(response, index=False)
@@ -603,20 +705,18 @@ def view_my_attendance(request):
         template = "attendance/own_attendance/view_own_attendances.html"
     else:
         template = "attendance/own_attendance/own_empty.html"
+    paginated_attendances = paginator_qry(employee_attendances, request.GET.get("page"))
+    activity_meta_by_attendance = build_my_attendance_activity_meta(paginated_attendances)
     attendances_ids = json.dumps(
-        [
-            instance.id
-            for instance in paginator_qry(
-                employee_attendances, request.GET.get("page")
-            ).object_list
-        ]
+        [instance.id for instance in paginated_attendances.object_list]
     )
     return render(
         request,
         template,
         {
-            "attendances": paginator_qry(employee_attendances, request.GET.get("page")),
+            "attendances": paginated_attendances,
             "attendances_ids": attendances_ids,
+            "activity_meta_by_attendance": activity_meta_by_attendance,
             "f": filter,
             "gp_fields": AttendanceReGroup.fields,
         },

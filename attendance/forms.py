@@ -805,11 +805,28 @@ class AttendanceExportForm(forms.Form):
     presented as a list of checkboxes, and the user can select multiple fields.
     """
 
-    model_fields = Attendance._meta.get_fields()
     field_choices = [
-        (field.name, field.verbose_name)
-        for field in model_fields
-        if hasattr(field, "verbose_name") and field.name not in excluded_fields
+        ("employee_id", _("Employee")),
+        ("employee_id__employee_work_info__branch_id", _("Branch")),
+        ("employee_id__employee_work_info__department_id", _("Department")),
+        ("date", _("Date")),
+        ("attendance_day", _("Day")),
+        ("attendance_date", _("Attendance Date")),
+        ("attendance_clock_in_date", _("In Date")),
+        ("attendance_clock_in", _("Check-In")),
+        ("check_in_image", _("Check-In Image")),
+        ("attendance_clock_out_date", _("Out Date")),
+        ("attendance_clock_out", _("Check-Out")),
+        ("check_out_image", _("Check-Out Image")),
+        ("shift_id", _("Shift")),
+        ("work_type_id", _("Work Type")),
+        ("minimum_hour", _("Min Hour")),
+        ("work_hours", _("Work Hours")),
+        ("pending_hour", _("Pending Hour")),
+        ("attendance_overtime", _("Overtime")),
+        ("location", _("Location")),
+        ("maps", _("Maps")),
+        ("approved_by", _("Approved By")),
     ]
 
     selected_fields = forms.MultipleChoiceField(
@@ -817,15 +834,26 @@ class AttendanceExportForm(forms.Form):
         widget=forms.CheckboxSelectMultiple,
         initial=[
             "employee_id",
+            "employee_id__employee_work_info__branch_id",
+            "employee_id__employee_work_info__department_id",
+            "date",
+            "attendance_day",
+            "attendance_date",
+            "attendance_clock_in_date",
+            "attendance_clock_in",
+            "check_in_image",
+            "attendance_clock_out_date",
+            "attendance_clock_out",
+            "check_out_image",
             "shift_id",
             "work_type_id",
-            "attendance_date",
-            "attendance_clock_in",
-            "attendance_clock_in_date",
-            "attendance_clock_out",
-            "attendance_clock_out_date",
-            "attendance_worked_hour",
-            "attendance_validated",
+            "minimum_hour",
+            "work_hours",
+            "pending_hour",
+            "attendance_overtime",
+            "location",
+            "maps",
+            "approved_by",
         ],
     )
 

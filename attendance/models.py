@@ -356,6 +356,66 @@ class Attendance(HorillaModel):
         )
         return {"query": activities, "count": activities.count()}
 
+    @property
+    def date(self):
+        return self.attendance_date
+
+    @property
+    def work_hours(self):
+        return self.attendance_worked_hour
+
+    @property
+    def pending_hour(self):
+        return self.hours_pending()
+
+    def _day_activities(self):
+        return AttendanceActivity.objects.filter(
+            employee_id=self.employee_id,
+            attendance_date=self.attendance_date,
+        ).order_by("clock_in_date", "clock_in", "id")
+
+    @property
+    def check_in_image(self):
+        activity = self._day_activities().filter(clock_in_selfie__isnull=False).first()
+        return activity.clock_in_selfie.url if activity and activity.clock_in_selfie else None
+
+    @property
+    def check_out_image(self):
+        activity = (
+            self._day_activities()
+            .filter(clock_out_selfie__isnull=False)
+            .order_by("-clock_out_date", "-clock_out", "-id")
+            .first()
+        )
+        return (
+            activity.clock_out_selfie.url
+            if activity and activity.clock_out_selfie
+            else None
+        )
+
+    @property
+    def location(self):
+        activity = (
+            self._day_activities()
+            .filter(gps_address__isnull=False)
+            .exclude(gps_address="")
+            .order_by("-clock_out_date", "-clock_out", "-id")
+            .first()
+        )
+        return activity.gps_address if activity else None
+
+    @property
+    def maps(self):
+        activity = (
+            self._day_activities()
+            .filter(latitude__isnull=False, longitude__isnull=False)
+            .order_by("-clock_out_date", "-clock_out", "-id")
+            .first()
+        )
+        if activity:
+            return f"https://www.google.com/maps?q={activity.latitude},{activity.longitude}"
+        return None
+
     def requested_fields(self):
         """
         This method will returns the value difference fields

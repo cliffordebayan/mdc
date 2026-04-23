@@ -1,5 +1,6 @@
 import ast
 import calendar
+import contextlib
 import json
 import os
 import random
@@ -707,6 +708,9 @@ def export_data(request, model, form_class, filter_class, file_name, perm=None):
                     value = getattr(value, attr, None)
                     if value is None:
                         break
+                if callable(value):
+                    with contextlib.suppress(TypeError):
+                        value = value()
                 if value is True:
                     value = _("Yes")
                 elif value is False:

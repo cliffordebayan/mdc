@@ -41,6 +41,12 @@ def process_attendance_data(attendance_dicts):
             employee_no__in=[d["Employee No"] for d in attendance_dicts], is_active=True
         )
     }
+    all_active_employees = Employee.objects.filter(is_active=True)
+    approvers_by_no = {emp.employee_no: emp for emp in all_active_employees}
+    approvers_by_full_name = {
+        f"{emp.employee_first_name} {emp.employee_last_name}".strip().lower(): emp
+        for emp in all_active_employees
+    }
     shifts = {shift.employee_shift: shift for shift in EmployeeShift.objects.all()}
     work_types = {wt.work_type: wt for wt in WorkType.objects.all()}
     existing_attendance_records = {
@@ -56,6 +62,7 @@ def process_attendance_data(attendance_dicts):
             employee_no = attendance_data["Employee No"]
             shift_id = attendance_data["Shift"]
             work_type_id = attendance_data["Work type"]
+            approved_by = None
 
             # Retrieve objects from cached dictionaries
             employee = employees.get(employee_no)
@@ -145,6 +152,21 @@ def process_attendance_data(attendance_dicts):
                 )
                 save = False
 
+            approved_by_value = attendance_data.get("Approved By")
+            if approved_by_value is not None and not pd.isna(approved_by_value):
+                approved_by_value = str(approved_by_value).strip()
+                if approved_by_value:
+                    approved_by = approvers_by_no.get(approved_by_value)
+                    if approved_by is None:
+                        approved_by = approvers_by_full_name.get(
+                            approved_by_value.lower()
+                        )
+                    if approved_by is None:
+                        attendance_data["Approved By Error"] = (
+                            f"Invalid approved by '{approved_by_value}'"
+                        )
+                        save = False
+
             if check_in_date is not None and attendance_date is not None:
                 if check_in_date < attendance_date:
                     attendance_data["Check-in Validation Error"] = (
@@ -193,6 +215,7 @@ def process_attendance_data(attendance_dicts):
                         attendance_clock_out=format_time(check_out),
                         attendance_worked_hour=format_time(worked_hour),
                         minimum_hour=format_time(minimum_hour),
+                        approved_by=approved_by,
                     )
                 )
                 existing_attendance_records[(employee_no, attendance_date)] = (

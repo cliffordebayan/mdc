@@ -26,7 +26,11 @@ from attendance.models import (
     AttendanceOverTime,
     AttendanceValidationCondition,
 )
-from attendance.views.views import paginator_qry, strtime_seconds
+from attendance.views.views import (
+    build_my_attendance_activity_meta,
+    paginator_qry,
+    strtime_seconds,
+)
 from base.methods import filtersubordinates, get_key_instances, sortby
 from horilla.decorators import hx_request_required, login_required, manager_can_enter
 from horilla.group_by import group_by_queryset
@@ -140,6 +144,9 @@ def attendance_search(request):
         )
         ot_attendances = paginator_qry(ot_attendances, request.GET.get("opage"))
         attendances = paginator_qry(attendances, request.GET.get("page"))
+        build_my_attendance_activity_meta(validate_attendances)
+        build_my_attendance_activity_meta(ot_attendances)
+        build_my_attendance_activity_meta(attendances)
         validate_attendances_ids = json.dumps(
             [instance.id for instance in validate_attendances.object_list]
         )
@@ -355,13 +362,10 @@ def filter_own_attendance(request):
     ]
     for key in keys_to_remove:
         data_dict.pop(key)
+    paginated_attendances = paginator_qry(attendances, request.GET.get("page"))
+    activity_meta_by_attendance = build_my_attendance_activity_meta(paginated_attendances)
     attendances_ids = json.dumps(
-        [
-            instance.id
-            for instance in paginator_qry(
-                attendances, request.GET.get("page")
-            ).object_list
-        ]
+        [instance.id for instance in paginated_attendances.object_list]
     )
     if field != "" and field is not None:
         attendances = group_by_queryset(
@@ -369,13 +373,16 @@ def filter_own_attendance(request):
         )
         template = "attendance/own_attendance/group_by.html"
         attendances_ids = []
+        paginated_attendances = paginator_qry(attendances, request.GET.get("page"))
+        activity_meta_by_attendance = {}
     return render(
         request,
         template,
         {
-            "attendances": paginator_qry(attendances, request.GET.get("page")),
+            "attendances": paginated_attendances,
             "filter_dict": data_dict,
             "attendances_ids": attendances_ids,
+            "activity_meta_by_attendance": activity_meta_by_attendance,
             "pd": previous_data,
             "field": field,
         },
@@ -391,11 +398,18 @@ def own_attendance_sort(request):
     attendances = Attendance.objects.filter(employee_id=request.user.employee_get)
     previous_data = request.GET.urlencode()
     attendances = sortby(request, attendances, "orderby")
+    paginated_attendances = paginator_qry(attendances, request.GET.get("page"))
+    activity_meta_by_attendance = build_my_attendance_activity_meta(paginated_attendances)
+    attendances_ids = json.dumps(
+        [instance.id for instance in paginated_attendances.object_list]
+    )
     return render(
         request,
         "attendance/own_attendance/attendances.html",
         {
-            "attendances": paginator_qry(attendances, request.GET.get("page")),
+            "attendances": paginated_attendances,
+            "activity_meta_by_attendance": activity_meta_by_attendance,
+            "attendances_ids": attendances_ids,
             "pd": previous_data,
         },
     )

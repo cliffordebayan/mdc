@@ -86,7 +86,7 @@
       </div>
     </div>
   </div>
-  <div id="my-attendance-table" data-table-name="my_attendance_tab">
+  <div id="my-attendance-table" data-table-name="my_attendance_tab_v2">
     <div class="oh-sticky-table">
       <div class="oh-sticky-table__table oh-table--sortable">
         <div class="oh-sticky-table__thead">
@@ -99,12 +99,23 @@
               {% trans "Employee" %}
             </div>
             <div
-
               class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_date' %}arrow-up {% elif request.sort_option.order == 'attendance_date' %}arrow-down {% else %} arrow-up-down {% endif %}"
               hx-target="#attendance-container"
               hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=attendance_date"
             >
-              {% trans "Date" %}
+              {% trans "Attendance Date" %}
+            </div>
+            <div
+              data-cell-index="0" data-cell-title='{% trans "Branch" %}'
+              class="oh-sticky-table__th"
+            >
+              {% trans "Branch" %}
+            </div>
+            <div
+              data-cell-index="1" data-cell-title='{% trans "Department" %}'
+              class="oh-sticky-table__th"
+            >
+              {% trans "Department" %}
             </div>
             <div
               data-cell-index="2" data-cell-title='{% trans "Day" %}'
@@ -113,13 +124,7 @@
               {% trans "Day" %}
             </div>
             <div
-              data-cell-index="3" data-cell-title='{% trans "Check-In" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Check-In" %}
-            </div>
-            <div
-              data-cell-index="4" data-cell-title='{% trans "In Date" %}'
+              data-cell-index="3" data-cell-title='{% trans "In Date" %}'
               class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_clock_in_date' %}arrow-up {% elif request.sort_option.order == 'attendance_clock_in_date' %}arrow-down {% else %} arrow-up-down {% endif %}"
               hx-target="#attendance-container"
               hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=attendance_clock_in_date"
@@ -127,12 +132,16 @@
               {% trans "In Date" %}
             </div>
             <div
-              data-cell-index="5" data-cell-title='{% trans "Check-Out" %}'
-              class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_clock_out' %}arrow-up {% elif request.sort_option.order == 'attendance_clock_out' %}arrow-down {% else %} arrow-up-down {% endif %}"
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=attendance_clock_out"
+              data-cell-index="4" data-cell-title='{% trans "Check-In" %}'
+              class="oh-sticky-table__th"
             >
-              {% trans "Check-Out" %}
+              {% trans "Check-In" %}
+            </div>
+            <div
+              data-cell-index="5" data-cell-title='{% trans "Check-In Image" %}'
+              class="oh-sticky-table__th"
+            >
+              {% trans "Check-In Image" %}
             </div>
             <div
               data-cell-index="6" data-cell-title='{% trans "Out Date" %}'
@@ -143,43 +152,69 @@
               {% trans "Out Date" %}
             </div>
             <div
-              data-cell-index="7" data-cell-title='{% trans "Shift" %}'
+              data-cell-index="7" data-cell-title='{% trans "Check-Out" %}'
+              class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_clock_out' %}arrow-up {% elif request.sort_option.order == 'attendance_clock_out' %}arrow-down {% else %} arrow-up-down {% endif %}"
+              hx-target="#attendance-container"
+              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=attendance_clock_out"
+            >
+              {% trans "Check-Out" %}
+            </div>
+            <div
+              data-cell-index="8" data-cell-title='{% trans "Check-Out Image" %}'
+              class="oh-sticky-table__th"
+            >
+              {% trans "Check-Out Image" %}
+            </div>
+            <div
+              data-cell-index="9" data-cell-title='{% trans "Shift" %}'
               class="oh-sticky-table__th"
             >
               {% trans "Shift" %}
             </div>
             <div
-              data-cell-index="8" data-cell-title='{% trans "Work Type" %}'
+              data-cell-index="10" data-cell-title='{% trans "Work Type" %}'
               class="oh-sticky-table__th"
             >
               {% trans "Work Type" %}
             </div>
             <div
-              data-cell-index="9" data-cell-title='{% trans "Min Hour" %}'
+              data-cell-index="11" data-cell-title='{% trans "Min Hour" %}'
               class="oh-sticky-table__th"
             >
               {% trans "Min Hour" %}
             </div>
             <div
-              data-cell-index="10" data-cell-title='{% trans "At Work" %}'
+              data-cell-index="12" data-cell-title='{% trans "Work Hours" %}'
               class="oh-sticky-table__th {% if request.sort_option.order == '-at_work_second' %}arrow-up {% elif request.sort_option.order == 'at_work_second' %}arrow-down {% else %} arrow-up-down {% endif %}"
               hx-target="#attendance-container"
               hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=at_work_second"
             >
-              {% trans "At Work" %}
+              {% trans "Work Hours" %}
             </div>
             <div
-              data-cell-index="11" data-cell-title='{% trans "Pending Hour" %}' class="oh-sticky-table__th"
+              data-cell-index="13" data-cell-title='{% trans "Pending Hour" %}' class="oh-sticky-table__th"
               >
               {% trans "Pending Hour" %}
             </div>
             <div
-              data-cell-index="12" data-cell-title='{% trans "Overtime" %}'
+              data-cell-index="14" data-cell-title='{% trans "Overtime" %}'
               class="oh-sticky-table__th {% if request.sort_option.order == '-overtime_second' %}arrow-up {% elif request.sort_option.order == 'overtime_second' %}arrow-down {% else %} arrow-up-down {% endif %}"
               hx-target="#attendance-container"
               hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=overtime_second"
             >
               {% trans "Overtime" %}
+            </div>
+            <div
+              data-cell-index="15" data-cell-title='{% trans "Location" %}'
+              class="oh-sticky-table__th"
+            >
+              {% trans "Location" %}
+            </div>
+            <div
+              data-cell-index="16" data-cell-title='{% trans "Maps" %}'
+              class="oh-sticky-table__th"
+            >
+              {% trans "Maps" %}
             </div>
           </div>
         </div>
@@ -210,30 +245,89 @@
               </div>
             </div>
             <div class="oh-sticky-table__td dateformat_changer">{{attendance.attendance_date}}</div>
+            <div data-cell-index="0" class="oh-sticky-table__td">
+              {{ attendance.employee_id.employee_work_info.branch_id|default:"—" }}
+            </div>
+            <div data-cell-index="1" class="oh-sticky-table__td">
+              {{ attendance.employee_id.employee_work_info.department_id|default:"—" }}
+            </div>
             <div data-cell-index="2" class="oh-sticky-table__td">
               {{attendance.attendance_day|capfirst}}
             </div>
-            <div data-cell-index="3" class="oh-sticky-table__td timeformat_changer">
-              {{attendance.attendance_clock_in}}
-            </div>
-            <div data-cell-index="4" class="oh-sticky-table__td dateformat_changer">
+            <div data-cell-index="3" class="oh-sticky-table__td dateformat_changer">
               {{attendance.attendance_clock_in_date}}
             </div>
-            <div data-cell-index="5" class="oh-sticky-table__td timeformat_changer">
-              {{attendance.attendance_clock_out}}
+            <div data-cell-index="4" class="oh-sticky-table__td timeformat_changer">
+              {{attendance.attendance_clock_in}}
+            </div>
+            <div data-cell-index="5" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+              {% if attendance.activity_meta.check_in_image_url %}
+                <img
+                  src="{{ attendance.activity_meta.check_in_image_url }}"
+                  alt="Check In"
+                  style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;"
+                  onclick="openImageModal('{{ attendance.activity_meta.check_in_image_url }}', 'Check In Selfie')"
+                />
+              {% else %}
+                <span class="oh-text--light">&mdash;</span>
+              {% endif %}
             </div>
             <div data-cell-index="6" class="oh-sticky-table__td dateformat_changer">
               {{attendance.attendance_clock_out_date}}
             </div>
-            <div data-cell-index="7" class="oh-sticky-table__td">{{attendance.shift_id}}</div>
-            <div data-cell-index="8" class="oh-sticky-table__td">{{attendance.work_type_id}}</div>
-            <div data-cell-index="9" class="oh-sticky-table__td">{{attendance.minimum_hour}}</div>
-            <div data-cell-index="10" class="oh-sticky-table__td">
+            <div data-cell-index="7" class="oh-sticky-table__td timeformat_changer">
+              {{attendance.attendance_clock_out}}
+            </div>
+            <div data-cell-index="8" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+              {% if attendance.activity_meta.check_out_image_url %}
+                <img
+                  src="{{ attendance.activity_meta.check_out_image_url }}"
+                  alt="Check Out"
+                  style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;"
+                  onclick="openImageModal('{{ attendance.activity_meta.check_out_image_url }}', 'Check Out Selfie')"
+                />
+              {% else %}
+                <span class="oh-text--light">&mdash;</span>
+              {% endif %}
+            </div>
+            <div data-cell-index="9" class="oh-sticky-table__td">{{attendance.shift_id|default:"—"}}</div>
+            <div data-cell-index="10" class="oh-sticky-table__td">{{attendance.work_type_id|default:"—"}}</div>
+            <div data-cell-index="11" class="oh-sticky-table__td">{{attendance.minimum_hour|default:"—"}}</div>
+            <div data-cell-index="12" class="oh-sticky-table__td">
               {{attendance.attendance_worked_hour}}
             </div>
-            <div data-cell-index="11" class="oh-sticky-table__td">{{ attendance.hours_pending }}</div>
-            <div data-cell-index="12" class="oh-sticky-table__td">
+            <div data-cell-index="13" class="oh-sticky-table__td">{{ attendance.hours_pending }}</div>
+            <div data-cell-index="14" class="oh-sticky-table__td">
               {{attendance.attendance_overtime}}
+            </div>
+            <div data-cell-index="15" class="oh-sticky-table__td">
+              {% if attendance.activity_meta.location %}
+                <span
+                  title="{{ attendance.activity_meta.location }}"
+                  style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+                >
+                  <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                  {{ attendance.activity_meta.location }}
+                </span>
+              {% else %}
+                <span class="oh-text--light">&mdash;</span>
+              {% endif %}
+            </div>
+            <div data-cell-index="16" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+              {% if attendance.activity_meta.maps_url %}
+                <a
+                  href="{{ attendance.activity_meta.maps_url }}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="oh-btn oh-btn--primary-outline oh-btn--sm"
+                  style="font-size: 11px; white-space: nowrap;"
+                >
+                  <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
+                  {% trans "View Map" %}
+                </a>
+              {% else %}
+                <span class="oh-text--light">&mdash;</span>
+              {% endif %}
             </div>
           </div>
           {% endfor %}
@@ -319,9 +413,37 @@
 {% endif %}
 
 <script>
+  function openImageModal(imageUrl, title) {
+    const existing = document.getElementById("selfie-preview-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "selfie-preview-overlay";
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 99999;
+      background: rgba(0,0,0,0.75);
+      display: flex; align-items: center; justify-content: center;
+    `;
+    overlay.innerHTML = `
+      <div style="background:#fff; border-radius:12px; max-width:90vw; max-height:90vh; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.4); display:flex; flex-direction:column;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #e5e7eb;">
+          <span style="font-weight:600; font-size:15px;">${title}</span>
+          <button onclick="document.getElementById('selfie-preview-overlay').remove()" style="background:none; border:none; cursor:pointer; font-size:22px; line-height:1; color:#6b7280;">&times;</button>
+        </div>
+        <div style="padding:16px; overflow:auto; text-align:center;">
+          <img src="${imageUrl}" alt="${title}" style="max-width:100%; max-height:75vh; border-radius:8px; display:block; margin:auto;" />
+        </div>
+      </div>
+    `;
+    overlay.addEventListener("click", function (event) {
+      if (event.target === this) this.remove();
+    });
+    document.body.appendChild(overlay);
+  }
+
   // toggle columns //
   toggleColumns("my-attendance-table","MyAttendanceCells")
-  localStorageMyAttendanceCells = localStorage.getItem("my_attendance_tab")
+  localStorageMyAttendanceCells = localStorage.getItem("my_attendance_tab_v2")
   if (!localStorageMyAttendanceCells) {
     $("#MyAttendanceCells").find("[type=checkbox]").prop("checked",true)
   }
