@@ -2872,6 +2872,7 @@ def work_info_export(request):
     selected_columns = []
     form = EmployeeExportExcelForm()
     field_overrides = {
+        "employee_work_info__company_id": "employee_work_info__company_id__company",
         "employee_work_info__department_id": "employee_work_info__department_id__department",
         "employee_work_info__job_position_id": "employee_work_info__job_position_id__job_position",
         "employee_work_info__job_role_id": "employee_work_info__job_role_id__job_role",
@@ -2929,20 +2930,28 @@ def work_info_export(request):
     all_insurance_names = []
 
     if bank_detail_fields and employee_ids:
-        all_bank_names = list(
+        _seen_banks = {}
+        for _name in (
             EmployeeBankDetails.objects.filter(employee_id__in=employee_ids)
             .values_list("bank_name", flat=True)
-            .distinct()
             .order_by("bank_name")
-        )
+        ):
+            _key = _name.strip().lower()
+            if _key not in _seen_banks:
+                _seen_banks[_key] = _name.strip()
+        all_bank_names = sorted(_seen_banks.values(), key=str.lower)
 
     if has_insurance and employee_ids:
-        all_insurance_names = list(
+        _seen_ins = {}
+        for _name in (
             EmployeeInsurance.objects.filter(employee_id__in=employee_ids)
             .values_list("name", flat=True)
-            .distinct()
             .order_by("name")
-        )
+        ):
+            _key = _name.strip().lower()
+            if _key not in _seen_ins:
+                _seen_ins[_key] = _name.strip()
+        all_insurance_names = sorted(_seen_ins.values(), key=str.lower)
 
     employees_data = {}
     bank_cols_added = False
@@ -3000,7 +3009,7 @@ def work_info_export(request):
 
             if column_value == "employee_insurance":
                 for ins_name in all_insurance_names:
-                    ins = next((i for i in emp_insurances if i.name == ins_name), None)
+                    ins = next((i for i in emp_insurances if i.name.strip().lower() == ins_name.lower()), None)
                     employees_data[f"{ins_name} - Start Date"].append(
                         ins.start_date.strftime(date_fmt) if ins and ins.start_date else ""
                     )
@@ -3012,7 +3021,7 @@ def work_info_export(request):
             if column_value.startswith("employee_bank_details__"):
                 if not bank_written:
                     for bank_name in all_bank_names:
-                        bank = next((b for b in emp_banks if b.bank_name == bank_name), None)
+                        bank = next((b for b in emp_banks if b.bank_name.strip().lower() == bank_name.lower()), None)
                         employees_data[bank_name].append(
                             str(bank.account_number or "") if bank else ""
                         )
