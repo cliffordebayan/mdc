@@ -85,6 +85,7 @@ class AttendanceActivity(HorillaModel):
     )
     latitude = models.FloatField(null=True, blank=True, verbose_name=_("Latitude"))
     longitude = models.FloatField(null=True, blank=True, verbose_name=_("Longitude"))
+    gps_address = models.CharField(max_length=500, null=True, blank=True, verbose_name=_("GPS Address"))
     location_verified = models.BooleanField(default=False, verbose_name=_("Location Verified"))
     objects = HorillaCompanyManager(
         related_company_field="employee_id__employee_work_info__company_id"

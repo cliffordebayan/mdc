@@ -43,6 +43,17 @@ from employee.models import Employee
 
 logger = logging.getLogger(__name__)
 
+
+def _reverse_geocode(lat, lng):
+    try:
+        from geopy.geocoders import Nominatim
+        geolocator = Nominatim(user_agent="hris_attendance")
+        location = geolocator.reverse((lat, lng), exactly_one=True, timeout=3)
+        return location.address if location else None
+    except Exception:
+        return None
+
+
 # NTP servers to try in order
 _NTP_SERVERS = ["time.cloudflare.com", "pool.ntp.org", "time.google.com"]
 _NTP_DELTA = 2208988800  # seconds between NTP epoch (1900) and Unix epoch (1970)
@@ -768,8 +779,11 @@ def public_clock_in(request):
             latitude = request.POST.get("latitude")
             longitude = request.POST.get("longitude")
             if latitude and longitude:
-                activity.latitude = float(latitude)
-                activity.longitude = float(longitude)
+                lat_f = float(latitude)
+                lng_f = float(longitude)
+                activity.latitude = lat_f
+                activity.longitude = lng_f
+                activity.gps_address = _reverse_geocode(lat_f, lng_f)
                 activity.location_verified = True
             else:
                 activity.location_verified = False
@@ -909,8 +923,11 @@ def public_clock_out(request):
                 latitude = request.POST.get("latitude")
                 longitude = request.POST.get("longitude")
                 if latitude and longitude:
-                    closed_activity.latitude = float(latitude)
-                    closed_activity.longitude = float(longitude)
+                    lat_f = float(latitude)
+                    lng_f = float(longitude)
+                    closed_activity.latitude = lat_f
+                    closed_activity.longitude = lng_f
+                    closed_activity.gps_address = _reverse_geocode(lat_f, lng_f)
                     closed_activity.location_verified = True
                 else:
                     closed_activity.location_verified = False

@@ -113,8 +113,13 @@
                 <div class="oh-timeoff-modal__stat">
                     <span class="oh-timeoff-modal__stat-title">{% trans "Location" %}</span>
                     <span class="oh-timeoff-modal__stat-count" style="font-size: 14px;">
-                        <strong>Lat:</strong> {{ activity.latitude|floatformat:6 }}<br/>
-                        <strong>Lng:</strong> {{ activity.longitude|floatformat:6 }}
+                        {% if activity.gps_address %}
+                            <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                            {{ activity.gps_address }}<br/>
+                        {% endif %}
+                        <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" style="font-size:12px;">
+                            <ion-icon name="map-outline" style="vertical-align:middle;"></ion-icon> {% trans "View Map" %}
+                        </a>
                     </span>
                 </div>
             </div>
