@@ -31,12 +31,22 @@
 					>{% trans "Bank Info" %}</a
 				>
 			</li>
+			<li class="oh-general__tab">
+				<a
+					href="#"
+					class="oh-general__tab-link"
+					data-action="general-tab"
+					data-target="#insurance"
+					>{% trans "Insurance" %}</a
+				>
+			</li>
 		</ul>
 	</div>
 </section>
 <div class="oh-wrapper">
 	{% include 'employee/profile/personal_info.html' %}
     {% include 'employee/profile/bank_info.html' %}
+    {% include 'employee/profile/insurance_info.html' %}
 </div>
 
 <script>
@@ -46,7 +56,7 @@
 		function activeEmpprofileTab() {
 		  var activeTab = localStorage.getItem("activeEmpprofileTab")
 
-		  if (!["#personal", "#bank"].includes(activeTab)) {
+		  if (!["#personal", "#bank", "#insurance"].includes(activeTab)) {
 			activeTab = "#personal";
 		  }
 

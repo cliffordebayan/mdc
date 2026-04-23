@@ -289,6 +289,8 @@ def self_info_update(request):
                 messages.success(request, _("Bank details saved."))
                 bank_form = EmployeeBankDetailsForm()
     bank_accounts = EmployeeBankDetails.objects.filter(employee_id=employee)
+    insurance_form = EmployeeInsuranceForm()
+    insurance_accounts = EmployeeInsurance.objects.filter(employee_id=employee)
     return render(
         request,
         "employee/profile/profile.html",
@@ -296,6 +298,8 @@ def self_info_update(request):
             "form": form,
             "bank_form": bank_form,
             "bank_accounts": bank_accounts,
+            "insurance_form": insurance_form,
+            "insurance_accounts": insurance_accounts,
         },
     )
 
