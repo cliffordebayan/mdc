@@ -90,8 +90,7 @@
             position: fixed;
             inset: 0;
             z-index: 10000;
-            background: rgba(16, 24, 40, 0.58);
-            backdrop-filter: blur(4px);
+            background: #f8f9fa;
             padding: 24px 14px;
             overflow-y: auto;
         }
@@ -105,13 +104,12 @@
 
         .pin-step-card {
             border: 1px solid #dbe4f4;
-            border-radius: 16px;
-            background: linear-gradient(180deg, #ffffff 0%, #f6faff 100%);
+            background: #ffffff;
             padding: 22px;
             width: 100%;
             max-width: 460px;
             margin: 0 auto;
-            box-shadow: 0 28px 55px rgba(14, 32, 66, 0.28);
+            box-shadow: rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.06) 0px 1px 2px 0px;
         }
 
         .pin-title {
@@ -948,6 +946,7 @@
         const CSRF_TOKEN = '{{ csrf_token }}';
         let selectedEmployee = null;
         let videoStream = null;
+        let cameraReady = false;
         let latitude = null;
         let longitude = null;
         let capturedAddress = null;
@@ -1102,6 +1101,7 @@
         }
 
         function enableClockButtons() {
+            if (!cameraReady) return;
             $('#clock-in-btn, #clock-out-btn').prop('disabled', false).removeAttr('title');
         }
 
@@ -1179,23 +1179,34 @@
             });
 
             $(document).on('keydown', function (e) {
-                if (!$('#step-pin').hasClass('active')) {
+                if ($('#step-pin').hasClass('active')) {
+                    if (/^[0-9]$/.test(e.key)) {
+                        e.preventDefault();
+                        appendPinDigit(e.key);
+                        return;
+                    }
+
+                    if (e.key === 'Backspace') {
+                        e.preventDefault();
+                        removePinDigit();
+                        return;
+                    }
+
+                    // Enter key intentionally not bound — PIN auto-submits when 6 digits are entered
                     return;
                 }
 
-                if (/^[0-9]$/.test(e.key)) {
+                // Clock step: Enter triggers the visible and enabled action button
+                if ($('#step-clock').hasClass('active') && e.key === 'Enter') {
                     e.preventDefault();
-                    appendPinDigit(e.key);
-                    return;
+                    const $clockIn = $('#clock-in-btn');
+                    const $clockOut = $('#clock-out-btn');
+                    if ($clockIn.is(':visible') && !$clockIn.prop('disabled')) {
+                        $clockIn.trigger('click');
+                    } else if ($clockOut.is(':visible') && !$clockOut.prop('disabled')) {
+                        $clockOut.trigger('click');
+                    }
                 }
-
-                if (e.key === 'Backspace') {
-                    e.preventDefault();
-                    removePinDigit();
-                    return;
-                }
-
-                // Enter key intentionally not bound — PIN auto-submits when 6 digits are entered
             });
         }
 
@@ -1424,6 +1435,7 @@
             showStep('clock');
             initializeLocationCapture();
             capturedAddress = null;
+            cameraReady = false;
 
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
@@ -1443,19 +1455,33 @@
                         videoStream = stream;
                         const video = document.getElementById('video-preview');
                         video.srcObject = stream;
-                        $('#video-preview').css('display', 'block');
-                        $('#captured-photo').css('display', 'none');
-                        $('#location-overlay').css('display', 'none');
-                        $('#action-buttons').css('display', 'flex');
 
-                        // Show appropriate clock in/out button based on status
-                        if (selectedEmployee.is_clocked_in) {
-                            $('#clock-out-btn').css('display', 'flex');
-                            $('#clock-in-btn').css('display', 'none');
-                        } else {
-                            $('#clock-in-btn').css('display', 'flex');
-                            $('#clock-out-btn').css('display', 'none');
-                        }
+                        // Wait until the camera is actually streaming frames
+                        video.addEventListener('playing', function onPlaying() {
+                            video.removeEventListener('playing', onPlaying);
+                            cameraReady = true;
+
+                            $('#video-preview').css('display', 'block');
+                            $('#captured-photo').css('display', 'none');
+                            $('#location-overlay').css('display', 'none');
+                            $('#action-buttons').css('display', 'flex');
+
+                            // Show appropriate clock in/out button based on status
+                            if (selectedEmployee.is_clocked_in) {
+                                $('#clock-out-btn').css('display', 'flex');
+                                $('#clock-in-btn').css('display', 'none');
+                            } else {
+                                $('#clock-in-btn').css('display', 'flex');
+                                $('#clock-out-btn').css('display', 'none');
+                            }
+
+                            // Enable buttons only if location is also already acquired
+                            if (latitude && longitude) {
+                                enableClockButtons();
+                            } else {
+                                disableClockButtons();
+                            }
+                        });
                     })
                     .catch(function (error) {
                         Toast.fire({ icon: 'error', title: '{% trans "Camera access denied. Please allow camera permissions." %}' });
@@ -1789,6 +1815,7 @@
         function resetForm() {
             selectedEmployee = null;
             capturedAddress = null;
+            cameraReady = false;
             pinInput = '';
             $('#employee-search').val('');
             $('#search-results').empty();
