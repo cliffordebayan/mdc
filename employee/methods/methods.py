@@ -27,7 +27,7 @@ from base.models import (
     JobRole,
     WorkType,
 )
-from employee.models import Employee, EmployeeWorkInformation
+from employee.models import Employee, EmployeeBankDetails, EmployeeTag, EmployeeWorkInformation
 
 logger = logging.getLogger(__name__)
 
@@ -233,14 +233,13 @@ def valid_import_file_headers(data_frame):
         "Job Position",
         "Job Role",
         "Work Type",
-        "Shift",
+        "Shift Information",
         "Employee Type",
         "Reporting Manager",
         "Company",
-        "Location",
-        "Date Joining",
-        "Contract End Date",
-        "Basic Salary",
+        "Work Location",
+        "Joining Date",
+        "Salary",
         "Salary Hour",
     ]
 
@@ -292,12 +291,12 @@ def process_employee_records(data_frame):
         last_name = convert_nan("Last Name", emp)
         gender = str(emp.get("Gender") or "").strip().lower()
         company = convert_nan("Company", emp)
-        basic_salary = convert_nan("Basic Salary", emp)
+        basic_salary = convert_nan("Salary", emp)
         salary_hour = convert_nan("Salary Hour", emp)
 
         # Date validation
         joining_date = import_valid_date(
-            emp.get("Date Joining"), "Joining Date", errors, "Joining Date Error"
+            emp.get("Joining Date"), "Joining Date", errors, "Joining Date Error"
         )
         if joining_date:
             if joining_date > today:
@@ -305,8 +304,8 @@ def process_employee_records(data_frame):
                 save = False
 
         contract_end_date = import_valid_date(
-            emp.get("Contract End Date"),
-            "Contract End Date",
+            emp.get("End Date"),
+            "End Date",
             errors,
             "Contract Date Error",
         )
@@ -315,6 +314,20 @@ def process_employee_records(data_frame):
                 "Contract end date cannot be before joining date."
             )
             save = False
+
+        # Optional date: Date of Birth
+        import_valid_date(emp.get("Date of Birth"), "Date of Birth", errors, "DOB Error")
+
+        # Optional Work Email
+        work_email = str(emp.get("Work Email") or "").strip().lower()
+        if work_email and not email_regex.match(work_email):
+            errors["Work Email Error"] = "Invalid work email address."
+            save = False
+
+        # Optional Work Phone
+        raw_work_phone = emp.get("Work Phone", "")
+        if raw_work_phone:
+            emp["Work Phone"] = normalize_phone(raw_work_phone)
 
         # Email validation
         if not email or not email_regex.match(email):
@@ -396,11 +409,18 @@ def process_employee_records(data_frame):
                 )
                 save = False
 
+        # Parse Is Active (optional boolean, default True)
+        raw_is_active = emp.get("Is Active")
+        if raw_is_active in (None, ""):
+            emp["Is Active"] = True
+        else:
+            emp["Is Active"] = str(raw_is_active).strip().lower() in ("true", "yes", "1", "active")
+
         # Final processing
         if save:
             emp["Phone"] = phone
-            emp["Date Joining"] = joining_date
-            emp["Contract End Date"] = contract_end_date
+            emp["Joining Date"] = joining_date
+            emp["End Date"] = contract_end_date
             success_list.append(emp)
             created_count += 1
         else:
@@ -471,6 +491,15 @@ def bulk_create_employee_import(success_lists):
         )
     }
 
+    def _parse_children(row):
+        val = convert_nan("Children", row)
+        if val in (None, ""):
+            return None
+        try:
+            return int(float(str(val)))
+        except (ValueError, TypeError):
+            return None
+
     employees_to_create = [
         Employee(
             employee_user_id=existing_users[row["Email"]],
@@ -483,6 +512,22 @@ def bulk_create_employee_import(success_lists):
             phone=row["Phone"],
             gender=row.get("Gender", "").lower(),
             qualification=convert_nan("Qualification", row) or None,
+            dob=row.get("Date of Birth") or None,
+            marital_status=convert_nan("Marital Status", row) or None,
+            children=_parse_children(row),
+            address=convert_nan("Address", row) or None,
+            city=convert_nan("City", row) or None,
+            state=convert_nan("State", row) or None,
+            country=convert_nan("Country", row) or None,
+            zip=convert_nan("Zip Code", row) or None,
+            emergency_contact_name=convert_nan("Emergency Contact Name", row) or None,
+            emergency_contact=convert_nan("Emergency Contact", row) or None,
+            emergency_contact_relation=convert_nan("Emergency Contact Relation", row) or None,
+            tin_number=convert_nan("TIN Number", row) or None,
+            sss_number=convert_nan("SSS Number", row) or None,
+            hdmf_number=convert_nan("HDMF Number", row) or None,
+            philhealth_number=convert_nan("PhilHealth Number", row) or None,
+            is_active=row.get("Is Active", True),
         )
         for row in success_lists
         if row["Email"] in existing_users
@@ -671,7 +716,7 @@ def bulk_create_shifts(success_lists):
     shifts_to_import = {
         shift
         for work_info in success_lists
-        if (shift := convert_nan("Shift", work_info))
+        if (shift := convert_nan("Shift Information", work_info))
     }
 
     # Get existing shifts in one optimized query
@@ -766,7 +811,7 @@ def bulk_create_work_info_import(success_lists):
     job_roles = set(row.get("Job Role") for row in success_lists)
     work_types = set(row.get("Work Type") for row in success_lists)
     employee_types = set(row.get("Employee Type") for row in success_lists)
-    shifts = set(row.get("Shift") for row in success_lists)
+    shifts = set(row.get("Shift Information") for row in success_lists)
     companies = set(row.get("Company") for row in success_lists)
     branches = set(row.get("Branch") for row in success_lists if row.get("Branch"))
     cost_centers = set(row.get("Cost Center") for row in success_lists if row.get("Cost Center"))
@@ -876,7 +921,7 @@ def bulk_create_work_info_import(success_lists):
 
         work_type_obj = existing_work_types.get(work_info.get("Work Type"))
         employee_type_obj = existing_employee_types.get(work_info.get("Employee Type"))
-        shift_obj = existing_shifts.get(work_info.get("Shift"))
+        shift_obj = existing_shifts.get(work_info.get("Shift Information"))
         reporting_manager = work_info.get("Reporting Manager")
         reporting_manager_obj = None
         if isinstance(reporting_manager, str) and " " in reporting_manager:
@@ -888,23 +933,25 @@ def bulk_create_work_info_import(success_lists):
         cost_center_obj = existing_cost_centers.get(work_info.get("Cost Center"))
         business_unit_obj = existing_business_units.get(work_info.get("Business Unit"))
         employee_status = work_info.get("Employee Status") or None
-        location = work_info.get("Location")
+        location = work_info.get("Work Location")
+        work_email = convert_nan("Work Email", work_info) or None
+        work_phone = convert_nan("Work Phone", work_info) or None
+        experience_val = convert_nan("Experience", work_info)
+        try:
+            experience_val = float(experience_val) if experience_val not in (None, "") else None
+        except (ValueError, TypeError):
+            experience_val = None
 
         # Parsing dates and salary
-        date_joining = (
-            work_info["Date Joining"]
-            if not pd.isnull(work_info["Date Joining"])
-            else datetime.today()
-        )
+        _dj = work_info.get("Joining Date")
+        date_joining = _dj if (_dj is not None and not pd.isnull(_dj)) else datetime.today()
 
-        contract_end_date = (
-            work_info["Contract End Date"]
-            if not pd.isnull(work_info["Contract End Date"])
-            else None
-        )
+        _ce = work_info.get("End Date")
+        contract_end_date = _ce if (_ce is not None and not pd.isnull(_ce)) else None
+
         basic_salary = (
-            convert_nan("Basic Salary", work_info)
-            if type(convert_nan("Basic Salary", work_info)) is int
+            convert_nan("Salary", work_info)
+            if type(convert_nan("Salary", work_info)) is int
             else 0
         )
         salary_hour = (
@@ -917,7 +964,8 @@ def bulk_create_work_info_import(success_lists):
             # Create a new instance
             employee_work_info = EmployeeWorkInformation(
                 employee_id=employee_obj,
-                email=email,
+                email=work_email,
+                mobile=work_phone,
                 department_id=department_obj,
                 job_position_id=job_position_obj,
                 job_role_id=job_role_obj,
@@ -939,11 +987,13 @@ def bulk_create_work_info_import(success_lists):
                 ),
                 basic_salary=basic_salary,
                 salary_hour=salary_hour,
+                experience=experience_val,
             )
             new_work_info_list.append(employee_work_info)
         else:
             # Update the existing instance
-            employee_work_info.email = email
+            employee_work_info.email = work_email
+            employee_work_info.mobile = work_phone
             employee_work_info.department_id = department_obj
             employee_work_info.job_position_id = job_position_obj
             employee_work_info.job_role_id = job_role_obj
@@ -965,6 +1015,7 @@ def bulk_create_work_info_import(success_lists):
             )
             employee_work_info.basic_salary = basic_salary
             employee_work_info.salary_hour = salary_hour
+            employee_work_info.experience = experience_val
             update_work_info_list.append(employee_work_info)
     if new_work_info_list:
         EmployeeWorkInformation.objects.bulk_create(
@@ -975,6 +1026,7 @@ def bulk_create_work_info_import(success_lists):
             update_work_info_list,
             [
                 "email",
+                "mobile",
                 "department_id",
                 "job_position_id",
                 "job_role_id",
@@ -992,6 +1044,7 @@ def bulk_create_work_info_import(success_lists):
                 "contract_end_date",
                 "basic_salary",
                 "salary_hour",
+                "experience",
             ],
             batch_size=None if is_postgres else 999,
         )
@@ -1002,3 +1055,91 @@ def bulk_create_work_info_import(success_lists):
             args=(new_work_info_list, update_work_info_list),
         )
         contract_creation_thread.start()
+
+
+def bulk_create_bank_details_import(success_lists):
+    """
+    Creates EmployeeBankDetails for Gcash and Metrobank columns from the import.
+    """
+    employee_nos = [row["Employee No"] for row in success_lists]
+    existing_employees = {
+        emp.employee_no: emp
+        for emp in Employee.objects.entire().filter(employee_no__in=employee_nos).only("employee_no")
+    }
+
+    existing_bank_keys = set(
+        EmployeeBankDetails.objects.filter(
+            employee_id__in=existing_employees.values()
+        ).values_list("employee_id", "bank_name")
+    )
+
+    bank_details_to_create = []
+    for row in success_lists:
+        emp = existing_employees.get(row["Employee No"])
+        if not emp:
+            continue
+        for col, bank_name in [("Gcash", "GCash"), ("Metrobank", "Metrobank")]:
+            account_no = convert_nan(col, row)
+            if account_no and (emp.pk, bank_name) not in existing_bank_keys:
+                bank_details_to_create.append(
+                    EmployeeBankDetails(
+                        employee_id=emp,
+                        bank_name=bank_name,
+                        account_number=str(account_no).strip(),
+                    )
+                )
+                existing_bank_keys.add((emp.pk, bank_name))
+
+    if bank_details_to_create:
+        with transaction.atomic():
+            EmployeeBankDetails.objects.bulk_create(
+                bank_details_to_create,
+                batch_size=None if is_postgres else 999,
+                ignore_conflicts=True,
+            )
+
+
+def bulk_set_tags_import(success_lists):
+    """
+    Sets M2M tags on EmployeeWorkInformation from the Tags column (comma-separated).
+    """
+    all_tag_titles = {
+        title.strip()
+        for row in success_lists
+        for title in str(row.get("Tags") or "").split(",")
+        if title.strip()
+    }
+    if not all_tag_titles:
+        return
+
+    tag_map = {}
+    for title in all_tag_titles:
+        tag, _ = EmployeeTag.objects.get_or_create(title=title)
+        tag_map[title] = tag
+
+    employee_nos = [row["Employee No"] for row in success_lists if str(row.get("Tags") or "").strip()]
+    existing_employees = {
+        emp.employee_no: emp
+        for emp in Employee.objects.entire().filter(employee_no__in=employee_nos).only("employee_no")
+    }
+
+    work_infos = {
+        wi.employee_id_id: wi
+        for wi in EmployeeWorkInformation.objects.filter(
+            employee_id__in=existing_employees.values()
+        ).only("employee_id")
+    }
+
+    for row in success_lists:
+        tags_raw = str(row.get("Tags") or "").strip()
+        if not tags_raw:
+            continue
+        emp = existing_employees.get(row["Employee No"])
+        if not emp:
+            continue
+        wi = work_infos.get(emp.pk)
+        if not wi:
+            continue
+        tag_objs = [tag_map[t.strip()] for t in tags_raw.split(",") if t.strip() in tag_map]
+        if tag_objs:
+            wi.tags.add(*tag_objs)
