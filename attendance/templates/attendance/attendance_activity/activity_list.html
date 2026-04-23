@@ -64,7 +64,8 @@
                             hx-target='#activity-table' hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=attendance_date">
                             {% trans "Attendance Date" %}
                         </div>
-                        <div data-cell-index="2" data-cell-title="{% trans 'In Date' %}"
+                        <div data-cell-index="2" data-cell-title="{% trans 'Day' %}" class='oh-sticky-table__th'>{% trans "Day" %}</div>
+                        <div data-cell-index="3" data-cell-title="{% trans 'In Date' %}"
                             class="oh-sticky-table__th
                             {% if request.sort_option.order == '-clock_in_date' %}
                                 arrow-up
@@ -77,9 +78,9 @@
                             hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=clock_in_date">
                             {% trans "In Date" %}
                         </div>
-                        <div data-cell-index="3" data-cell-title="{% trans 'Check In' %}" class='oh-sticky-table__th'>{% trans "Check In" %}</div>
-                        <div data-cell-index="4" data-cell-title="{% trans 'Check In Image' %}" class='oh-sticky-table__th'>{% trans "Check In Image" %}</div>
-                        <div data-cell-index="5" data-cell-title="{% trans 'Out Date' %}"
+                        <div data-cell-index="4" data-cell-title="{% trans 'Check In' %}" class='oh-sticky-table__th'>{% trans "Check In" %}</div>
+                        <div data-cell-index="5" data-cell-title="{% trans 'Check In Image' %}" class='oh-sticky-table__th'>{% trans "Check In Image" %}</div>
+                        <div data-cell-index="6" data-cell-title="{% trans 'Out Date' %}"
                             class="oh-sticky-table__th
                             {% if request.sort_option.order == '-clock_out_date' %}
                                 arrow-up
@@ -92,11 +93,11 @@
                             hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=clock_out_date">
                             {% trans "Out Date" %}
                         </div>
-                        <div data-cell-index="6" data-cell-title="{% trans 'Check Out' %}" class='oh-sticky-table__th'>{% trans "Check Out" %}</div>
-                        <div data-cell-index="7" data-cell-title="{% trans 'Check Out Image' %}" class='oh-sticky-table__th'>{% trans "Check Out Image" %}</div>
-                        <div data-cell-index="8" data-cell-title="{% trans 'Work Hours' %}" class='oh-sticky-table__th'>{% trans "Work Hours" %}</div>
-                        <div data-cell-index="9" data-cell-title="{% trans 'Location' %}" class='oh-sticky-table__th'>{% trans "Location" %}</div>
-                        <div data-cell-index="10" data-cell-title="{% trans 'Maps' %}" class='oh-sticky-table__th'>{% trans "Maps" %}</div>
+                        <div data-cell-index="7" data-cell-title="{% trans 'Check Out' %}" class='oh-sticky-table__th'>{% trans "Check Out" %}</div>
+                        <div data-cell-index="8" data-cell-title="{% trans 'Check Out Image' %}" class='oh-sticky-table__th'>{% trans "Check Out Image" %}</div>
+                        <div data-cell-index="9" data-cell-title="{% trans 'Work Hours' %}" class='oh-sticky-table__th'>{% trans "Work Hours" %}</div>
+                        <div data-cell-index="10" data-cell-title="{% trans 'Location' %}" class='oh-sticky-table__th'>{% trans "Location" %}</div>
+                        <div data-cell-index="11" data-cell-title="{% trans 'Maps' %}" class='oh-sticky-table__th'>{% trans "Maps" %}</div>
                         {% if perms.attendance.delete_attendanceactivity %}
                             <div class='oh-sticky-table__th oh-sticky-table__right' scope="col" style="width: 86px;">{% trans "Actions" %}</div>
                         {% endif %}
@@ -123,26 +124,27 @@
                             </div>
                             <div data-cell-index="0" class="oh-sticky-table__td">{{ activity.employee_id.employee_work_info.branch_id|default:"—" }}</div>
                             <div data-cell-index="1" class="oh-sticky-table__td dateformat_changer">{{activity.attendance_date}}</div>
-                            <div data-cell-index="2" class="oh-sticky-table__td dateformat_changer">{{activity.clock_in_date}}</div>
-                            <div data-cell-index="3" class="oh-sticky-table__td timeformat_changer">{{activity.clock_in}}</div>
-                            <div data-cell-index="4" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                            <div data-cell-index="2" class="oh-sticky-table__td">{{activity.shift_day}}</div>
+                            <div data-cell-index="3" class="oh-sticky-table__td dateformat_changer">{{activity.clock_in_date}}</div>
+                            <div data-cell-index="4" class="oh-sticky-table__td timeformat_changer">{{activity.clock_in}}</div>
+                            <div data-cell-index="5" class="oh-sticky-table__td" onclick="event.stopPropagation();">
                                 {% if activity.clock_in_selfie %}
                                     <img src="{{activity.clock_in_selfie.url}}" alt="Clock In" style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;" onclick="openImageModal('{{activity.clock_in_selfie.url}}', 'Clock In Selfie')" />
                                 {% else %}
                                     <span class="oh-text--light">—</span>
                                 {% endif %}
                             </div>
-                            <div data-cell-index="5" class="oh-sticky-table__td dateformat_changer">{{activity.clock_out_date}}</div>
-                            <div data-cell-index="6" class="oh-sticky-table__td timeformat_changer">{{activity.clock_out}}</div>
-                            <div data-cell-index="7" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                            <div data-cell-index="6" class="oh-sticky-table__td dateformat_changer">{{activity.clock_out_date}}</div>
+                            <div data-cell-index="7" class="oh-sticky-table__td timeformat_changer">{{activity.clock_out}}</div>
+                            <div data-cell-index="8" class="oh-sticky-table__td" onclick="event.stopPropagation();">
                                 {% if activity.clock_out_selfie %}
                                     <img src="{{activity.clock_out_selfie.url}}" alt="Clock Out" style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;" onclick="openImageModal('{{activity.clock_out_selfie.url}}', 'Clock Out Selfie')" />
                                 {% else %}
                                     <span class="oh-text--light">—</span>
                                 {% endif %}
                             </div>
-                            <div data-cell-index="8" class="oh-sticky-table__td">{{activity.work_hours}}</div>
-                            <div data-cell-index="9" class="oh-sticky-table__td">
+                            <div data-cell-index="9" class="oh-sticky-table__td">{{activity.work_hours}}</div>
+                            <div data-cell-index="10" class="oh-sticky-table__td">
                                 {% if activity.gps_address %}
                                     <span title="{{ activity.gps_address }}" style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                         <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
@@ -152,7 +154,7 @@
                                     <span class="oh-text--light">—</span>
                                 {% endif %}
                             </div>
-                            <div data-cell-index="10" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                            <div data-cell-index="11" class="oh-sticky-table__td" onclick="event.stopPropagation();">
                                 {% if activity.latitude and activity.longitude %}
                                     <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
                                         <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon> View Map
