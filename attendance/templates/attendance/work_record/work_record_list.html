@@ -57,28 +57,28 @@
         <span class="" style="margin-left: 10px">
             <span
                 class="oh-dot oh-dot--small me-1"
-                style="background-color: #ed4c4c"
+                style="background-color: #F97316"
             ></span>
             {% trans "Conflict" %}
         </span>
         <span class="me-3" style="margin-left: 10px">
             <span
                 class="oh-dot oh-dot--small me-1"
-                style="background-color: #a8b1ff"
+                style="background-color: #EF4444"
             ></span>
             {% trans "Absent" %}
         </span>
         <span class="me-3" style="margin-left: 10px">
             <span
                 class="oh-dot oh-dot--small me-1"
-                style="background-color: #808080"
+                style="background-color: #3B82F6"
             ></span>
             {% trans "Leave" %}
         </span>
         <span class="me-3" style="margin-left: 10px">
             <span
                 class="oh-dot oh-dot--small me-1"
-                style="background-color: #c65d0f"
+                style="background-color: #8B5CF6"
             ></span>
             {% trans "On leave, But attendance exist" %}
         </span>
@@ -135,17 +135,17 @@
                         style="text-align:center; cursor:default;
                         {% if work_record %}
                             {% if work_record.work_record_type == 'CONF' %}
-                                background-color: #ed4c4c; color: #fff;
+                                background-color: #F97316; color: #fff;
                             {% elif work_record.is_leave_record and work_record.work_record_type == 'FDP' %}
-                                background-color: #c65d0f; color: #fff;
+                                background-color: #8B5CF6; color: #fff;
                             {% elif work_record.work_record_type == 'FDP' %}
                                 background-color: #38c338; color: #fff;
                             {% elif work_record.work_record_type == 'HDP' %}
                                 background-color: #dfdf52;
                             {% elif work_record.work_record_type == 'ABS' %}
-                                background-color: #808080; color: #fff;
+                                background-color: #3B82F6; color: #fff;
                             {% elif work_record.work_record_type == 'DFT' and work_record.shift_id and not work_record.date in leave_dates %}
-                                background-color: #a8b1ff; color: #fff;
+                                background-color: #EF4444; color: #fff;
                             {% endif %}
                         {% endif %}
                     "
