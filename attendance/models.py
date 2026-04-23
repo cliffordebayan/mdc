@@ -130,6 +130,45 @@ class AttendanceActivity(HorillaModel):
         except Exception:
             return "00:00"
 
+    def _get_attendance(self):
+        if not hasattr(self, "_cached_attendance"):
+            self._cached_attendance = Attendance.objects.filter(
+                employee_id=self.employee_id,
+                attendance_date=self.attendance_date,
+            ).first()
+        return self._cached_attendance
+
+    @property
+    def shift(self):
+        att = self._get_attendance()
+        return att.shift_id if att else None
+
+    @property
+    def work_type(self):
+        att = self._get_attendance()
+        return att.work_type_id if att else None
+
+    @property
+    def min_hour(self):
+        att = self._get_attendance()
+        return att.minimum_hour if att else "00:00"
+
+    @property
+    def pending_hour(self):
+        att = self._get_attendance()
+        return att.hours_pending() if att else "00:00"
+
+    @property
+    def overtime(self):
+        att = self._get_attendance()
+        return att.attendance_overtime if att else "00:00"
+
+    @property
+    def maps_url(self):
+        if self.latitude and self.longitude:
+            return f"https://www.google.com/maps?q={self.latitude},{self.longitude}"
+        return None
+
     def __str__(self):
         return f"{self.employee_id} - {self.attendance_date} - {self.clock_in} - {self.clock_out}"
 

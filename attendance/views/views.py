@@ -125,6 +125,52 @@ from horilla.decorators import (
 )
 from notifications.signals import notify
 
+ACTIVITY_IMPORT_HEADERS = [
+    "Employee No",
+    "Employee",
+    "Branch",
+    "Department",
+    "Attendance Date",
+    "Day",
+    "In Date",
+    "Check In",
+    "Check In Image",
+    "Out Date",
+    "Check Out",
+    "Check Out Image",
+    "Shift",
+    "Work Type",
+    "Min Hour",
+    "Work Hours",
+    "Pending Hour",
+    "Overtime",
+    "Location",
+    "Maps",
+]
+
+ACTIVITY_IMPORT_SAMPLE_ROW = {
+    "Employee No": "EMP-001",
+    "Employee": "John Doe",
+    "Branch": "Main Branch",
+    "Department": "Operations",
+    "Attendance Date": "2026-04-01",
+    "Day": "Tuesday",
+    "In Date": "2026-04-01",
+    "Check In": "08:00",
+    "Check In Image": "checkin.jpg",
+    "Out Date": "2026-04-01",
+    "Check Out": "17:00",
+    "Check Out Image": "checkout.jpg",
+    "Shift": "Day Shift",
+    "Work Type": "Office",
+    "Min Hour": "08:00",
+    "Work Hours": "09:00",
+    "Pending Hour": "00:00",
+    "Overtime": "01:00",
+    "Location": "Main Office",
+    "Maps": "https://www.google.com/maps?q=14.5995,120.9842",
+}
+
 
 def _delete_blocked_message(protected_objects):
     model_verbose_names_set = {
@@ -968,6 +1014,12 @@ def process_activity_dicts(activity_dicts):
     return error_dicts
 
 
+def validate_activity_import_headers(data_frame):
+    expected_headers = ACTIVITY_IMPORT_HEADERS
+    received_headers = list(data_frame.columns)
+    return received_headers == expected_headers, received_headers
+
+
 def handle_activity_import_error(error_data):
 
     # Directly create the DataFrame from the list of dictionaries
@@ -1000,6 +1052,37 @@ def attendance_activity_import(request):
     if request.method == "POST":
         file = request.FILES["activity_import"]
         data_frame = pd.read_excel(file)
+        header_is_valid, received_headers = validate_activity_import_headers(data_frame)
+        if not header_is_valid:
+            expected_headers_text = ", ".join(ACTIVITY_IMPORT_HEADERS)
+            received_headers_text = (
+                ", ".join(received_headers) if received_headers else _("No headers found")
+            )
+            import_error_dicts = [
+                {
+                    "Header Error": _(
+                        "Invalid template headers. Please download and use the latest template with exact column names and order."
+                    ),
+                    "Expected Headers": expected_headers_text,
+                    "Received Headers": received_headers_text,
+                }
+            ]
+            path_info = handle_activity_import_error(import_error_dicts)
+            context = {
+                "created_count": 0,
+                "error_count": len(import_error_dicts),
+                "model": _("Attendance Activity"),
+                "path_info": path_info,
+            }
+            html = render_to_string("import_popup.html", context)
+            messages.error(
+                request,
+                _(
+                    "Header mismatch in attendance activity import file. Please re-download the template and keep exact header names and order."
+                ),
+            )
+            return HttpResponse(html)
+
         activity_dicts = data_frame.to_dict("records")
         if activity_dicts:
             import_error_dicts = process_activity_dicts(activity_dicts)
@@ -1021,17 +1104,7 @@ def attendance_activity_import(request):
 @permission_required("attendance.add_attendanceactivity")
 def attendance_activity_import_excel(request):
     if request.method == "GET":
-        data_frame = pd.DataFrame(
-            columns=[
-                "Employee No",
-                "Employee",
-                "Attendance Date",
-                "In Date",
-                "Check In",
-                "Check Out",
-                "Out Date",
-            ]
-        )
+        data_frame = pd.DataFrame([ACTIVITY_IMPORT_SAMPLE_ROW], columns=ACTIVITY_IMPORT_HEADERS)
         response = HttpResponse(
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )

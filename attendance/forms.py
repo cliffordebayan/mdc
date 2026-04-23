@@ -873,35 +873,31 @@ class AttendanceActivityExportForm(forms.Form):
     enabling users to select multiple fields.
     """
 
-    model_fields = AttendanceActivity._meta.get_fields()
     field_choices = [
-        ("employee_id__employee_work_info__company_id", _("Company")),
+        ("employee_id", _("Employee")),
         ("employee_id__employee_work_info__branch_id", _("Branch")),
         ("employee_id__employee_work_info__department_id", _("Department")),
-        ("employee_id__employee_no", _("Employee No")),
-    ] + [
-        (field.name, field.verbose_name)
-        for field in model_fields
-        if hasattr(field, "verbose_name") and field.name not in excluded_fields
-    ] + [
+        ("attendance_date", _("Attendance Date")),
+        ("shift_day", _("Day")),
+        ("clock_in_date", _("In Date")),
+        ("clock_in", _("Check In")),
+        ("clock_in_selfie", _("Check In Image")),
+        ("clock_out_date", _("Out Date")),
+        ("clock_out", _("Check Out")),
+        ("clock_out_selfie", _("Check Out Image")),
+        ("shift", _("Shift")),
+        ("work_type", _("Work Type")),
+        ("min_hour", _("Min Hour")),
         ("work_hours", _("Work Hours")),
+        ("pending_hour", _("Pending Hour")),
+        ("overtime", _("Overtime")),
+        ("gps_address", _("Location")),
+        ("maps_url", _("Maps")),
     ]
     selected_fields = forms.MultipleChoiceField(
         choices=field_choices,
         widget=forms.CheckboxSelectMultiple,
-        initial=[
-            "employee_id__employee_work_info__company_id",
-            "employee_id__employee_work_info__branch_id",
-            "employee_id__employee_work_info__department_id",
-            "employee_id__employee_no",
-            "employee_id",
-            "attendance_date",
-            "clock_in_date",
-            "clock_in",
-            "clock_out_date",
-            "clock_out",
-            "work_hours",
-        ],
+        initial=[],
     )
 
 
