@@ -1684,12 +1684,8 @@
 
             const btn = $('#clock-in-btn');
             const originalText = btn.html();
-            btn.prop('disabled', true);
-
-            if (!capturedAddress && geocodingPromise) {
-                btn.html('<span class="loading"></span> {% trans "Getting address..." %}');
-                try { await geocodingPromise; } catch (e) {}
-            }
+            btn.html('<span class="loading"></span> {% trans "Getting address..." %}').prop('disabled', true);
+            await new Promise(resolve => setTimeout(resolve, 3000));
             btn.html('<span class="loading"></span> {% trans "Processing..." %}');
 
             try {
@@ -1734,12 +1730,8 @@
 
             const btn = $('#clock-out-btn');
             const originalText = btn.html();
-            btn.prop('disabled', true);
-
-            if (!capturedAddress && geocodingPromise) {
-                btn.html('<span class="loading"></span> {% trans "Getting address..." %}');
-                try { await geocodingPromise; } catch (e) {}
-            }
+            btn.html('<span class="loading"></span> {% trans "Getting address..." %}').prop('disabled', true);
+            await new Promise(resolve => setTimeout(resolve, 3000));
             btn.html('<span class="loading"></span> {% trans "Processing..." %}');
 
             try {
