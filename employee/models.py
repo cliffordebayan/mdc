@@ -5,6 +5,7 @@ This module is used to register models for employee app
 
 """
 
+import random
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 
@@ -776,6 +777,8 @@ class EmployeeWorkInformation(models.Model):
         return f"{self.employee_id} - {self.job_position_id}"
 
     def save(self, *args, **kwargs):
+        if not self.pin:
+            self.pin = f"{random.randint(0, 999999):06d}"
         self.full_clean()
         super().save(*args, **kwargs)
 
