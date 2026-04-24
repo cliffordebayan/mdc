@@ -126,6 +126,7 @@ class EmployeeFilter(HorillaFilterSet):
             "employee_work_info__job_role_id",
             "employee_work_info__reporting_manager_id",
             "employee_work_info__company_id",
+            "employee_work_info__branch_id",
             "employee_work_info__shift_id",
             "employee_work_info__tags",
             "employee_user_id__groups",
