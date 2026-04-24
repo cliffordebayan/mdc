@@ -183,7 +183,11 @@ def create_missing_work_records(sender, **kwargs):
 
         for employee in employees:
             try:
-                start_date = employee.employee_work_info.date_joining or st_date
+                joining_date = employee.employee_work_info.date_joining
+                if not joining_date:
+                    continue
+
+                start_date = joining_date
                 end_date = datetime.today().date()
 
                 existing_dates = set(

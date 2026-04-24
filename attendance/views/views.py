@@ -2457,15 +2457,28 @@ def work_records_change_month(request):
         date__in=month_dates, employee_id__in=employees
     ).select_related("employee_id", "shift_id", "attendance_id")
 
+    joining_date_map = dict(
+        EmployeeWorkInformation.objects.filter(employee_id__in=employees).values_list(
+            "employee_id", "date_joining"
+        )
+    )
+
     work_records_dict = {(wr.employee_id.id, wr.date): wr for wr in work_records}
 
-    data = {
-        employee: [
-            work_records_dict.get((employee.id, current_date))
-            for current_date in month_dates
-        ]
-        for employee in employees
-    }
+    data = {}
+    for employee in employees:
+        joining_date = joining_date_map.get(employee.id)
+        employee_records = []
+        for current_date in month_dates:
+            record = work_records_dict.get((employee.id, current_date))
+            if joining_date and current_date < joining_date:
+                employee_records.append(None)
+                continue
+            if joining_date is None and record and record.work_record_type == "DFT":
+                employee_records.append(None)
+                continue
+            employee_records.append(record)
+        data[employee] = employee_records
 
     paginator = Paginator(list(data.items()), get_pagination())
     page = paginator.get_page(request.GET.get("page"))
@@ -2496,6 +2509,11 @@ def work_record_export(request):
     num_days = calendar.monthrange(year, month)[1]
     all_date_objects = [date(year, month, day) for day in range(1, num_days + 1)]
     leave_dates = set(monthly_leave_days(month, year))
+    joining_date_map = dict(
+        EmployeeWorkInformation.objects.filter(employee_id__in=employees).values_list(
+            "employee_id", "date_joining"
+        )
+    )
 
     record_lookup = defaultdict(lambda: "ABS")
     for record in records:
@@ -2510,9 +2528,17 @@ def work_record_export(request):
 
     for employee in employees:
         row_data = {"Employee": employee}
+        joining_date = joining_date_map.get(employee.id)
         for day, formatted_day in zip(all_date_objects, formatted_dates):
+            if joining_date and day < joining_date:
+                row_data[formatted_day] = ""
+                continue
             if not day in leave_dates and day < date.today():
-                row_data[formatted_day] = record_lookup.get((employee, day), "DFT")
+                fallback = "" if joining_date is None else "DFT"
+                value = record_lookup.get((employee, day), fallback)
+                row_data[formatted_day] = (
+                    "" if joining_date is None and value == "DFT" else value
+                )
             else:
                 data = record_lookup.get((employee, day), "")
                 row_data[formatted_day] = data if data != "DFT" else ""

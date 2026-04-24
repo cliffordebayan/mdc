@@ -12,8 +12,8 @@ def create_work_record():
     from attendance.models import WorkRecords
     from employee.models import Employee
 
-    date = datetime.datetime.today()
-    work_records = WorkRecords.objects.filter(date=date).values_list(
+    current_date = datetime.datetime.today().date()
+    work_records = WorkRecords.objects.filter(date=current_date).values_list(
         "employee_id", flat=True
     )
     employees = Employee.objects.exclude(id__in=work_records)
@@ -21,6 +21,10 @@ def create_work_record():
 
     for employee in employees:
         try:
+            joining_date = employee.employee_work_info.date_joining
+            if not joining_date or current_date < joining_date:
+                continue
+
             shift_schedule = employee.get_shift_schedule()
             if shift_schedule is None:
                 continue
@@ -28,7 +32,7 @@ def create_work_record():
             shift = employee.get_shift()
             record = WorkRecords(
                 employee_id=employee,
-                date=date,
+                date=current_date,
                 work_record_type="DFT",
                 shift_id=shift,
                 message="",
@@ -40,11 +44,11 @@ def create_work_record():
     if records_to_create:
         try:
             WorkRecords.objects.bulk_create(records_to_create)
-            print(f"Created {len(records_to_create)} work records for {date}.")
+            print(f"Created {len(records_to_create)} work records for {current_date}.")
         except Exception as e:
             logger.error(f"Failed to bulk create work records: {e}")
     else:
-        print(f"No new work records to create for {date}.")
+        print(f"No new work records to create for {current_date}.")
 
 
 if not any(
