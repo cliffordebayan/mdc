@@ -26,14 +26,72 @@
             display: block;
         }
 
+        .portal-auth-card {
+            width: min(100%, 460px);
+            margin: 0 auto;
+            padding: 24px;
+            border: 1px solid #dbe4f4;
+            box-shadow: rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.06) 0px 1px 2px 0px;
+        }
+
+        .portal-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            text-align: left;
+            margin-bottom: 14px;
+        }
+
+        .portal-logo {
+            max-height: 48px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .portal-company-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #334155;
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+
+        .portal-title {
+            margin-top: 6px !important;
+            margin-bottom: 18px !important;
+            font-size: 24px;
+            color: #0f172a;
+        }
+
+        .search-input-row {
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+            padding: 8px;
+        }
+
+        #employee-search {
+            border: 1px solid #cbd5e1;
+            min-height: 44px;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        #search-btn {
+            min-width: 118px;
+            font-weight: 600;
+            box-shadow: none;
+        }
+
         .search-results {
             position: absolute;
             top: 100%;
             left: 0;
             right: 0;
             background: white;
-            border: 1px solid #ddd;
             border-top: none;
+            border-radius: 0 0 10px 10px;
             max-height: 300px;
             overflow-y: auto;
             z-index: 1000;
@@ -402,72 +460,191 @@
         }
 
         .clock-employee-card {
+            position: relative;
             background: #fff;
             border: 1px solid #e0e0e0;
-            border-radius: 10px;
-            padding: 14px;
-            text-align: center;
+            padding: 16px;
             width: 100%;
             max-width: 320px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            overflow: hidden;
+        }
+
+        .clock-employee-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: #28a745;
+        }
+
+        .clock-employee-card.is-clocked-in::before {
+           background: #ffc107;
+        }
+
+        .clock-employee-head {
             display: flex;
             align-items: center;
             gap: 12px;
+            min-width: 0;
         }
 
         .clock-employee-card img {
-            width: 64px;
-            height: 64px;
-            margin: 5px;
+            width: 68px;
+            height: 68px;
+            margin: 0;
             border-radius: 50%;
             object-fit: cover;
             border: 2px solid #e0e0e0;
+            background: #e0e0e0;
             flex-shrink: 0;
         }
 
         .clock-employee-card .emp-details {
-            text-align: center;
+            text-align: left;
+            flex: 1;
             min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
         }
 
         .clock-employee-card h4 {
-            margin: 0 0 2px 0;
-            font-size: 15px;
+            margin: 0;
+            font-size: 16px;
             color: #222;
+            font-weight: 700;
+            line-height: 1.25;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }
 
         .clock-employee-card p {
             margin: 0;
             color: #888;
-            font-size: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .clock-employee-meta {
+            border-top: 1px dashed #e5e7eb;
+            margin-top: 10px;
+            padding-top: 10px;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .clock-employee-card.is-clocked-in .clock-employee-meta {
+            display: flex;
+            border-top-color: #e5e7eb;
+        }
+
+        #employee-status {
+            display: flex;
+            align-items: center;
+        }
+
+        .clock-status-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #666;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+        }
+
+        .clock-status-pill.is-in {
+            color: #333;
+            background: #ffc107;
+            border-color: #e0a800;
+        }
+
+        #clock-live-work-hours {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 0 !important;
+            font-size: 13px !important;
+            color: #666 !important;
+        }
+
+        .clock-work-label {
+            color: #666;
+            font-weight: 600;
+        }
+
+        #clock-work-hours-value {
+            font-size: 18px;
+            font-weight: 800;
+            color: #222;
+            letter-spacing: 0.03em;
+            font-variant-numeric: tabular-nums;
         }
 
         .clock-location-status {
             padding: 8px 14px;
-            border-radius: 8px;
-            text-align: center;
+            border-radius: 0;
+            text-align: left;
             font-size: 12px;
             width: 100%;
             max-width: 320px;
             word-wrap: break-word;
             overflow-wrap: break-word;
             display: flex;
-            flex-wrap: wrap;
             align-items: center;
-            justify-content: center;
-            gap: 6px;
+            gap: 10px;
         }
 
         .clock-location-status.success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background-color: #eef7f1;
+            color: #1f5134;
+            border: 1px solid #c7dfcf;
         }
 
         .clock-location-status.warning {
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeeba;
+            background-color: #fff8e5;
+            color: #6e4f03;
+            border: 1px solid #f3e3ac;
+        }
+
+        .clock-location-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.7);
+            flex-shrink: 0;
+        }
+
+        .clock-location-icon ion-icon {
+            font-size: 17px;
+        }
+
+        #location-text {
+            font-weight: 600;
+            line-height: 1.35;
+            font-size: 12px;
+        }
+
+        #retry-location-btn,
+        #location-coordinates {
+            display: none !important;
         }
 
         .clock-action-buttons {
@@ -476,6 +653,14 @@
             gap: 8px;
             width: 100%;
             max-width: 320px;
+        }
+
+        .clock-bottom-panel {
+            width: 100%;
+            max-width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .clock-action-buttons button {
@@ -604,6 +789,41 @@
 
         /* Phone */
         @media (max-width: 600px) {
+            .portal-auth-card {
+                width: calc(100% - 20px);
+                padding: 16px 14px;
+            }
+
+            .portal-logo {
+                max-height: 34px;
+            }
+
+            .portal-company-name {
+                font-size: 14px;
+                margin-top: 6px;
+            }
+
+            .portal-title {
+                font-size: 20px;
+                margin-bottom: 14px !important;
+            }
+
+            .search-input-row {
+                flex-direction: column;
+                gap: 8px;
+                padding: 8px;
+            }
+
+            #employee-search {
+                min-height: 42px;
+                font-size: 14px;
+            }
+
+            #search-btn {
+                width: 100%;
+                min-height: 40px;
+            }
+
             #step-pin {
                 padding: 16px 10px;
             }
@@ -667,75 +887,127 @@
             }
 
             .clock-info-panel {
-                padding: 20px 16px;
-                padding-bottom: 60px;
-                gap: 8px;
+                padding: 14px 12px 16px;
+                gap: 10px;
                 justify-content: flex-start;
+                background: #e4e7ec;
             }
 
             .clock-company-logo {
-                max-height: 36px;
+                max-height: 32px;
             }
 
             .clock-company-name {
-                font-size: 14px;
+                font-size: 18px;
+                text-align: center;
+                line-height: 1.2;
+                font-weight: 700;
             }
 
             .clock-live-time {
-                font-size: 26px;
+                font-size: 40px;
+                line-height: 1.05;
+                margin-top: 2px;
             }
 
             .clock-live-date {
-                font-size: 11px;
+                font-size: 15px;
+                margin-top: 4px;
+                color: #4b5563;
             }
 
             .clock-employee-card {
                 max-width: 100%;
-                padding: 10px;
+                padding: 14px;
+                border-radius: 16px;
+                gap: 12px;
+            }
+
+            .clock-employee-head {
+                gap: 10px;
             }
 
             .clock-employee-card img {
-                width: 44px;
-                height: 44px;
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                margin: 0;
             }
 
             .clock-employee-card h4 {
-                font-size: 13px;
+                font-size: 18px;
+                line-height: 1.2;
+            }
+
+            .clock-employee-card p {
+                font-size: 14px;
+            }
+
+            #clock-live-work-hours {
+                font-size: 14px !important;
+            }
+
+            #clock-work-hours-value {
+                font-size: 19px;
             }
 
             .clock-location-status {
                 max-width: 100%;
-                font-size: 11px;
-                padding: 8px 10px;
-                flex-direction: column;
-                gap: 4px;
+                font-size: 16px;
+                padding: 12px;
+                border-radius: 0;
+                flex-direction: row;
+                gap: 10px;
+                justify-content: flex-start;
                 word-wrap: break-word;
                 overflow-wrap: break-word;
+                line-height: 1.35;
             }
 
-            .clock-location-status small {
-                width: 100%;
-                display: block !important;
-                margin-top: 4px !important;
+            .clock-location-icon {
+                width: 32px;
+                height: 32px;
             }
 
-            .clock-location-status .oh-btn--xsm {
-                margin-left: 0 !important;
-                padding: 4px 8px !important;
-                font-size: 10px !important;
+            .clock-location-icon ion-icon {
+                font-size: 18px;
+            }
+
+            .clock-bottom-panel {
+                max-width: 100%;
+                margin-top: auto;
+                background: #ffffff;
+                border: 1px solid #ced7e3;
+                border-radius: 0;
+                padding: 10px;
+                box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+                gap: 10px;
             }
 
             .clock-action-buttons {
                 max-width: 100%;
+                gap: 10px;
             }
 
             .clock-action-buttons button {
-                padding: 10px;
-                font-size: 14px;
+                min-height: 64px;
+                padding: 14px 18px;
+                font-size: 22px;
+                border-radius: 14px;
+                font-weight: 800;
+            }
+
+            .clock-action-buttons button ion-icon {
+                font-size: 24px;
             }
 
             .btn-back {
                 max-width: 100% !important;
+                min-height: 52px;
+                border-radius: 12px;
+                font-size: 20px !important;
+                font-weight: 600;
+                padding: 10px 14px !important;
             }
         }
 
@@ -746,18 +1018,55 @@
             }
 
             .clock-live-time {
-                font-size: 22px;
+                font-size: 36px;
             }
 
             .clock-info-panel {
-                padding: 20px 12px;
-                padding-bottom: 60px;
+                padding: 12px 10px 14px;
                 gap: 6px;
             }
 
-            .clock-action-buttons button {
-                padding: 8px;
+            .clock-company-name {
+                font-size: 17px;
+            }
+
+            .clock-live-date {
+                font-size: 14px;
+            }
+
+            .clock-employee-card h4 {
+                font-size: 17px;
+            }
+
+            .clock-employee-card p {
                 font-size: 13px;
+            }
+
+            .clock-location-status {
+                font-size: 15px;
+            }
+
+            #location-text {
+                font-size: 11px;
+            }
+
+            .clock-location-icon {
+                width: 28px;
+                height: 28px;
+            }
+
+            .clock-action-buttons button {
+                min-height: 58px;
+                font-size: 20px;
+            }
+
+            .clock-action-buttons button ion-icon {
+                font-size: 22px;
+            }
+
+            .btn-back {
+                min-height: 48px;
+                font-size: 17px !important;
             }
         }
     </style>
@@ -766,33 +1075,32 @@
 <body>
     <div id="main">
         <main class="oh-auth">
-            <div class="oh-auth-card mb-4">
+            <div class="oh-auth-card portal-auth-card mb-4">
                 <!-- Header -->
-                <div style="text-align: center; margin-bottom: 20px;">
+                <div class="portal-header">
                     <img src="{% if white_label_company.icon %}
                             {{white_label_company.icon.url}}
                         {% else %}
                             {% static 'images/ui/auth-logo.png' %}
-                        {% endif %}" alt="Logo" style="max-height: 60px; object-fit: contain;" />
+                        {% endif %}" alt="Logo" class="portal-logo" />
                     {% if white_label_company %}
-                    <p style="font-size: 18px; font-weight: 500; color: #333; margin-top: 10px; margin-bottom: 0;">
+                    <p class="portal-company-name">
                         {{white_label_company}}
                     </p>
                     {% endif %}
                 </div>
 
-                <h1 class="oh-onboarding-card__title oh-onboarding-card__title--h2 text-center my-3">
+                <h1 class="oh-onboarding-card__title oh-onboarding-card__title--h2 text-center my-3 portal-title">
                     {% trans "Employee Attendance" %}
                 </h1>
 
                 <!-- Step 1: Employee Search -->
                 <div class="self-service-step active" id="step-search">
-                    <p class="info-text">{% trans "Enter your Employee ID:" %}</p>
                     <div class="search-container">
-                        <div style="display: flex; gap: 8px;">
+                        <div class="search-input-row">
                             <input type="text" id="employee-search" class="oh-input w-100"
                                 placeholder="{% trans 'Employee ID...' %}" autocomplete="off" autofocus />
-                            <button type="button" id="search-btn" class="oh-btn oh-btn--secondary" style="white-space: nowrap;">
+                            <button type="button" id="search-btn" class="oh-btn oh-btn--secondary">
                                 <ion-icon name="search-outline" style="margin-right: 4px;"></ion-icon>
                                 {% trans "Search" %}
                             </button>
@@ -876,53 +1184,60 @@
                             {% endif %}
 
                             <!-- Live clock -->
-                            <div style="text-align:center;">
+                            <div class="clock-live-block" style="text-align:center;">
                                 <div class="clock-live-time" id="live-clock">--:--:--</div>
                                 <div class="clock-live-date" id="live-date"></div>
                             </div>
 
                             <!-- Employee card -->
                             <div class="clock-employee-card" id="employee-info" style="display:none;">
-                                <img id="employee-avatar" src="" alt="Avatar" />
-                                <div class="emp-details">
-                                    <h4 id="employee-name"></h4>
-                                    <p id="employee-badge"></p>
-                                    <div id="employee-status" style="margin-top: 4px;"></div>
-                                    <div id="clock-live-work-hours" style="display:none; margin-top:6px; font-size:13px; color:#666;">
-                                        {% trans "Work time" %}: <strong id="clock-work-hours-value">00:00:00</strong>
+                                <div class="clock-employee-head">
+                                    <img id="employee-avatar" src="" alt="Avatar" />
+                                    <div class="emp-details">
+                                        <h4 id="employee-name"></h4>
+                                        <p id="employee-badge"></p>
+                                    </div>
+                                </div>
+                                <div class="clock-employee-meta">
+                                    <div id="employee-status"></div>
+                                    <div id="clock-live-work-hours" style="display:none;">
+                                        <span class="clock-work-label">{% trans "Work time" %}</span>
+                                        <strong id="clock-work-hours-value">00:00:00</strong>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Location status -->
-                            <div class="clock-location-status warning" id="location-status">
-                                <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
-                                <span id="location-text">{% trans "Getting location..." %}</span>
+                            <div class="clock-bottom-panel">
+                                <!-- Location status -->
+                                <div class="clock-location-status warning" id="location-status">
+                                    <span class="clock-location-icon">
+                                        <ion-icon name="location-outline"></ion-icon>
+                                    </span>
+                                    <span id="location-text">{% trans "Getting location..." %}</span>
+                                </div>
                                 <button type="button" class="oh-btn oh-btn--xsm oh-btn--secondary"
-                                    id="retry-location-btn" style="display:none; margin-left:8px;">
+                                    id="retry-location-btn" style="display:none;">
                                     {% trans "Retry" %}
                                 </button>
-                                <small id="location-coordinates"
-                                    style="display:block; margin-top:4px; opacity:.8;"></small>
-                            </div>
+                                <small id="location-coordinates" style="display:none;"></small>
 
-                            <!-- Clock In / Out buttons -->
-                            <div class="clock-action-buttons" id="action-buttons" style="display:none;">
-                                <button type="button" class="btn-clock-in" id="clock-in-btn" style="display:none;">
-                                    <ion-icon name="log-in-outline"></ion-icon>
-                                    {% trans "Clock In" %}
-                                </button>
-                                <button type="button" class="btn-clock-out" id="clock-out-btn" style="display:none;">
-                                    <ion-icon name="log-out-outline"></ion-icon>
-                                    {% trans "Clock Out" %}
+                                <!-- Clock In / Out buttons -->
+                                <div class="clock-action-buttons" id="action-buttons" style="display:none;">
+                                    <button type="button" class="btn-clock-in" id="clock-in-btn" style="display:none;">
+                                        <ion-icon name="log-in-outline"></ion-icon>
+                                        {% trans "Clock In" %}
+                                    </button>
+                                    <button type="button" class="btn-clock-out" id="clock-out-btn" style="display:none;">
+                                        <ion-icon name="log-out-outline"></ion-icon>
+                                        {% trans "Clock Out" %}
+                                    </button>
+                                </div>
+                                <!-- Back -->
+                                <button type="button" class="btn-back" id="back-btn" style="width:100%; max-width:320px;">
+                                    <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                    {% trans "Back" %}
                                 </button>
                             </div>
-
-                            <!-- Back -->
-                            <button type="button" class="btn-back" id="back-btn" style="width:100%; max-width:320px;">
-                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
-                                {% trans "Back" %}
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -1048,8 +1363,8 @@
                         locationAccuracy = Math.round(position.coords.accuracy);
 
                         // Show loading while getting address
-                        $('#location-text').html(`✓ {% trans "Location captured" %}<br><small>{% trans "Getting address..." %}</small>`);
-                        $('#location-coordinates').text(`Accuracy: ±${locationAccuracy}m`);
+                        $('#location-text').text('{% trans "Getting address..." %}');
+                        $('#location-coordinates').text('');
                         $('#retry-location-btn').hide();
                         $('#location-status').removeClass('warning').addClass('success');
                         enableClockButtons();
@@ -1057,7 +1372,7 @@
                         // Get address immediately and display it
                         geocodingPromise = reverseGeocode(latitude, longitude).then(function (address) {
                             capturedAddress = address;
-                            $('#location-text').html(`✓ {% trans "Location captured" %}<br><small>${address}</small>`);
+                            $('#location-text').text(address);
                             console.info(`Location address: ${address}`);
                             return address;
                         });
@@ -1082,7 +1397,7 @@
                         latitude = null;
                         longitude = null;
                         $('#location-text').text(errorMsg);
-                        $('#location-coordinates').text('{% trans "Location is required to clock in or out." %}');
+                        $('#location-coordinates').text('');
                         $('#retry-location-btn').show();
                         $('#location-status').removeClass('success').addClass('warning');
                         disableClockButtons();
@@ -1095,7 +1410,7 @@
                 latitude = null;
                 longitude = null;
                 $('#location-text').text('{% trans "Geolocation not supported by this browser." %}');
-                $('#location-coordinates').text('{% trans "Location is required to clock in or out." %}');
+                $('#location-coordinates').text('');
                 $('#location-status').removeClass('success').addClass('warning');
                 disableClockButtons();
             }
@@ -1410,7 +1725,8 @@
                 return;
             }
 
-            $('#employee-info').css('display', 'block');
+            const employeeCard = $('#employee-info');
+            employeeCard.css('display', 'block').removeClass('is-clocked-in');
             $('#employee-name').text(selectedEmployee.name);
             $('#employee-badge').text(selectedEmployee.badge ? `#${selectedEmployee.badge}` : '');
             $('#employee-avatar').attr('src', selectedEmployee.avatar);
@@ -1419,7 +1735,8 @@
             liveWorkHoursInterval = null;
 
             if (selectedEmployee.is_clocked_in) {
-                $('#employee-status').html('<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>');
+                employeeCard.addClass('is-clocked-in');
+                $('#employee-status').html('<span class="clock-status-pill is-in">{% trans "CLOCKED IN" %}</span>');
                 if (selectedEmployee.clock_in_datetime) {
                     $('#clock-live-work-hours').show();
                     const _clockIn = new Date(selectedEmployee.clock_in_datetime);
