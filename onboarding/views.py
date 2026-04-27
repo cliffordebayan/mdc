@@ -82,7 +82,12 @@ from onboarding.models import (
 )
 from recruitment.filters import CandidateFilter, CandidateReGroup, RecruitmentFilter
 from recruitment.forms import RejectedCandidateForm
-from recruitment.models import Candidate, Recruitment, RejectedCandidate
+from recruitment.models import (
+    Candidate,
+    Recruitment,
+    RejectedCandidate,
+    SkillZoneCandidate,
+)
 from recruitment.pipeline_grouper import group_by_queryset
 
 logger = logging.getLogger(__name__)
@@ -418,6 +423,20 @@ def candidate_update(request, obj_id):
     return render(request, "onboarding/candidate_update.html", {"form": form})
 
 
+def _delete_candidate_with_dependencies(candidate):
+    """
+    Remove dependent records that protect Candidate from deletion.
+    """
+    CandidateTask.objects.filter(candidate_id=candidate).delete()
+    CandidateStage.objects.filter(candidate_id=candidate).delete()
+    OnboardingPortal.objects.filter(candidate_id=candidate).delete()
+    candidate.candidate_rating.all().delete()
+    candidate.candidatedocument_set.all().delete()
+    SkillZoneCandidate.objects.filter(candidate_id=candidate).delete()
+    RejectedCandidate.objects.filter(candidate_id=candidate).delete()
+    candidate.delete()
+
+
 @login_required
 @permission_required("onboarding.delete_onboardingcandidate")
 @require_http_methods(["POST"])
@@ -433,7 +452,8 @@ def candidate_delete(request, obj_id):
     GET : return candidate view
     """
     try:
-        Candidate.objects.get(id=obj_id).delete()
+        candidate = Candidate.objects.get(id=obj_id)
+        _delete_candidate_with_dependencies(candidate)
         messages.success(request, _("Candidate deleted successfully.."))
     except Candidate.DoesNotExist:
         messages.error(request, _("Candidate not found."))
@@ -450,7 +470,7 @@ def candidate_delete(request, obj_id):
                 )
             ),
         )
-    return redirect(candidates_view)
+    return HorillaRedirect(request, fallback_url=reverse("onboarding-view"))
 
 
 @login_required
@@ -1922,7 +1942,7 @@ def onboarding_candidate_bulk_delete(request):
             if candidate is None:
                 messages.error(request, "Candidate does not exist")
                 continue
-            candidate.delete()
+            _delete_candidate_with_dependencies(candidate)
             messages.success(request, "candidate deleted successfully")
         except ProtectedError as e:
             models_verbose_name_sets = set()

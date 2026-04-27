@@ -1,4 +1,39 @@
-{% load static %} {% load audit_filters %} {% load i18n %} {% if candidate.candidate_rating.all %}
+{% load static %} {% load audit_filters %} {% load i18n %}
+
+{% if user_employee %}
+<div class="p-4 pb-0">
+    <strong>{% trans "Your Rating" %}</strong>
+    {% if user_rating %}
+    <form hx-swap="none" hx-post="{% url 'update-candidate-rating' candidate.id %}" method="post" class="mt-1">
+        {% csrf_token %}
+        <input type="hidden" name="clear_rating" value="0" />
+        <div class="oh-rate">
+            {% for i in "54321" %}
+            <input type="radio" id="mystar{{i}}" name="rating" class="rating-radio"
+                value="{{i}}" {% if user_rating.rating|stringformat:"d" == i %} checked {% endif %} />
+            <label for="mystar{{i}}" title="{{i}} Stars"></label>
+            {% endfor %}
+        </div>
+        <button type="submit" hidden class="rating-submit-trigger"></button>
+    </form>
+    {% else %}
+    <form hx-swap="none" hx-post="{% url 'create-candidate-rating' candidate.id %}" method="post" class="mt-1">
+        {% csrf_token %}
+        <input type="hidden" name="clear_rating" value="0" />
+        <div class="oh-rate">
+            {% for i in "54321" %}
+            <input type="radio" id="mystar{{i}}" name="rating" class="rating-radio" value="{{i}}" />
+            <label for="mystar{{i}}" title="{{i}} Stars"></label>
+            {% endfor %}
+        </div>
+        <button type="submit" hidden class="rating-submit-trigger"></button>
+    </form>
+    {% endif %}
+</div>
+<hr class="mx-4" />
+{% endif %}
+
+{% if candidate.candidate_rating.all %}
 <div class="row p-4">
   {% for rate in candidate.candidate_rating.all %}
   <div class="oh-history__container pb-2">

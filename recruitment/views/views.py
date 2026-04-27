@@ -1668,6 +1668,14 @@ def candidate_view_individual(request, cand_id, **kwargs):
             break
 
     now = timezone.now()
+    user_employee = getattr(request.user, "employee_get", None)
+    user_rating = (
+        CandidateRating.objects.filter(
+            candidate_id=candidate_obj, employee_id=user_employee
+        ).first()
+        if user_employee
+        else None
+    )
 
     return render(
         request,
@@ -1681,6 +1689,8 @@ def candidate_view_individual(request, cand_id, **kwargs):
             "average_rate": avg_rate,
             "documents": documents,
             "now": now,
+            "user_rating": user_rating,
+            "user_employee": user_employee,
         },
     )
 
@@ -2198,7 +2208,10 @@ def create_candidate_rating(request, cand_id):
         cand_id : candidate instance id
     """
     candidate = Candidate.objects.get(id=cand_id)
-    employee = request.user.employee_get
+    employee = getattr(request.user, "employee_get", None)
+    if not employee:
+        messages.error(request, _("No employee profile found for your account."))
+        return HorillaRedirect(request)
     clear_rating = request.POST.get("clear_rating") in ("1", "true", "True", "on")
 
     rating_value = None
@@ -2680,7 +2693,10 @@ def update_candidate_rating(request, cand_id):
         id : candidate rating instance id
     """
     candidate = Candidate.objects.get(id=cand_id)
-    employee = request.user.employee_get
+    employee = getattr(request.user, "employee_get", None)
+    if not employee:
+        messages.error(request, _("No employee profile found for your account."))
+        return HorillaRedirect(request)
     clear_rating = request.POST.get("clear_rating") in ("1", "true", "True", "on")
 
     rating_value = None
@@ -2717,7 +2733,8 @@ def delete_candidate_rating(request, rating_id):
     Delete a CandidateRating. Allowed for superusers or the rating's own author.
     """
     rating = get_object_or_404(CandidateRating, id=rating_id)
-    if request.user.is_superuser or rating.employee_id == request.user.employee_get:
+    employee = getattr(request.user, "employee_get", None)
+    if request.user.is_superuser or (employee and rating.employee_id == employee):
         rating.delete()
         messages.success(request, _("Rating deleted successfully."))
     else:
