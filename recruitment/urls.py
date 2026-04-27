@@ -490,6 +490,11 @@ urlpatterns = [
         name="update-candidate-rating",
     ),
     path(
+        "delete-candidate-rating/<int:rating_id>/",
+        views.delete_candidate_rating,
+        name="delete-candidate-rating",
+    ),
+    path(
         "open-recruitments",
         views.open_recruitments,
         name="open-recruitments",

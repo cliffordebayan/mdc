@@ -2711,6 +2711,20 @@ def update_candidate_rating(request, cand_id):
     return redirect(recruitment_pipeline)
 
 
+@login_required
+def delete_candidate_rating(request, rating_id):
+    """
+    Delete a CandidateRating. Allowed for superusers or the rating's own author.
+    """
+    rating = get_object_or_404(CandidateRating, id=rating_id)
+    if request.user.is_superuser or rating.employee_id == request.user.employee_get:
+        rating.delete()
+        messages.success(request, _("Rating deleted successfully."))
+    else:
+        messages.error(request, _("You don't have permission to delete this rating."))
+    return HorillaRedirect(request)
+
+
 def open_recruitments(request):
     """
     This method is used to render the open recruitment page

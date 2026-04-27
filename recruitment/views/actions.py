@@ -29,7 +29,16 @@ from recruitment.decorators import (
 )
 from recruitment.filters import StageFilter
 from recruitment.forms import StageCreationForm
-from recruitment.models import Candidate, Recruitment, Stage, StageNote
+from recruitment.models import (
+    Candidate,
+    CandidateDocument,
+    CandidateRating,
+    Recruitment,
+    RejectedCandidate,
+    SkillZoneCandidate,
+    Stage,
+    StageNote,
+)
 from recruitment.views.linkedin import delete_post
 from recruitment.views.paginator_qry import paginator_qry
 
@@ -226,7 +235,13 @@ def candidate_delete(request, cand_id):
     """
     try:
         try:
-            Candidate.objects.get(id=cand_id).delete()
+            candidate = Candidate.objects.get(id=cand_id)
+            if request.user.is_superuser:
+                candidate.candidate_rating.all().delete()
+                candidate.candidatedocument_set.all().delete()
+                SkillZoneCandidate.objects.filter(candidate_id=candidate).delete()
+                RejectedCandidate.objects.filter(candidate_id=candidate).delete()
+            candidate.delete()
             messages.success(request, _("Candidate deleted successfully."))
         except Candidate.DoesNotExist:
             messages.error(request, _("Candidate not found."))
@@ -260,6 +275,11 @@ def candidate_bulk_delete(request):
     for cand_id in ids:
         try:
             candidate_obj = Candidate.objects.get(id=cand_id)
+            if request.user.is_superuser:
+                candidate_obj.candidate_rating.all().delete()
+                candidate_obj.candidatedocument_set.all().delete()
+                SkillZoneCandidate.objects.filter(candidate_id=candidate_obj).delete()
+                RejectedCandidate.objects.filter(candidate_id=candidate_obj).delete()
             candidate_obj.delete()
             messages.success(
                 request, _("%(candidate)s deleted.") % {"candidate": candidate_obj}

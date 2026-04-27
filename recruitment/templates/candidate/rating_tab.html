@@ -12,7 +12,19 @@
             <div class="oh-history_user-state oh-user_inactive"></div>
         </div>
         <div class="oh-history_user-details">
-            <span class="oh-history__username">{{rate.employee_id}}</span>
+            <div class="d-flex align-items-center justify-content-between">
+                <span class="oh-history__username">{{rate.employee_id}}</span>
+                {% if request.user.is_superuser or rate.employee_id.employee_user_id == request.user %}
+                <form action="{% url 'delete-candidate-rating' rate.id %}" method="post"
+                      onsubmit="return confirm('Delete this rating?')" style="display:inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg"
+                            title="Delete Rating" style="padding:0.3rem 0.5rem;">
+                        <ion-icon name="trash-outline"></ion-icon>
+                    </button>
+                </form>
+                {% endif %}
+            </div>
             <ul class="ul ps-0">
                 <div class="oh-rate" style="pointer-events:none;">
                     <input type="radio" id="star5" value="5" disabled {% if rate.rating == 5 %} checked {% endif %} />
