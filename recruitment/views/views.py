@@ -413,6 +413,65 @@ def paginator_qry_recruitment_limited(qryset, page_number):
 
 
 user_recruitments = {}
+PIPELINE_CACHE_TIMEOUT = 30 * 60
+
+
+def _get_pipeline_cache_key(request):
+    """Return a stable cache key for the current session pipeline state."""
+    if not request.session.session_key:
+        request.session.save()
+    return request.session.session_key + "pipeline"
+
+
+def _build_pipeline_previous_data(query_params, exclude_keys=None):
+    """Build a querystring for downstream HTMX calls while excluding local params."""
+    query_data = query_params.copy()
+    for key in exclude_keys or []:
+        query_data.pop(key, None)
+    return query_data.urlencode()
+
+
+def _build_pipeline_cache_data(request, query_params):
+    """Build pipeline filter data and related querysets for rendering/components."""
+    filter_obj = RecruitmentFilter(query_params)
+    stage_filter = StageFilter(query_params)
+    candidate_filter = CandidateFilter(query_params)
+    recruitments = filter_obj.qs.filter(is_active=True)
+    if not request.user.has_perm("recruitment.view_recruitment"):
+        recruitments = recruitments.filter(
+            Q(recruitment_managers=request.user.employee_get)
+        )
+        stage_recruitment_ids = (
+            stage_filter.qs.filter(stage_managers=request.user.employee_get)
+            .values_list("recruitment_id", flat=True)
+            .distinct()
+        )
+        recruitments = recruitments | filter_obj.qs.filter(id__in=stage_recruitment_ids)
+        recruitments = recruitments.filter(is_active=True).distinct()
+    recruitments = recruitments.order_by("id")
+
+    filter_dict = parse_qs(query_params.urlencode())
+    filter_dict = get_key_instances(Recruitment, filter_dict)
+
+    cache_data = {
+        "candidates": candidate_filter.qs.filter(is_active=True).order_by("sequence"),
+        "stages": stage_filter.qs.order_by("sequence"),
+        "recruitments": recruitments,
+        "filter_dict": filter_dict,
+        "filter_query": query_params,
+    }
+    return cache_data, stage_filter, candidate_filter
+
+
+def _get_or_build_pipeline_cache(request, query_params=None, force_refresh=False):
+    """Return cached pipeline data; rebuild/cache it when unavailable."""
+    query_params = query_params or request.GET
+    cache_key = _get_pipeline_cache_key(request)
+    pipeline_cache = None if force_refresh else CACHE.get(cache_key)
+    if pipeline_cache is None:
+        pipeline_cache, _, _ = _build_pipeline_cache_data(request, query_params)
+        CACHE.set(cache_key, pipeline_cache, timeout=PIPELINE_CACHE_TIMEOUT)
+    return pipeline_cache
 
 
 @login_required
@@ -456,38 +515,17 @@ def filter_pipeline(request):
     """
     This method is used to search/filter from pipeline
     """
-    filter_obj = RecruitmentFilter(request.GET)
-    stage_filter = StageFilter(request.GET)
-    candidate_filter = CandidateFilter(request.GET)
+    pipeline_cache, stage_filter, candidate_filter = _build_pipeline_cache_data(
+        request, request.GET
+    )
     view = request.GET.get("view")
-    recruitments = filter_obj.qs.filter(is_active=True)
-    if not request.user.has_perm("recruitment.view_recruitment"):
-        recruitments = recruitments.filter(
-            Q(recruitment_managers=request.user.employee_get)
-        )
-        stage_recruitment_ids = (
-            stage_filter.qs.filter(stage_managers=request.user.employee_get)
-            .values_list("recruitment_id", flat=True)
-            .distinct()
-        )
-        recruitments = recruitments | filter_obj.qs.filter(id__in=stage_recruitment_ids)
-        recruitments = recruitments.filter(is_active=True).distinct()
-
+    recruitments = pipeline_cache["recruitments"]
     closed = request.GET.get("closed")
-    filter_dict = parse_qs(request.GET.urlencode())
-    filter_dict = get_key_instances(Recruitment, filter_dict)
-
+    filter_dict = pipeline_cache["filter_dict"]
     CACHE.set(
-        request.session.session_key + "pipeline",
-        {
-            "candidates": candidate_filter.qs.filter(is_active=True).order_by(
-                "sequence"
-            ),
-            "stages": stage_filter.qs.order_by("sequence"),
-            "recruitments": recruitments,
-            "filter_dict": filter_dict,
-            "filter_query": request.GET,
-        },
+        _get_pipeline_cache_key(request),
+        pipeline_cache,
+        timeout=PIPELINE_CACHE_TIMEOUT,
     )
 
     previous_data = request.GET.urlencode()
@@ -533,14 +571,14 @@ def stage_component(request, view: str = "list"):
     """
     recruitment_id = request.GET["rec_id"]
     recruitment = Recruitment.objects.get(id=recruitment_id)
-    pipeline_cache = CACHE.get(request.session.session_key + "pipeline")
-    # 1060
-    if not pipeline_cache:
-        return HttpResponse(headers={"HX-Refresh": "true"})
+    pipeline_cache = _get_or_build_pipeline_cache(request)
     ordered_stages = pipeline_cache["stages"].filter(recruitment_id__id=recruitment_id)
     template = "pipeline/components/stages_tab_content.html"
     if view == "card":
         template = "pipeline/kanban_components/kanban_stage_components.html"
+    previous_data = _build_pipeline_previous_data(
+        request.GET, exclude_keys=["rec_id", "stage_id", "candidate_page"]
+    )
     return render(
         request,
         template,
@@ -548,6 +586,7 @@ def stage_component(request, view: str = "list"):
             "rec": recruitment,
             "ordered_stages": ordered_stages,
             "filter_dict": pipeline_cache["filter_dict"],
+            "pd": previous_data,
         },
     )
 
@@ -560,16 +599,24 @@ def update_candidate_stage_and_sequence(request):
     """
     order_list = request.GET.getlist("order")
     stage_id = request.GET["stage_id"]
-    stage = (
-        CACHE.get(request.session.session_key + "pipeline")["stages"]
-        .filter(id=stage_id)
-        .first()
-    )
+    pipeline_cache = CACHE.get(_get_pipeline_cache_key(request))
+    stage = None
+    if pipeline_cache:
+        stage = pipeline_cache["stages"].filter(id=stage_id).first()
+    if not stage:
+        stage = Stage.objects.filter(id=stage_id).first()
     context = {}
+    if not stage:
+        return JsonResponse(context)
+
     for index, cand_id in enumerate(order_list):
-        candidate = CACHE.get(request.session.session_key + "pipeline")[
-            "candidates"
-        ].filter(id=cand_id)
+        candidate = (
+            pipeline_cache["candidates"].filter(id=cand_id)
+            if pipeline_cache
+            else Candidate.objects.filter(id=cand_id)
+        )
+        if not candidate.exists():
+            candidate = Candidate.objects.filter(id=cand_id)
         candidate.update(sequence=index, stage_id=stage)
     if stage.stage_type == "hired":
         if stage.recruitment_id.is_vacancy_filled():
@@ -586,17 +633,24 @@ def update_candidate_sequence(request):
     """
     order_list = request.GET.getlist("order")
     stage_id = request.GET["stage_id"]
-    stage = (
-        CACHE.get(request.session.session_key + "pipeline")["stages"]
-        .filter(id=stage_id)
-        .first()
-    )
+    pipeline_cache = CACHE.get(_get_pipeline_cache_key(request))
+    stage = None
+    if pipeline_cache:
+        stage = pipeline_cache["stages"].filter(id=stage_id).first()
+    if not stage:
+        stage = Stage.objects.filter(id=stage_id).first()
     data = {}
+    if not stage:
+        return JsonResponse(data)
 
     for index, cand_id in enumerate(order_list):
-        candidate = CACHE.get(request.session.session_key + "pipeline")[
-            "candidates"
-        ].filter(id=cand_id)
+        candidate = (
+            pipeline_cache["candidates"].filter(id=cand_id)
+            if pipeline_cache
+            else Candidate.objects.filter(id=cand_id)
+        )
+        if not candidate.exists():
+            candidate = Candidate.objects.filter(id=cand_id)
         candidate.update(
             sequence=index, stage_id=stage, hired=(stage.stage_type == "hired")
         )
@@ -621,17 +675,20 @@ def candidate_component(request):
     Candidate component
     """
     stage_id = request.GET.get("stage_id")
-    pipeline_cache = CACHE.get(request.session.session_key + "pipeline")
-    # 1060
-    if not pipeline_cache:
-        return HttpResponse(headers={"HX-Refresh": "true"})
+    pipeline_cache = _get_or_build_pipeline_cache(request)
     stage = pipeline_cache["stages"].filter(id=stage_id).first()
+    if not stage:
+        stage = Stage.objects.filter(id=stage_id).first()
     candidates = pipeline_cache["candidates"].filter(stage_id=stage)
 
     template = "pipeline/components/candidate_stage_component.html"
-    if pipeline_cache["filter_query"].get("view") == "card":
+    view = request.GET.get("view") or pipeline_cache["filter_query"].get("view")
+    if view == "card":
         template = "pipeline/kanban_components/candidate_kanban_components.html"
 
+    previous_data = _build_pipeline_previous_data(
+        request.GET, exclude_keys=["rec_id", "stage_id", "candidate_page"]
+    )
     now = timezone.now()
     return render(
         request,
@@ -641,8 +698,11 @@ def candidate_component(request):
                 candidates, request.GET.get("candidate_page")
             ),
             "stage": stage,
-            "rec": getattr(candidates.first(), "recruitment_id", {}),
+            "rec": getattr(
+                candidates.first(), "recruitment_id", getattr(stage, "recruitment_id", {})
+            ),
             "now": now,
+            "pd": previous_data,
         },
     )
 

@@ -80,7 +80,7 @@
     <div class="oh-tabs__movable-body position-relative pipeline_items recruitment_items {% if stage.stage_type == 'cancelled' %}d-none{% endif %}"
         id="pipelineStageContainer{{stage.id}}"
         data-stage-toggle-id="{{stage.id}}"
-        hx-get="{% url 'candidate-stage-component' %}?stage_id={{stage.id}}"
+        hx-get="{% url 'candidate-stage-component' %}?stage_id={{stage.id}}&{{pd}}"
         hx-trigger="load"
         >
         <div class="animated-background"></div>
