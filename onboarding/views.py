@@ -45,6 +45,7 @@ from base.methods import (
     sortby,
 )
 from base.models import HorillaMailTemplate, JobPosition
+from employee.forms import EmployeeBankDetailsUpdateForm
 from employee.models import Employee, EmployeeBankDetails, EmployeeWorkInformation
 from horilla import settings
 from horilla.decorators import (
@@ -64,8 +65,7 @@ from onboarding.decorators import (
 )
 from onboarding.filters import OnboardingCandidateFilter, OnboardingStageFilter
 from onboarding.forms import (
-    BankDetailsCreationForm,
-    EmployeeCreationForm,
+    OnboardingEmployeePersonalForm,
     OnboardingCandidateForm,
     OnboardingTaskForm,
     OnboardingViewStageForm,
@@ -1046,15 +1046,17 @@ def employee_creation(request, token):
             return redirect("login")
         initial = Employee.objects.filter(employee_user_id=user).first().__dict__
 
-    form = EmployeeCreationForm(
+    form = OnboardingEmployeePersonalForm(
         initial=initial,
+        candidate_email=candidate.email,
     )
     # form.errors.clear()
     if request.method == "POST":
         instance = Employee.objects.filter(employee_user_id=user).first()
-        form = EmployeeCreationForm(
+        form = OnboardingEmployeePersonalForm(
             request.POST,
             instance=instance,
+            candidate_email=candidate.email,
         )
         if form.is_valid():
             user.save()
@@ -1124,15 +1126,14 @@ def employee_bank_details(request, token):
     user = User.objects.filter(username=onboarding_portal.candidate_id.email).first()
     employee = Employee.objects.filter(employee_user_id=user).first()
     bank_info = EmployeeBankDetails.objects.filter(employee_id=employee).first()
-    form = BankDetailsCreationForm(instance=bank_info)
+    form = EmployeeBankDetailsUpdateForm(instance=bank_info)
     if request.method == "POST":
-        form = BankDetailsCreationForm(
+        form = EmployeeBankDetailsUpdateForm(
             request.POST,
             instance=bank_info,
         )
         if form.is_valid():
             return employee_bank_details_save(form, request, onboarding_portal)
-        return redirect(welcome_aboard)
     return render(
         request,
         "onboarding/employee_bank_details.html",
@@ -1162,6 +1163,10 @@ def employee_bank_details_save(form, request, onboarding_portal):
     candidate.converted_employee_id = employee
     candidate.save()
     employee_bank_detail.save()
+    if employee_bank_detail.is_primary:
+        EmployeeBankDetails.objects.filter(employee_id=employee).exclude(
+            pk=employee_bank_detail.pk
+        ).update(is_primary=False)
     onboarding_portal.count = 4
     onboarding_portal.used = True
     onboarding_portal.save()

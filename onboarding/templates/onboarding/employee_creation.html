@@ -1,4 +1,4 @@
-{% load static %} {% load i18n %}
+{% load static %} {% load i18n %} {% load basefilters %} {% load widget_tweaks %}
 <!DOCTYPE html>
 <html lang="en">
 
@@ -56,127 +56,54 @@
                 </div>
                 <form method="post">
                     {% csrf_token %}
+                    {% for hidden in form.hidden_fields %}
+                        {{ hidden }}
+                    {% endfor %}
                     <div class="oh-onboarding-card__address-group">
                         <h2 class="oh-onboarding-card__section-title">{% trans "Personal Details" %}</h2>
+                        {{ form.non_field_errors }}
                         <div class="row">
-                            <div class="col-sm-12 col-md-12 col-lg-6">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "First Name" %}</label>
-                                    {{ form.employee_first_name }}
-                                    {{ form.employee_first_name.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-6">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Last Name" %}</label>
-                                    {{ form.employee_last_name }}
-                                    {{ form.employee_last_name.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Phone" %}</label>
-                                    {{ form.phone }}
-                                    {{ form.phone.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Address" %}</label>
-                                    {{ form.address }}
-                                    {{ form.address.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12 ">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Country *" %}</label>
-                                    <input type="hidden" name="country" id=""
-                                        value="{{ request.user.employee_get.country }}">
-                                    <select name="country" id="id_country" class="oh-select oh-select-2"
-                                        data-selected="{{ form.country.value|default:'' }}"></select>
-                                    {{ form.country.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12 ">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "State *" %}</label>
-                                    <input type="hidden" name="state" id="" value="{{ request.user.employee_get.state }}">
-                                    <select name="state" id="id_state" data-selected="{{ form.state.value|default:'' }}"
-                                        class="oh-select oh-select-2">
-                                    </select>
-                                    {{ form.state.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Zip" %}</label>
-                                    {{ form.zip }}
-                                    {{ form.zip.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "DOB" %}</label>
-                                    {{ form.dob }}
-                                    {{ form.dob.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Gender" %}</label>
-                                    {{ form.gender }}
-                                    {{ form.gender.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Qualification" %}</label>
-                                    {{ form.qualification }}
-                                    {{ form.qualification.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Experience" %}</label>
-                                    {{ form.experience }}
-                                    {{ form.experience.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Marital Status" %}</label>
-                                    {{ form.marital_status }}
-                                    {{ form.marital_status.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Children" %}</label>
-                                    {{ form.children }}
-                                    {{ form.children.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Emergency Contact Number" %}</label>
-                                    {{ form.emergency_contact }}
-                                    {{ form.emergency_contact.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Emergency Contact Name" %}</label>
-                                    {{ form.emergency_contact_name }}
-                                    {{ form.emergency_contact_name.errors }}
-                                </div>
-                            </div>
-                            <div class="col-sm-12 col-md-12 col-lg-12">
-                                <div class="oh-input-group">
-                                    <label for="" class="oh-label">{% trans "Emergency Contact Relation" %}</label>
-                                    {{ form.emergency_contact_relation }}
-                                    {{ form.emergency_contact_relation.errors }}
-                                </div>
-                            </div>
+                            {% for field in form.visible_fields %}
+                                {% if field.label != "Employee profile" and field.label != 'Country' and field.label != 'State' and field.label != 'Address' and field.label != 'Badge id' and field.name != 'employee_no' %}
+                                    <div class="col-lg-6">
+                                        <div class="oh-input__group">
+                                            <label class="oh-label {% if field.field.required %}required-star{% endif %}" for="id_{{ field.name }}" title="{{ field.help_text }}">
+                                                {% trans field.label %}
+                                            </label>
+                                            {% if field.field.widget.input_type == 'checkbox' %}
+                                                <div class="oh-switch" style="width: 30px;">{{ field|add_class:'oh-switch__checkbox' }}</div>
+                                            {% else %}
+                                                {{ field|add_class:'form-control' }}
+                                            {% endif %}
+                                            {{ field.errors }}
+                                        </div>
+                                    </div>
+                                {% elif field.label == 'Address' %}
+                                    <div class="col-lg-12">
+                                        <div class="oh-input__group">
+                                            <label class="oh-label {% if field.field.required %}required-star{% endif %}" for="id_{{ field.name }}" title="{{ field.help_text }}">
+                                                {% trans field.label %}
+                                            </label>
+                                            {{ field }}
+                                            {{ field.errors }}
+                                        </div>
+                                    </div>
+                                {% elif field.label == 'Country' %}
+                                    <div class="row">
+                                        <div class="col-lg-6">
+                                            <label class="oh-label" for="id_country">{% trans "Country" %}</label>
+                                            <select name="country" class="w-100 oh-select-2" id="id_country" data-selected="{{ form.country.value|default:'' }}"></select>
+                                            {{ form.country.errors }}
+                                            <span class="dropdown-wrapper" aria-hidden="true"></span>
+                                        </div>
+                                        <div class="col-lg-6">
+                                            <label class="oh-label d-block" for="id_state">{% trans "State" %}</label>
+                                            <select name="state" class="w-100 oh-select-2" id="id_state" data-selected="{{ form.state.value|default:'' }}"></select>
+                                            {{ form.state.errors }}
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
                         </div>
                     </div>
                     <button href="#"

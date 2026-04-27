@@ -68,42 +68,11 @@
     border: 2px solid hsl(8deg, 77%, 45%);
 }
 
-.hr-error_img img {
-    width: 100%;
-    height: 100%;
-}
-
-.hr-error_bg {
-    position: relative;
-    background-color: #e54f38;
-    width: 340px;
-    height: 340px;
-    border-radius: 50%;
-    box-shadow: rgb(0 0 0 / 26%) 0px 4px 4px;
-}
-
-.hr-error_bg img {
-    position: absolute;
-    top: 40px;
-    left: 0;
-}
-.hr-bg-img--error{
-    position: relative;
-    max-width: 320px;
-}
-
 @media (max-width:768px) {
 
     .hr-error_container {
         flex-direction: column-reverse;
         text-align: center;
-    }
-
-    .hr-error_bg {
-        position: relative;
-        background-color: #e54f38;
-        width: 320px;
-        height: 320px;
     }
 
     .hr-error_content {
@@ -126,9 +95,6 @@
 <body>
     <section class="hr-error_container">
         <div class="hr-error">
-            <div class="hr-error_img hr-error_bg">
-                <img src="{% static "/images/ui/404_error_image.png" %}">
-            </div>
             <div>
                 <h1 class="hr-404">404</h1>
                 <p class="hr-error_msg">Page not found!</p>
