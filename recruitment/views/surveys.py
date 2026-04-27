@@ -19,6 +19,7 @@ from django.shortcuts import redirect, render
 from django.utils.translation import gettext_lazy as _
 
 from base.methods import closest_numbers, get_pagination
+from base.models import Company
 from horilla.decorators import (
     hx_request_required,
     is_recruitment_manager,
@@ -120,6 +121,8 @@ def candidate_survey(request):
     job_id = candidate_dict[0]["fields"]["job_position_id"]
     job = JobPosition.objects.get(id=job_id)
     recruitment = Recruitment.objects.get(id=rec_id)
+    hq_company = Company.objects.filter(hq=True).last()
+    hq_company_icon = hq_company.icon.url if hq_company and hq_company.icon else None
     stage_id = candidate_dict[0]["fields"]["stage_id"]
     candidate_dict[0]["fields"]["recruitment_id"] = recruitment
     candidate_dict[0]["fields"]["job_position_id"] = job
@@ -171,7 +174,11 @@ def candidate_survey(request):
                 return render(
                     request,
                     "survey/candidate_survey_form.html",
-                    {"form": form, "candidate": candidate},
+                    {
+                        "form": form,
+                        "candidate": candidate,
+                        "hq_company_icon": hq_company_icon,
+                    },
                 )
             attachment_path = f"recruitment_attachment/{attachment.name}"
             attachment_dir = os.path.dirname(default_storage.path(attachment_path))
@@ -185,11 +192,11 @@ def candidate_survey(request):
         answer.answer_json = json.dumps(answer_data)
         answer.save()
         messages.success(request, _("Your answers are submitted."))
-        return render(request, "candidate/success.html")
+        return render(request, "candidate/success.html", {"hq_company_icon": hq_company_icon})
     return render(
         request,
         "survey/candidate_survey_form.html",
-        {"form": form, "candidate": candidate},
+        {"form": form, "candidate": candidate, "hq_company_icon": hq_company_icon},
     )
 
 
@@ -358,6 +365,8 @@ def application_form(request):
     except (ValueError, OverflowError):
         messages.error(request, _("Invalid Recruitment ID"))
         return redirect("open-recruitments")
+    hq_company = Company.objects.filter(hq=True).last()
+    hq_company_icon = hq_company.icon.url if hq_company and hq_company.icon else None
 
     if request.POST:
         if "resume" not in request.FILES and resume_id:
@@ -401,7 +410,7 @@ def application_form(request):
                 resume_obj.is_candidate = True
                 resume_obj.save()
 
-            return render(request, "candidate/success.html")
+            return render(request, "candidate/success.html", {"hq_company_icon": hq_company_icon})
         form.fields["job_position_id"].queryset = (
             form.instance.recruitment_id.open_positions.all()
         )
@@ -413,7 +422,12 @@ def application_form(request):
     return render(
         request,
         "candidate/application_form.html",
-        {"form": form, "recruitment": recruitment, "resume": resume_obj},
+        {
+            "form": form,
+            "recruitment": recruitment,
+            "resume": resume_obj,
+            "hq_company_icon": hq_company_icon,
+        },
     )
 
 
