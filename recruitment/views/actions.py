@@ -9,6 +9,7 @@ import json
 from django import template
 from django.contrib import messages
 from django.contrib.auth.models import Permission
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -178,6 +179,7 @@ def stage_delete(request, stage_id):
     Args:
         id : stage_id
     """
+    recruitment_id = None
     try:
         try:
             stage_obj = Stage.objects.get(id=stage_id)
@@ -186,22 +188,35 @@ def stage_delete(request, stage_id):
             messages.error(request, _("Stage not found."))
             return HorillaRedirect(request)
 
-        stage_managers = stage_obj.stage_managers.all()
-        for manager in stage_managers:
-            all_this_manger = manager.stage_set.all()
-            if len(all_this_manger) == 1:
-                view_recruitment = Permission.objects.get(codename="view_recruitment")
-                manager.employee_user_id.user_permissions.remove(view_recruitment.id)
-            initial_stage_manager = all_this_manger.filter(stage_type="initial")
-            if len(initial_stage_manager) == 1:
-                add_candidate = Permission.objects.get(codename="add_candidate")
-                change_candidate = Permission.objects.get(codename="change_candidate")
-                manager.employee_user_id.user_permissions.remove(add_candidate.id)
-                manager.employee_user_id.user_permissions.remove(change_candidate.id)
-            stage_obj.stage_managers.remove(manager)
+        moved_candidates = 0
+        fallback_stage = None
+        candidates_in_stage = Candidate.objects.filter(stage_id=stage_obj)
+        if candidates_in_stage.exists():
+            fallback_stage = (
+                Stage.objects.filter(recruitment_id=stage_obj.recruitment_id)
+                .exclude(id=stage_obj.id)
+                .order_by("sequence", "id")
+                .first()
+            )
+            if not fallback_stage:
+                messages.error(
+                    request,
+                    _(
+                        "You cannot delete this stage because candidates are assigned to it and no other stage is available."
+                    ),
+                )
+                hx_request = request.META.get("HTTP_HX_REQUEST")
+                hx_current_url = request.META.get("HTTP_HX_CURRENT_URL")
+                if hx_request and hx_request == "true" and "stage-view" in hx_current_url:
+                    return redirect(f"/recruitment/stage-data/{recruitment_id}/")
+                return HorillaRedirect(request)
+
+        stage_managers = list(stage_obj.stage_managers.all())
         try:
-            stage_obj.delete()
-            messages.success(request, _("Stage deleted successfully."))
+            with transaction.atomic():
+                if fallback_stage:
+                    moved_candidates = candidates_in_stage.update(stage_id=fallback_stage)
+                stage_obj.delete()
         except ProtectedError as e:
             models_verbose_name_sets = set()
             for obj in e.protected_objects:
@@ -215,11 +230,35 @@ def stage_delete(request, stage_id):
                     )
                 ),
             )
+        else:
+            view_recruitment = Permission.objects.get(codename="view_recruitment")
+            add_candidate = Permission.objects.get(codename="add_candidate")
+            change_candidate = Permission.objects.get(codename="change_candidate")
+            for manager in stage_managers:
+                all_this_manger = manager.stage_set.all()
+                if len(all_this_manger) == 0:
+                    manager.employee_user_id.user_permissions.remove(view_recruitment.id)
+                initial_stage_manager = all_this_manger.filter(stage_type="initial")
+                if len(initial_stage_manager) == 0:
+                    manager.employee_user_id.user_permissions.remove(add_candidate.id)
+                    manager.employee_user_id.user_permissions.remove(change_candidate.id)
+            if moved_candidates:
+                messages.info(
+                    request,
+                    _("Moved %(count)s candidate(s) to %(stage)s before deleting.")
+                    % {"count": moved_candidates, "stage": fallback_stage},
+                )
+            messages.success(request, _("Stage deleted successfully."))
     except (Stage.DoesNotExist, OverflowError):
         messages.error(request, _("Stage Does not exists.."))
     hx_request = request.META.get("HTTP_HX_REQUEST")
     hx_current_url = request.META.get("HTTP_HX_CURRENT_URL")
-    if hx_request and hx_request == "true" and "stage-view" in hx_current_url:
+    if (
+        hx_request
+        and hx_request == "true"
+        and "stage-view" in hx_current_url
+        and recruitment_id is not None
+    ):
         return redirect(f"/recruitment/stage-data/{recruitment_id}/")
     return HorillaRedirect(request)
 

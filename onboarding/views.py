@@ -26,6 +26,7 @@ from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.core.mail import EmailMessage, send_mail
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import redirect, render
@@ -218,11 +219,50 @@ def stage_delete(request, stage_id):
     GET : return onboarding view
     """
     try:
-        OnboardingStage.objects.get(id=stage_id).delete()
-        messages.success(request, _("The stage deleted successfully..."))
-
+        onboarding_stage = OnboardingStage.objects.get(id=stage_id)
     except OnboardingStage.DoesNotExist:
         messages.error(request, _("Stage not found."))
+        return HorillaRedirect(request)
+
+    moved_candidates = 0
+    fallback_stage = None
+    candidate_stages = CandidateStage.objects.filter(onboarding_stage_id=onboarding_stage)
+    if candidate_stages.exists():
+        fallback_stage = (
+            OnboardingStage.objects.filter(recruitment_id=onboarding_stage.recruitment_id)
+            .exclude(id=onboarding_stage.id)
+            .order_by("sequence", "id")
+            .first()
+        )
+        if not fallback_stage:
+            messages.error(
+                request,
+                _(
+                    "There are candidates in this stage and no other stage is available to move them."
+                ),
+            )
+            return HorillaRedirect(request)
+
+    try:
+        with transaction.atomic():
+            if fallback_stage:
+                moved_candidates = candidate_stages.update(onboarding_stage_id=fallback_stage)
+
+            # CandidateTask has PROTECT references to stage and onboarding task.
+            # Remove stage-bound candidate tasks before deleting the stage.
+            CandidateTask.objects.filter(stage_id=onboarding_stage).delete()
+            CandidateTask.objects.filter(
+                onboarding_task_id__stage_id=onboarding_stage
+            ).delete()
+
+            onboarding_stage.delete()
+        if moved_candidates:
+            messages.info(
+                request,
+                _("Moved %(count)s candidate(s) to %(stage)s before deleting.")
+                % {"count": moved_candidates, "stage": fallback_stage},
+            )
+        messages.success(request, _("The stage deleted successfully..."))
     except ProtectedError:
         messages.error(request, _("There are candidates in this stage..."))
     return HorillaRedirect(request)
