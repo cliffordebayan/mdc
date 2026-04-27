@@ -11,6 +11,7 @@ from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 
 from base.backends import ConfiguredEmailBackend
+from base.methods import get_hq_company_logo_url
 from employee.models import EmployeeWorkInformation
 from payroll.models.models import Payslip
 from payroll.views.views import payslip_pdf
@@ -30,6 +31,9 @@ class MailSendThread(Thread):
         self.request = request
         self.host = request.get_host()
         self.protocol = "https" if request.is_secure() else "http"
+        self.hq_company_logo_url = get_hq_company_logo_url(
+            host=self.host, protocol=self.protocol
+        )
 
     def run(self) -> None:
         super().run()
@@ -40,6 +44,7 @@ class MailSendThread(Thread):
                     "record": record,
                     "host": self.host,
                     "protocol": self.protocol,
+                    "hq_company_logo_url": self.hq_company_logo_url,
                 },
                 request=self.request,
             )

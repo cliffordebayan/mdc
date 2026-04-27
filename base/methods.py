@@ -39,6 +39,23 @@ def users_count(self):
 Group.add_to_class("users_count", property(users_count))
 
 
+def get_hq_company_logo_url(host=None, protocol=None):
+    """
+    Return the HQ company logo URL.
+
+    If protocol and host are provided, relative media URLs are converted to absolute URLs
+    for contexts such as email clients.
+    """
+    hq_company = Company.objects.filter(hq=True).last()
+    if not hq_company or not hq_company.icon:
+        return None
+
+    logo_url = hq_company.icon.url
+    if logo_url.startswith(("http://", "https://")) or not (host and protocol):
+        return logo_url
+    return f"{protocol}://{host}{logo_url}"
+
+
 # def filtersubordinates(request, queryset, perm=None, field="employee_id"):
 #     """
 #     This method is used to filter out subordinates queryset element.

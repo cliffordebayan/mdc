@@ -40,6 +40,7 @@ from base.backends import ConfiguredEmailBackend
 from base.methods import (
     closest_numbers,
     generate_pdf,
+    get_hq_company_logo_url,
     get_key_instances,
     get_pagination,
     sortby,
@@ -629,6 +630,7 @@ def email_send(request):
     """
     host = request.get_host()
     protocol = "https" if request.is_secure() else "http"
+    hq_company_logo_url = get_hq_company_logo_url(host=host, protocol=protocol)
     candidates = request.POST.getlist("ids")
     other_attachments = request.FILES.getlist("other_attachments")
     template_attachment_ids = request.POST.getlist("template_attachment_ids")
@@ -690,6 +692,7 @@ def email_send(request):
                     "instance": candidate,
                     "host": host,
                     "protocol": protocol,
+                    "hq_company_logo_url": hq_company_logo_url,
                 },
                 request=request,
             )

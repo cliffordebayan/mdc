@@ -118,6 +118,7 @@ from base.methods import (
     format_date,
     generate_colors,
     generate_otp,
+    get_hq_company_logo_url,
     get_key_instances,
     is_reportingmanager,
     paginator_qry,
@@ -1535,7 +1536,7 @@ def mail_server_conf(request):
 def mail_server_test_email(request):
     instance_id = request.GET.get("instance_id")
     white_labelling = getattr(horilla_apps, "WHITE_LABELLING", False)
-    image_path = path.join(settings.STATIC_ROOT, "images/ui/horilla-logo.png")
+    image_path = None
     company_name = "Horilla"
 
     if white_labelling:
@@ -1551,7 +1552,14 @@ def mail_server_test_email(request):
 
         if company:
             company_name = company.company
-            image_path = path.join(settings.MEDIA_ROOT, company.icon.name)
+            if company.icon:
+                image_path = path.join(settings.MEDIA_ROOT, company.icon.name)
+
+    hq_company_logo_url = get_hq_company_logo_url()
+    if hq_company_logo_url and not hq_company_logo_url.startswith(("http://", "https://")):
+        relative_media_path = hq_company_logo_url.replace(settings.MEDIA_URL, "", 1)
+        if relative_media_path:
+            image_path = path.join(settings.MEDIA_ROOT, relative_media_path)
 
     form = DynamicMailTestForm()
     if request.method == "POST":
@@ -1559,6 +1567,11 @@ def mail_server_test_email(request):
         if form.is_valid():
             email_to = form.cleaned_data["to_email"]
             subject = _("Test mail from MDC")
+            image_html = (
+                '<img src="cid:unique_image_id" alt="Company Logo" style="width: 200px; height: auto; margin: 20px 0;">'
+                if image_path
+                else ""
+            )
 
             # HTML content
             html_content = f"""
@@ -1575,7 +1588,7 @@ def mail_server_test_email(request):
                                 <h3 style="color: #4CAF50;">Email tested successfully</h3>
                                 <b><p style="font-size: 14px;">Hi,<br>
                                     This email is being sent as part of mail sever testing from {company_name}.</p></b>
-                                <img src="cid:unique_image_id" alt="Test Image" style="width: 200px; height: auto; margin: 20px 0;">
+                                {image_html}
                             </td>
                         </tr>
                         <tr>
@@ -1607,10 +1620,11 @@ def mail_server_test_email(request):
                 )
                 msg.attach_alternative(html_content, "text/html")
 
-                with open(image_path, "rb") as img:
-                    msg_img = MIMEImage(img.read())
-                    msg_img.add_header("Content-ID", "<unique_image_id>")
-                    msg.attach(msg_img)
+                if image_path and path.exists(image_path):
+                    with open(image_path, "rb") as img:
+                        msg_img = MIMEImage(img.read())
+                        msg_img.add_header("Content-ID", "<unique_image_id>")
+                        msg.attach(msg_img)
 
                 msg.send()
 

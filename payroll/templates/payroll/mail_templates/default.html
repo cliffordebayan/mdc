@@ -77,7 +77,13 @@
           <table class="hr-table-main__header">
             <tr>
               <td style="width: 50%">
-                <img src="{{protocol}}://{{ host }}{% static '/images/ui/horilla-logo.png' %}" height="30" width="110.4" />
+                {% if hq_company_logo_url %}
+                <img src="{{ hq_company_logo_url }}" height="30" width="110.4" />
+                {% elif white_label_company and white_label_company.icon %}
+                <img src="{{protocol}}://{{host}}{{ white_label_company.icon.url }}" height="30" width="110.4" />
+                {% else %}
+                <strong style="font-size: 16px; color: #1c1c1c">{{ white_label_company_name|default:"Company" }}</strong>
+                {% endif %}
               </td>
               <td style="width: 50%; text-align: right">
                 <a href="#" class="hr-link">View in browser</a>

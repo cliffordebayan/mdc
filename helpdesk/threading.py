@@ -12,6 +12,7 @@ from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 
 from base.backends import ConfiguredEmailBackend
+from base.methods import get_hq_company_logo_url
 from base.models import Department
 from employee.models import EmployeeWorkInformation
 from helpdesk.models import Ticket
@@ -32,6 +33,9 @@ class TicketSendThread(Thread):
         self.assignees = ticket.assigned_to.all()
         self.host = request.get_host()
         self.protocol = "https" if request.is_secure() else "http"
+        self.hq_company_logo_url = get_hq_company_logo_url(
+            host=self.host, protocol=self.protocol
+        )
         raised_on = ticket.get_raised_on_object()
         if isinstance(raised_on, Department):
             if raised_on.dept_manager.all():
@@ -64,6 +68,7 @@ class TicketSendThread(Thread):
                     "protocol": protocol,
                     "subject": subject,
                     "content": content,
+                    "hq_company_logo_url": self.hq_company_logo_url,
                 },
                 request=self.request,
             )
@@ -142,6 +147,9 @@ class AddAssigneeThread(Thread):
         self.request = request
         self.host = request.get_host()
         self.protocol = "https" if request.is_secure() else "http"
+        self.hq_company_logo_url = get_hq_company_logo_url(
+            host=self.host, protocol=self.protocol
+        )
 
     def run(self) -> None:
         super().run()
@@ -169,6 +177,7 @@ class AddAssigneeThread(Thread):
                     "protocol": protocol,
                     "subject": subject,
                     "content": content,
+                    "hq_company_logo_url": self.hq_company_logo_url,
                 },
                 request=self.request,
             )
@@ -201,6 +210,9 @@ class RemoveAssigneeThread(Thread):
         self.request = request
         self.host = request.get_host()
         self.protocol = "https" if request.is_secure() else "http"
+        self.hq_company_logo_url = get_hq_company_logo_url(
+            host=self.host, protocol=self.protocol
+        )
 
     def run(self) -> None:
         super().run()
@@ -228,6 +240,7 @@ class RemoveAssigneeThread(Thread):
                     "protocol": protocol,
                     "subject": subject,
                     "content": content,
+                    "hq_company_logo_url": self.hq_company_logo_url,
                 },
                 request=self.request,
             )
