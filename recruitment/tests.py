@@ -4,12 +4,12 @@ import tempfile
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
-from django.urls import reverse
+from django.test import RequestFactory, TestCase, override_settings
+from django.urls import resolve, reverse
 
 from base.models import Company, Department, JobPosition
 from employee.models import Employee
-from recruitment.models import Candidate, Recruitment, Stage
+from recruitment.models import Candidate, CandidateRating, Recruitment, Stage
 
 
 class RecruitmentPipelineCacheFallbackTests(TestCase):
@@ -189,3 +189,155 @@ class RecruitmentPipelineCacheFallbackTests(TestCase):
         self.assertContains(stage_response, "candidate_name=Alice", html=False)
         self.assertContains(stage_response, "view=card", html=False)
         self.assertContains(stage_response, "closed=false", html=False)
+
+
+class RecruitmentCandidateRatingToggleTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._temp_media = tempfile.mkdtemp(prefix="recruitment-rating-tests-")
+        cls._media_override = override_settings(MEDIA_ROOT=cls._temp_media)
+        cls._media_override.enable()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._media_override.disable()
+        shutil.rmtree(cls._temp_media, ignore_errors=True)
+        super().tearDownClass()
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(
+            username="rating-admin",
+            password="test-pass-123",
+            is_staff=True,
+            is_superuser=True,
+        )
+        cls.employee = Employee.objects.create(
+            employee_user_id=cls.user,
+            employee_first_name="Rating",
+            employee_last_name="Admin",
+            email="rating-admin@example.com",
+            phone="09123456780",
+        )
+
+        cls.company = Company.objects.create(
+            company="MDC Rating",
+            address="Address",
+            country="PH",
+            state="NCR",
+            city="Makati",
+            zip="1200",
+        )
+        cls.department = Department(department="Recruitment Rating")
+        cls.department.save()
+        cls.department.company_id.add(cls.company)
+        cls.job_position = JobPosition(
+            job_position="Recruiter",
+            department_id=cls.department,
+        )
+        cls.job_position.save()
+        cls.job_position.company_id.add(cls.company)
+
+        cls.recruitment = Recruitment.objects.create(
+            title="Rating Recruitment",
+            description="Candidate rating tests",
+            vacancy=1,
+            is_published=False,
+            job_position_id=cls.job_position,
+            company_id=cls.company,
+        )
+        cls.recruitment.open_positions.add(cls.job_position)
+
+        cls.stage = Stage.objects.create(
+            recruitment_id=cls.recruitment,
+            stage="Rating Stage",
+            stage_type="initial",
+            sequence=1,
+        )
+        resume = SimpleUploadedFile(
+            "resume.pdf",
+            b"%PDF-1.4\n%Test\n",
+            content_type="application/pdf",
+        )
+        cls.candidate = Candidate.objects.create(
+            name="Bob Rated",
+            recruitment_id=cls.recruitment,
+            job_position_id=cls.job_position,
+            stage_id=cls.stage,
+            email="bob.rated@example.com",
+            resume=resume,
+        )
+
+    def setUp(self):
+        self.client.force_login(self.user)
+        CandidateRating.objects.all().delete()
+
+    def test_create_candidate_rating_creates_when_positive(self):
+        response = self.client.post(
+            reverse("create-candidate-rating", args=[self.candidate.id]),
+            {"rating": "4", "clear_rating": "0"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        rating = CandidateRating.objects.get(
+            candidate_id=self.candidate, employee_id=self.employee
+        )
+        self.assertEqual(rating.rating, 4)
+
+    def test_create_candidate_rating_does_not_create_for_clear_or_zero(self):
+        clear_response = self.client.post(
+            reverse("create-candidate-rating", args=[self.candidate.id]),
+            {"clear_rating": "1", "rating": "5"},
+        )
+        self.assertEqual(clear_response.status_code, 302)
+        self.assertFalse(CandidateRating.objects.exists())
+
+        zero_response = self.client.post(
+            reverse("create-candidate-rating", args=[self.candidate.id]),
+            {"clear_rating": "0", "rating": "0"},
+        )
+        self.assertEqual(zero_response.status_code, 302)
+        self.assertFalse(CandidateRating.objects.exists())
+
+    def test_update_candidate_rating_updates_then_clears(self):
+        CandidateRating.objects.create(
+            candidate_id=self.candidate, employee_id=self.employee, rating=4
+        )
+
+        update_response = self.client.post(
+            reverse("update-candidate-rating", args=[self.candidate.id]),
+            {"rating": "5", "clear_rating": "0"},
+        )
+        self.assertEqual(update_response.status_code, 302)
+
+        rating = CandidateRating.objects.get(
+            candidate_id=self.candidate, employee_id=self.employee
+        )
+        self.assertEqual(rating.rating, 5)
+
+        clear_response = self.client.post(
+            reverse("update-candidate-rating", args=[self.candidate.id]),
+            {"clear_rating": "1"},
+        )
+        self.assertEqual(clear_response.status_code, 302)
+        self.assertFalse(
+            CandidateRating.objects.filter(
+                candidate_id=self.candidate, employee_id=self.employee
+            ).exists()
+        )
+
+    def test_rating_endpoints_are_post_only(self):
+        create_url = reverse("create-candidate-rating", args=[self.candidate.id])
+        update_url = reverse("update-candidate-rating", args=[self.candidate.id])
+        factory = RequestFactory()
+
+        create_response = resolve(create_url).func(
+            factory.get(create_url), cand_id=self.candidate.id
+        )
+        update_response = resolve(update_url).func(
+            factory.get(update_url), cand_id=self.candidate.id
+        )
+
+        self.assertEqual(create_response.status_code, 405)
+        self.assertEqual(update_response.status_code, 405)

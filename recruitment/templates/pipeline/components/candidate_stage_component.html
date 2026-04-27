@@ -180,30 +180,32 @@
                     {% if candidate_ratings|has_candidate_rating:cand %}
                     <form hx-swap="none" hx-post='{% url "update-candidate-rating" cand.id %}' method="post">
                         {% csrf_token %}
+                        <input type="hidden" name="clear_rating" value="0" />
                         <div class="d-block mb-0">
-                            <div class="oh-rate" onclick="$(this).parents().closest('form').find('button').click()">
+                            <div class="oh-rate">
                                 {% for i in "54321" %}
                                 <input type="radio" id="star{{i}}{{cand.id}}" name="rating" class="rating-radio"
                                     value="{{i}}" {% if candidate_ratings|rating:cand == i %} checked {% endif %} />
                                 <label for="star{{i}}{{cand.id}}" title="{{i}} Stars"></label>
                                 {% endfor %}
                             </div>
-                            <button type="submit" hidden="true"></button>
+                            <button type="submit" hidden="true" class="rating-submit-trigger"></button>
                             <span id="rating-radio-error"></span>
                         </div>
                     </form>
                     {% else %}
                     <form hx-swap="none" hx-post='{% url "create-candidate-rating" cand.id %}' method="post">
                         {% csrf_token %}
+                        <input type="hidden" name="clear_rating" value="0" />
                         <div class="d-block mb-0">
-                            <div class="oh-rate" onclick="$(this).parents().closest('form').find('button').click()">
+                            <div class="oh-rate">
                                 {% for i in "54321" %}
                                 <input type="radio" id="star{{i}}{{cand.id}}" name="rating" class="rating-radio"
                                     value="{{i}}" />
                                 <label for="star{{i}}{{cand.id}}" title="{{i}} Stars"></label>
                                 {% endfor %}
                             </div>
-                            <button type="submit" hidden="true"></button>
+                            <button type="submit" hidden="true" class="rating-submit-trigger"></button>
                             <span id="rating-radio-error"></span>
                         </div>
                     </form>

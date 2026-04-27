@@ -2189,6 +2189,7 @@ def candidate_select_filter(request):
         return JsonResponse(context)
 
 
+@require_http_methods(["POST"])
 @login_required
 def create_candidate_rating(request, cand_id):
     """
@@ -2196,12 +2197,23 @@ def create_candidate_rating(request, cand_id):
     Args:
         cand_id : candidate instance id
     """
-    cand_id = cand_id
     candidate = Candidate.objects.get(id=cand_id)
-    employee_id = request.user.employee_get
-    rating = request.POST.get("rating")
-    CandidateRating.objects.create(
-        candidate_id=candidate, rating=rating, employee_id=employee_id
+    employee = request.user.employee_get
+    clear_rating = request.POST.get("clear_rating") in ("1", "true", "True", "on")
+
+    rating_value = None
+    try:
+        rating_value = int(request.POST.get("rating", ""))
+    except (TypeError, ValueError):
+        rating_value = None
+
+    if clear_rating or rating_value is None or rating_value <= 0 or rating_value > 5:
+        return redirect(recruitment_pipeline)
+
+    CandidateRating.objects.update_or_create(
+        candidate_id=candidate,
+        employee_id=employee,
+        defaults={"rating": rating_value},
     )
     return redirect(recruitment_pipeline)
 
@@ -2659,6 +2671,7 @@ def to_skill_zone(request, cand_id):
     return render(request, template, {"form": form, "cand_id": cand_id})
 
 
+@require_http_methods(["POST"])
 @login_required
 def update_candidate_rating(request, cand_id):
     """
@@ -2666,13 +2679,35 @@ def update_candidate_rating(request, cand_id):
     Args:
         id : candidate rating instance id
     """
-    cand_id = cand_id
     candidate = Candidate.objects.get(id=cand_id)
-    employee_id = request.user.employee_get
-    rating = request.POST.get("rating")
-    rate = CandidateRating.objects.get(candidate_id=candidate, employee_id=employee_id)
-    rate.rating = int(rating)
-    rate.save()
+    employee = request.user.employee_get
+    clear_rating = request.POST.get("clear_rating") in ("1", "true", "True", "on")
+
+    rating_value = None
+    try:
+        rating_value = int(request.POST.get("rating", ""))
+    except (TypeError, ValueError):
+        rating_value = None
+
+    rating_qs = CandidateRating.objects.filter(
+        candidate_id=candidate, employee_id=employee
+    )
+
+    if clear_rating:
+        rating_qs.delete()
+        return redirect(recruitment_pipeline)
+
+    if rating_value is None or rating_value <= 0 or rating_value > 5:
+        return redirect(recruitment_pipeline)
+
+    rate = rating_qs.first()
+    if rate:
+        rate.rating = rating_value
+        rate.save(update_fields=["rating"])
+    else:
+        CandidateRating.objects.create(
+            candidate_id=candidate, employee_id=employee, rating=rating_value
+        )
     return redirect(recruitment_pipeline)
 
 
