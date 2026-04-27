@@ -420,6 +420,7 @@ def candidate_update(request, obj_id):
 
 @login_required
 @permission_required("onboarding.delete_onboardingcandidate")
+@require_http_methods(["POST"])
 def candidate_delete(request, obj_id):
     """
     function used to delete hired candidates .
@@ -1906,19 +1907,37 @@ def offer_letter_bulk_status_update(request):
     return JsonResponse("success", safe=False)
 
 
+@login_required
+@permission_required("onboarding.delete_onboardingcandidate")
+@require_http_methods(["POST"])
 def onboarding_candidate_bulk_delete(request):
     """
     This function is used to bulk delete onboarding candidates
     """
 
-    ids = json.loads(request.GET.get("ids", []))
-    status = request.GET.get("status")
+    ids = json.loads(request.POST.get("ids", "[]"))
     for id in ids:
         try:
             candidate = Candidate.objects.filter(id=int(id)).first()
+            if candidate is None:
+                messages.error(request, "Candidate does not exist")
+                continue
             candidate.delete()
             messages.success(request, "candidate deleted successfully")
-        except:
-            messages.error(request, "Candidate doesnot exist")
+        except ProtectedError as e:
+            models_verbose_name_sets = set()
+            for obj in e.protected_objects:
+                models_verbose_name_sets.add(__(obj._meta.verbose_name))
+            models_verbose_name_str = (", ").join(models_verbose_name_sets)
+            messages.error(
+                request,
+                _(
+                    "You cannot delete this candidate. The candidate is included in the {}".format(
+                        models_verbose_name_str
+                    )
+                ),
+            )
+        except (TypeError, ValueError):
+            messages.error(request, "Candidate does not exist")
 
     return JsonResponse("success", safe=False)
