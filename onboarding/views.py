@@ -958,6 +958,8 @@ def user_save(form, onboarding_portal, request, token):
     """
     user = form.save(commit=False)
     user.username = onboarding_portal.candidate_id.email
+    if request.session.session_key is None:
+        request.session.save()
     session_key = request.session.session_key
     portal_user[session_key] = user
     onboarding_portal.count = 1
@@ -1025,7 +1027,15 @@ def employee_creation(request, token):
         "dob": candidate.dob,
     }
     session_key = request.session.session_key
-    user = portal_user[session_key]
+    user = portal_user.get(session_key)
+    if user is None:
+        user = User.objects.filter(username=candidate.email).first()
+    if user is None:
+        messages.error(
+            request,
+            _("Your onboarding session has expired. Please create your account again."),
+        )
+        return redirect("user-creation", token)
     if Employee.objects.filter(email=user).exists():
         messages.success(request, _("Employee with email id already exists."))
         return redirect("login")
