@@ -18,6 +18,7 @@ import operator
 import os
 import threading
 from datetime import date, datetime, timedelta
+from io import BytesIO
 from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
@@ -27,7 +28,7 @@ from django.contrib import messages
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, ProtectedError
 from django.db.models.query import QuerySet
 from django.forms import DateInput, Select
@@ -2714,109 +2715,19 @@ def work_info_import_file(request):
     """
     columns = [
         "Employee No",
-        "Complete Name",
         "First Name",
-        "Middle Name",
         "Last Name",
-        "Extension",
-        "Gender",
-        "Date of Birth",
-        "Age",
-        "Marital Status",
-        "Children",
-        "Email",
         "Phone",
-        "Address",
-        "City",
-        "State",
-        "Country",
-        "Zip Code",
-        "Emergency Contact Name",
-        "Emergency Contact",
-        "Emergency Contact Relation",
-        "TIN Number",
-        "SSS Number",
-        "HDMF Number",
-        "PhilHealth Number",
-        "Company",
-        "Branch",
-        "Department",
-        "Job Position",
-        "Job Role",
-        "Employee Type",
-        "Employee Status",
-        "Work Location",
-        "Work Type",
-        "Shift Information",
-        "Reporting Manager",
-        "Joining Date",
-        "End Date",
-        "Years of Service",
-        "Is Active",
-        "Salary",
-        "Salary Hour",
-        "Gcash",
-        "Metrobank",
-        "Cost Center",
-        "Business Unit",
-        "Work Email",
-        "Work Phone",
-        "Experience",
-        "Qualification",
-        "Tags",
+        "Email",
+        "Gender",
     ]
     example = {
         "Employee No": "EMP001",
-        "Complete Name": "Sample Employee",
         "First Name": "Sample",
-        "Middle Name": "",
         "Last Name": "Employee",
-        "Extension": "",
-        "Gender": "male",
-        "Date of Birth": "",
-        "Age": "",
-        "Marital Status": "",
-        "Children": 0,
-        "Email": "sample.employee@example.com",
         "Phone": "09171234567",
-        "Address": "",
-        "City": "",
-        "State": "",
-        "Country": "",
-        "Zip Code": "",
-        "Emergency Contact Name": "",
-        "Emergency Contact": "",
-        "Emergency Contact Relation": "",
-        "TIN Number": "",
-        "SSS Number": "",
-        "HDMF Number": "",
-        "PhilHealth Number": "",
-        "Company": "",
-        "Branch": "",
-        "Department": "",
-        "Job Position": "",
-        "Job Role": "",
-        "Employee Type": "",
-        "Employee Status": "active",
-        "Work Location": "Main Office",
-        "Work Type": "",
-        "Shift Information": "",
-        "Reporting Manager": "",
-        "Joining Date": "2024-01-15",
-        "End Date": "",
-        "Years of Service": "",
-        "Is Active": "yes",
-        "Salary": 30000,
-        "Salary Hour": 150,
-        "Gcash": "",
-        "Metrobank": "",
-        "Cost Center": "",
-        "Business Unit": "",
-        "Work Email": "",
-        "Work Phone": "",
-        "Experience": "",
-        "Qualification": "",
-        "Tags": "",
+        "Email": "sample.employee@example.com",
+        "Gender": "male",
     }
     data_frame = pd.DataFrame([example], columns=columns)
 
@@ -2868,43 +2779,88 @@ def work_info_import(request):
                     "employee/employee_import.html",
                     {"error_message": error_message},
                 )
-            success_list, error_list, created_count = process_employee_records(
+            success_list, error_list, _validated_count = process_employee_records(
                 data_frame
             )
+            created_count = 0
+            total_count = len(data_frame.index)
+
+            # If user is scoped to a selected company and the import row does not
+            # include a Company value, default it to the selected company so newly
+            # imported employees remain visible in company-filtered views.
+            selected_company = request.session.get("selected_company")
+            if selected_company and selected_company != "all":
+                selected_company_obj = Company.objects.filter(
+                    id=selected_company
+                ).only("company").first()
+                if selected_company_obj:
+                    for row in success_list:
+                        company_value = row.get("Company")
+                        if (
+                            company_value is None
+                            or pd.isna(company_value)
+                            or str(company_value).strip().lower()
+                            in {"", "nan", "none", "null"}
+                        ):
+                            row["Company"] = selected_company_obj.company
+            employees = []
             if success_list:
                 try:
-                    users = bulk_create_user_import(success_list)
-                    employees = bulk_create_employee_import(success_list)
-                    bulk_create_department_import(success_list)
-                    bulk_create_job_position_import(success_list)
-                    bulk_create_job_role_import(success_list)
-                    bulk_create_work_types(success_list)
-                    bulk_create_shifts(success_list)
-                    bulk_create_employee_types(success_list)
-                    bulk_create_work_info_import(success_list)
-                    bulk_create_bank_details_import(success_list)
-                    bulk_set_tags_import(success_list)
-                    thread = threading.Thread(
-                        target=set_initial_password, args=(employees,)
-                    )
-                    thread.start()
-
+                    with transaction.atomic():
+                        bulk_create_user_import(success_list)
+                        employees = bulk_create_employee_import(success_list)
+                        bulk_create_department_import(success_list)
+                        bulk_create_job_position_import(success_list)
+                        bulk_create_job_role_import(success_list)
+                        bulk_create_work_types(success_list)
+                        bulk_create_shifts(success_list)
+                        bulk_create_employee_types(success_list)
+                        bulk_create_work_info_import(success_list)
+                        bulk_create_bank_details_import(success_list)
+                        bulk_set_tags_import(success_list)
                 except Exception as e:
                     messages.error(request, _("Error Occured {}").format(e))
                     logger.error(e)
+                    for row in success_list:
+                        failed_row = dict(row)
+                        failed_row["Import Error"] = str(e)
+                        error_list.append(failed_row)
+                else:
+                    created_count = len(employees)
+                    if created_count < len(success_list):
+                        missing_count = len(success_list) - created_count
+                        for row in success_list[:missing_count]:
+                            failed_row = dict(row)
+                            failed_row["Import Error"] = _(
+                                "Row validated but was not created due to a database write issue."
+                            )
+                            error_list.append(failed_row)
+                    if employees:
+                        threading.Thread(
+                            target=set_initial_password, args=(employees,)
+                        ).start()
+            error_count = max(total_count - created_count, 0)
+            if error_count and not error_list:
+                error_list.append(
+                    {
+                        "Import Error": _(
+                            "Some rows could not be created. Please review and re-upload."
+                        )
+                    }
+                )
 
             path_info = (
                 generate_error_report(
                     error_list, error_data_template, "EmployeesImportError.xlsx"
                 )
-                if error_list
+                if error_count
                 else None
             )
 
             context = {
                 "created_count": created_count,
-                "total_count": created_count + len(error_list),
-                "error_count": len(error_list),
+                "total_count": total_count,
+                "error_count": error_count,
                 "model": _("Employees"),
                 "path_info": path_info,
             }

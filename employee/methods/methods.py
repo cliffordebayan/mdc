@@ -67,6 +67,7 @@ error_data_template = {
         "Salary Hour Error",
         "User ID Error",
         "Company Error",
+        "Import Error",
     ]
 }
 
@@ -77,7 +78,10 @@ def chunked(iterable, size):
 
 
 def normalize_phone(phone):
-    phone = str(phone).strip()
+    if isinstance(phone, float) and phone.is_integer():
+        phone = str(int(phone))
+    else:
+        phone = str(phone).strip()
     if phone.startswith("+"):
         return "+" + re.sub(r"\D", "", phone[1:])
     return re.sub(r"\D", "", phone)
@@ -248,18 +252,6 @@ def valid_import_file_headers(data_frame):
         "Phone",
         "Email",
         "Gender",
-        "Department",
-        "Job Position",
-        "Job Role",
-        "Work Type",
-        "Shift Information",
-        "Employee Type",
-        "Reporting Manager",
-        "Company",
-        "Work Location",
-        "Joining Date",
-        "Salary",
-        "Salary Hour",
     ]
 
     missing_keys = [key for key in required_keys if key not in data_frame.columns]
@@ -280,7 +272,7 @@ def process_employee_records(data_frame):
     existing_employee_nos = frozenset(
         Employee.objects.entire().values_list("employee_no", flat=True)
     )
-    existing_usernames = frozenset(User.objects.values_list("username", flat=True))
+    existing_employee_emails = frozenset(Employee.objects.values_list("email", flat=True))
     existing_name_emails = frozenset(
         (fname, lname, email)
         for fname, lname, email in Employee.objects.values_list(
@@ -293,7 +285,7 @@ def process_employee_records(data_frame):
 
     created_count = 0
     seen_employee_nos = set(existing_employee_nos)
-    seen_usernames = set(existing_usernames)
+    seen_emails = set(existing_employee_emails)
     seen_name_emails = set(existing_name_emails)
 
     today = date.today()
@@ -378,12 +370,12 @@ def process_employee_records(data_frame):
             emp["Employee No"] = employee_no
             seen_employee_nos.add(employee_no)
 
-        # Username/email uniqueness
-        if email in seen_usernames:
-            errors["User ID Error"] = "User with this email already exists."
+        # Employee email uniqueness
+        if email in seen_emails:
+            errors["User ID Error"] = "An employee with this email already exists."
             save = False
         else:
-            seen_usernames.add(email)
+            seen_emails.add(email)
 
         # Name+email uniqueness
         name_email_tuple = (first_name, last_name, email)
@@ -531,7 +523,7 @@ def bulk_create_employee_import(success_lists):
             phone=row["Phone"],
             gender=row.get("Gender", "").lower(),
             qualification=convert_nan("Qualification", row) or None,
-            dob=row.get("Date of Birth") or None,
+            dob=convert_nan("Date of Birth", row) or None,
             marital_status=convert_nan("Marital Status", row) or None,
             children=_parse_children(row),
             address=convert_nan("Address", row) or None,

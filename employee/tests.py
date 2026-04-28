@@ -7,6 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase
 from django.urls import reverse
 
+from base.models import Company
 from employee.models import Employee, EmployeeBankDetails, EmployeeWorkInformation
 from horilla.horilla_middlewares import _thread_locals
 
@@ -85,6 +86,77 @@ class EmployeeImportFlowTests(TransactionTestCase):
             'filename="work_info_template.xlsx"',
             response.get("Content-Disposition", ""),
         )
+
+    def test_work_info_import_template_contains_required_headers_only(self):
+        response = self.client.get(reverse("work-info-import-file"))
+        self.assertEqual(response.status_code, 200)
+
+        data_frame = pd.read_excel(BytesIO(response.content))
+        self.assertEqual(
+            list(data_frame.columns),
+            ["Employee No", "First Name", "Last Name", "Phone", "Email", "Gender"],
+        )
+
+    def test_work_info_import_accepts_downloaded_template_file(self):
+        template_response = self.client.get(reverse("work-info-import-file"))
+        self.assertEqual(template_response.status_code, 200)
+
+        file_buffer = SimpleUploadedFile(
+            "work_info_template.xlsx",
+            template_response.content,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response = self._post_import(file_buffer)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Employee.objects.filter(employee_no="EMP001").exists())
+        self.assertIn("Import Successful", response.content.decode("utf-8"))
+
+    def test_work_info_import_shows_warning_when_create_fails(self):
+        file_buffer = self._build_excel_file(
+            [self._valid_import_row(**{"Employee No": "EMP2001", "Email": "emp2001@example.com"})]
+        )
+
+        with patch("employee.views.bulk_create_employee_import", return_value=[]), patch(
+            "employee.views.threading.Thread"
+        ) as view_thread, patch("employee.methods.methods.threading.Thread") as methods_thread:
+            view_thread.return_value.start.return_value = None
+            methods_thread.return_value.start.return_value = None
+            response = self.client.post(
+                reverse("work-info-import"),
+                {"file": file_buffer},
+                HTTP_HX_REQUEST="true",
+            )
+
+        content = response.content.decode("utf-8")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Import Warning", content)
+        self.assertIn("No Employees were imported.", content)
+        self.assertIn("Download Error File", content)
+        self.assertFalse(Employee.objects.filter(employee_no="EMP2001").exists())
+
+    def test_work_info_import_defaults_company_from_selected_company(self):
+        company = Company.objects.create(
+            company="Demo Company",
+            address="Sample Address",
+            country="PH",
+            state="NCR",
+            city="Manila",
+            zip="1000",
+        )
+        session = self.client.session
+        session["selected_company"] = str(company.id)
+        session.save()
+
+        file_buffer = self._build_excel_file(
+            [self._valid_import_row(**{"Employee No": "EMP3001", "Email": "emp3001@example.com", "Company": ""})]
+        )
+        response = self._post_import(file_buffer)
+
+        self.assertEqual(response.status_code, 200)
+        employee = Employee.objects.get(employee_no="EMP3001")
+        work_info = EmployeeWorkInformation.objects.get(employee_id=employee)
+        self.assertEqual(work_info.company_id, company)
 
     def test_work_info_import_creates_employee_and_work_info(self):
         file_buffer = self._build_excel_file([self._valid_import_row()])
