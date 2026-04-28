@@ -965,7 +965,70 @@ def kanban_view(request):
     )
 
 
-portal_user = {}
+ONBOARDING_PENDING_USERS_SESSION_KEY = "onboarding_pending_users"
+
+
+def _save_pending_onboarding_user(request, token, user):
+    """
+    Persist onboarding user payload in session for the current token.
+    """
+    pending_users = request.session.get(ONBOARDING_PENDING_USERS_SESSION_KEY, {})
+    pending_users[token] = {
+        "username": user.username,
+        "password": user.password,
+    }
+    request.session[ONBOARDING_PENDING_USERS_SESSION_KEY] = pending_users
+    request.session.modified = True
+
+
+def _load_pending_onboarding_user(request, token):
+    """
+    Load onboarding user payload from session for the current token.
+    Returns an unsaved User instance when data exists.
+    """
+    pending_users = request.session.get(ONBOARDING_PENDING_USERS_SESSION_KEY, {})
+    pending_user = pending_users.get(token)
+    if not pending_user:
+        return None
+
+    username = pending_user.get("username")
+    password = pending_user.get("password")
+    if not username or not password:
+        return None
+
+    user = User(username=username)
+    user.password = password
+    return user
+
+
+def _clear_pending_onboarding_user(request, token):
+    """
+    Remove onboarding user payload from session for the current token.
+    """
+    pending_users = request.session.get(ONBOARDING_PENDING_USERS_SESSION_KEY, {})
+    if token not in pending_users:
+        return
+
+    pending_users.pop(token, None)
+    if pending_users:
+        request.session[ONBOARDING_PENDING_USERS_SESSION_KEY] = pending_users
+    else:
+        request.session.pop(ONBOARDING_PENDING_USERS_SESSION_KEY, None)
+    request.session.modified = True
+
+
+def _onboarding_step_redirect(onboarding_portal):
+    """
+    Redirect to the latest onboarding step based on current progress.
+    """
+    token = onboarding_portal.token
+    if onboarding_portal.count >= 3:
+        return redirect("employee-bank-details", token)
+    if onboarding_portal.count == 2:
+        return redirect("employee-creation", token)
+    if onboarding_portal.count == 1:
+        return redirect("profile-view", token)
+    return None
 
 
 def user_creation(request, token):
@@ -984,8 +1047,9 @@ def user_creation(request, token):
         onboarding_portal = OnboardingPortal.objects.get(token=token)
         if not onboarding_portal or onboarding_portal.used is True:
             return render(request, "404.html")
-        if onboarding_portal.count == 3:
-            return redirect("employee-bank-details", token)
+        step_redirect = _onboarding_step_redirect(onboarding_portal)
+        if step_redirect is not None:
+            return step_redirect
         candidate = onboarding_portal.candidate_id
         user = User.objects.filter(username=candidate.email).first()
         form = UserCreationForm(instance=user)
@@ -1022,10 +1086,7 @@ def user_save(form, onboarding_portal, request, token):
     """
     user = form.save(commit=False)
     user.username = onboarding_portal.candidate_id.email
-    if request.session.session_key is None:
-        request.session.save()
-    session_key = request.session.session_key
-    portal_user[session_key] = user
+    _save_pending_onboarding_user(request, token, user)
     onboarding_portal.count = 1
     onboarding_portal.save()
     messages.success(request, _("Account created successfully.."))
@@ -1090,11 +1151,13 @@ def employee_creation(request, token):
         "address": candidate.address,
         "dob": candidate.dob,
     }
-    session_key = request.session.session_key
-    user = portal_user.get(session_key)
+    user = User.objects.filter(username=candidate.email).first()
     if user is None:
-        user = User.objects.filter(username=candidate.email).first()
+        user = _load_pending_onboarding_user(request, token)
     if user is None:
+        _clear_pending_onboarding_user(request, token)
+        onboarding_portal.count = 0
+        onboarding_portal.save()
         messages.error(
             request,
             _("Your onboarding session has expired. Please create your account again."),
@@ -1123,7 +1186,8 @@ def employee_creation(request, token):
             candidate_email=candidate.email,
         )
         if form.is_valid():
-            user.save()
+            if user.pk is None:
+                user.save()
             login(request, user)
             employee_personal_info = form.save(commit=False)
             employee_personal_info.employee_user_id = user
@@ -1163,6 +1227,7 @@ def employee_creation(request, token):
 
             onboarding_portal.count = 3
             onboarding_portal.save()
+            _clear_pending_onboarding_user(request, token)
             messages.success(
                 request, _("Employee personal details created successfully..")
             )
