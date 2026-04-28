@@ -283,3 +283,44 @@ class LeaveRequestForceCleanupTests(SimpleTestCase):
         self.assertIn("Deletion blocked by related records", error_message)
         self.assertIn("Work record", error_message)
         self.assertIn("Penalty account", error_message)
+
+    @patch("leave.views._force_cleanup_leave_request_dependencies")
+    @patch("leave.views.LeaveRequest._base_manager.filter")
+    def test_force_delete_bypasses_model_delete_guard(
+        self, base_manager_filter_mock, force_cleanup_mock
+    ):
+        leave_request = MagicMock()
+        leave_request.id = 42
+
+        delete_qs = MagicMock()
+        delete_qs.delete.return_value = (1, {})
+        base_manager_filter_mock.return_value = delete_qs
+
+        deleted, error_message = leave_views._delete_leave_request_record(
+            leave_request, force_delete=True
+        )
+
+        self.assertTrue(deleted)
+        self.assertIsNone(error_message)
+        force_cleanup_mock.assert_called_once_with(leave_request)
+        base_manager_filter_mock.assert_called_once_with(id=42)
+        delete_qs.delete.assert_called_once()
+        leave_request.delete.assert_not_called()
+        leave_request.update_leave_clashes_count.assert_called_once()
+
+    @patch("leave.views.LeaveRequest._base_manager.filter")
+    def test_non_force_delete_reports_when_row_still_exists(self, base_manager_filter_mock):
+        leave_request = MagicMock()
+        leave_request.id = 99
+        leave_request.status = "approved"
+
+        exists_qs = MagicMock()
+        exists_qs.exists.return_value = True
+        base_manager_filter_mock.return_value = exists_qs
+
+        deleted, error_message = leave_views._delete_leave_request_record(
+            leave_request, force_delete=False
+        )
+
+        self.assertFalse(deleted)
+        self.assertIn("cannot delete leave request with status", error_message.lower())

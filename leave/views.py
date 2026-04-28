@@ -127,10 +127,25 @@ def _delete_leave_request_record(leave_request, force_delete=False):
     """
     Delete a leave request, optionally cleaning dependencies first.
     """
-    if force_delete:
-        _force_cleanup_leave_request_dependencies(leave_request)
     try:
+        if force_delete:
+            _force_cleanup_leave_request_dependencies(leave_request)
+            deleted_count, delete_result = LeaveRequest._base_manager.filter(
+                id=leave_request.id
+            ).delete()
+            if deleted_count:
+                leave_request.update_leave_clashes_count()
+                return True, None
+            return False, _("Leave request not found.")
+
         leave_request.delete()
+        if LeaveRequest._base_manager.filter(id=leave_request.id).exists():
+            return (
+                False,
+                _("You cannot delete leave request with status {}.").format(
+                    leave_request.status
+                ),
+            )
         return True, None
     except ProtectedError as e:
         return False, _delete_blocked_message(e.protected_objects)
