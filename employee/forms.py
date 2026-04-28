@@ -142,6 +142,10 @@ class ModelForm(forms.ModelForm):
             elif isinstance(widget, forms.Select):
                 if not isinstance(field, forms.ModelMultipleChoiceField):
                     field.empty_label = _("---Choose {label}---").format(label=label)
+                # Employee forms should allow clearing optional selects (e.g. Reporting Manager)
+                # by using the option template that does not disable empty choices.
+                if not field.required:
+                    widget.option_template_name = "horilla_widgets/select_option.html"
                 existing_class = widget.attrs.get("class", select_class)
                 widget.attrs.update({"class": existing_class})
 
@@ -439,6 +443,12 @@ class EmployeeWorkInformationForm(ModelForm):
                         self.fields[label].choices += [
                             ("create", _("Create New {} ").format(translated_label))
                         ]
+
+        # Some fields above are rebuilt as ChoiceField with Select widgets.
+        # Re-apply clearable empty-option template for optional selects.
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.Select) and not field.required:
+                field.widget.option_template_name = "horilla_widgets/select_option.html"
 
     def clean(self):
         cleaned_data = super().clean()
