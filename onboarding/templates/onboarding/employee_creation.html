@@ -60,7 +60,7 @@
                         {{ form.non_field_errors }}
                         <div class="row">
                             {% for field in form.visible_fields %}
-                                {% if field.label != "Employee profile" and field.label != 'Country' and field.label != 'State' and field.label != 'Address' and field.label != 'Badge id' and field.name != 'employee_no' %}
+                                {% if field.name != 'employee_profile' and field.name != 'country' and field.name != 'state' and field.name != 'address' and field.name != 'badge_id' and field.name != 'employee_no' %}
                                     <div class="col-lg-6">
                                         <div class="oh-input__group">
                                             <label class="oh-label {% if field.field.required %}required-star{% endif %}" for="id_{{ field.name }}" title="{{ field.help_text }}">
@@ -74,7 +74,7 @@
                                             {{ field.errors }}
                                         </div>
                                     </div>
-                                {% elif field.label == 'Address' %}
+                                {% elif field.name == 'address' %}
                                     <div class="col-lg-12">
                                         <div class="oh-input__group">
                                             <label class="oh-label {% if field.field.required %}required-star{% endif %}" for="id_{{ field.name }}" title="{{ field.help_text }}">
@@ -84,7 +84,7 @@
                                             {{ field.errors }}
                                         </div>
                                     </div>
-                                {% elif field.label == 'Country' %}
+                                {% elif field.name == 'country' %}
                                     <div class="row">
                                         <div class="col-lg-6">
                                             <label class="oh-label {% if form.country.field.required %}required-star{% endif %}" for="id_country">{% trans "Country" %}</label>
@@ -93,7 +93,7 @@
                                             <span class="dropdown-wrapper" aria-hidden="true"></span>
                                         </div>
                                         <div class="col-lg-6">
-                                            <label class="oh-label d-block {% if form.state.field.required %}required-star{% endif %}" for="id_state">{% trans "State" %}</label>
+                                            <label class="oh-label d-block {% if form.state.field.required %}required-star{% endif %}" for="id_state">{% trans "Province" %}</label>
                                             <select name="state" class="w-100 oh-select-2" id="id_state" data-selected="{{ form.state.value|default:'' }}"></select>
                                             {{ form.state.errors }}
                                         </div>

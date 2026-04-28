@@ -64,7 +64,7 @@
                                     <div class="oh-input-group">
                                         <label class="oh-label required-star" for="name">{% trans "Name" %}</label>
                                         <input type="text" id="name" name="name" required class="oh-input w-100"
-                                            placeholder="e.g. Jane Doe" value="{{ form.name.value|default:'' }}"/>
+                                            placeholder="e.g. Juan Dela Cruz" value="{{ form.name.value|default:'' }}"/>
                                         {{ form.name.errrors }}
                                     </div>
                                 </div>
@@ -103,7 +103,7 @@
                                     <div class="oh-input-group">
                                         <label class="oh-label required-star" for="email">{% trans "Email" %}</label>
                                         <input type="email" id="email" name="email" class="oh-input w-100" required
-                                            placeholder="e.g. janedoe@example.com" value="{{ form.email.value|default:'' }}" />
+                                            placeholder="example@mail.com" value="{{ form.email.value|default:'' }}" />
                                     </div>
                                     {{ form.email.errors }}
                                 </div>
@@ -112,7 +112,7 @@
                                     <div class="oh-input-group">
                                         <label class="oh-label required-star" for="phone">{% trans "Phone" %}</label>
                                         <input type="text" id="phone" class="oh-input w-100" name="mobile"
-                                            placeholder="e.g. +1 245 999 999" value="{{ form.mobile.value|default:'' }}" />
+                                            placeholder="+63 917 123 4567" value="{{ form.mobile.value|default:'' }}" />
                                         {{ form.mobile.errors }}
                                     </div>
                                 </div>
@@ -148,7 +148,7 @@
                                 <div class="col-sm-12 col-md-6 col-lg-12">
                                     <div class="oh-input-group">
                                         <label class="oh-label required-star" for="address">{% trans "Address" %}</label>
-                                        <textarea id="address" name="address" required class="oh-input oh-input--textarea w-100">{{ form.address.value|default:'' }}</textarea>
+                                        <textarea id="address" name="address" required class="oh-input oh-input--textarea w-100" placeholder="e.g. Brgy. 1, Laoag City, Ilocos Norte">{{ form.address.value|default:'' }}</textarea>
                                         {{ form.address.errors }}
                                     </div>
                                 </div>
@@ -164,7 +164,7 @@
 
                                 <div class="col-sm-12 col-md-6 col-lg-6">
                                     <div class="oh-input-group">
-                                        <label class="oh-label required-star" for="id_state">{% trans "State" %}</label>
+                                        <label class="oh-label required-star" for="id_state">{% trans "Province" %}</label>
                                         <select name="state" required id="id_state"
                                             class="oh-select oh-select-2" data-selected="{{ form.state.value|default:'' }}"></select>
                                         {{ form.state.errors }}
@@ -175,7 +175,7 @@
                                     <div class="oh-input-group">
                                         <label class="oh-label required-star" for="city">{% trans "City" %}</label>
                                         <input type="text" id="city" required name="city" class="oh-input w-100"
-                                            placeholder="e.g. Kerala" value="{{ form.city.value|default:'' }}"/>
+                                            placeholder="e.g. Laoag City" value="{{ form.city.value|default:'' }}"/>
                                         {{ form.city.errors }}
                                     </div>
                                 </div>
@@ -184,7 +184,7 @@
                                     <div class="oh-input-group">
                                         <label class="oh-label required-star" for="zip">{% trans "Zip Code" %}</label>
                                         <input type="text" id="zip" required name="zip" class="oh-input w-100"
-                                            placeholder="e.g. 611 293" value="{{ form.zip.value|default:'' }}"/>
+                                            placeholder="e.g. 2900" value="{{ form.zip.value|default:'' }}"/>
                                         {{ form.zip.errors }}
                                     </div>
                                 </div>

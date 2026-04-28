@@ -35,7 +35,11 @@ from django.utils.translation import gettext_lazy as _
 
 from base.forms import Form
 from base.forms import ModelForm as BaseModelForm
-from base.methods import reload_queryset
+from base.methods import (
+    get_ph_field_label,
+    get_ph_field_placeholder,
+    reload_queryset,
+)
 from employee.filters import EmployeeFilter
 from employee.models import Employee
 from horilla import horilla_middlewares
@@ -87,6 +91,7 @@ class ModelForm(forms.ModelForm):
         checkbox_class = "oh-switch__checkbox"
 
         for field_name, field in self.fields.items():
+            field.label = get_ph_field_label(field_name, field.label)
             widget = field.widget
             label = _(field.label) if field.label else ""
 
@@ -101,7 +106,7 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                     }
                 )
 
@@ -116,7 +121,7 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                     }
                 )
 
@@ -135,7 +140,10 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": _(field.label.title()) if field.label else "",
+                        "placeholder": get_ph_field_placeholder(
+                            field_name,
+                            _(field.label.title()) if field.label else "",
+                        ),
                     }
                 )
 
@@ -152,7 +160,7 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                         "rows": 2,
                         "cols": 40,
                     }
@@ -193,6 +201,7 @@ class RegistrationForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         reload_queryset(self.fields)
         for field_name, field in self.fields.items():
+            field.label = get_ph_field_label(field_name, field.label)
             widget = field.widget
             if isinstance(widget, (forms.Select,)):
                 label = ""
@@ -206,6 +215,9 @@ class RegistrationForm(forms.ModelForm):
                 field.widget.attrs.update(
                     {
                         "class": "oh-input w-100",
+                        "placeholder": get_ph_field_placeholder(
+                            field_name, field.label
+                        ),
                     }
                 )
             elif isinstance(
@@ -227,6 +239,7 @@ class DropDownForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         reload_queryset(self.fields)
         for field_name, field in self.fields.items():
+            field.label = get_ph_field_label(field_name, field.label)
             widget = field.widget
             if isinstance(
                 widget,
@@ -243,7 +256,9 @@ class DropDownForm(forms.ModelForm):
                     field.widget.attrs.update(
                         {
                             "class": "oh-input oh-input--small oh-table__add-new-row d-block w-100",
-                            "placeholder": label,
+                            "placeholder": get_ph_field_placeholder(
+                                field_name, label
+                            ),
                         }
                     )
             elif isinstance(widget, (forms.Select,)):
@@ -259,7 +274,9 @@ class DropDownForm(forms.ModelForm):
                     field.widget.attrs.update(
                         {
                             "class": "oh-input oh-input--small oh-input--textarea",
-                            "placeholder": label,
+                            "placeholder": get_ph_field_placeholder(
+                                field_name, label
+                            ),
                             "rows": 1,
                             "cols": 40,
                         }

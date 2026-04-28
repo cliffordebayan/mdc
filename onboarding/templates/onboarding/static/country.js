@@ -267,7 +267,7 @@ function populateStates(countryElementId, stateElementId) {
     var stateElement = document.getElementById(stateElementId);
 
     stateElement.length = 0; // Fixed by Julian Woods
-    stateElement.options[0] = new Option('Select State', '');
+    stateElement.options[0] = new Option('Select Province', '');
     stateElement.selectedIndex = 0;
     if (s_a[selectedCountryIndex]) {
         state_arr = s_a[selectedCountryIndex].split("|")

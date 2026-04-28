@@ -45,7 +45,7 @@
             </div>
             <div class="col-12 col-sm-12 col-md-6 col-lg-6">
                 <div class="oh-input-group mb-2">
-                    <label for="{{ form.state.id_for_label }}" class="mb-1">{% trans "State" %}</label>
+                    <label for="{{ form.state.id_for_label }}" class="mb-1">{% trans "Province" %}</label>
                     <select name="state" id="{{ form.state.id_for_label }}" required class="oh-select oh-select-2" data-selected="{{ form.state.value|default:'' }}"></select>
                     {{ form.state.errors }}
                 </div>
@@ -60,7 +60,7 @@
             </div>
             <div class="col-12 col-sm-12 col-md-6 col-lg-6">
                 <div class="oh-input-group mb-2">
-                    <label for="id_{{form.zip.name}}" class="mb-1">{% trans "Zip" %}</label>
+                    <label for="id_{{form.zip.name}}" class="mb-1">{% trans "Zip Code" %}</label>
                     {{form.zip}} {{form.zip.errors}}
                 </div>
             </div>

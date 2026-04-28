@@ -695,7 +695,7 @@ function populateStates(countryElementId, stateElementId) {
     var selectedState = stateEl.getAttribute('data-selected') || '';
 
     stateEl.length = 0;
-    stateEl.options[0] = new Option("Select State", "");
+    stateEl.options[0] = new Option("Select Province", "");
     stateEl.selectedIndex = 0;
 
     if (s_a[selectedCountryIndex]) {

@@ -32,7 +32,11 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as _trans
 
-from base.methods import reload_queryset
+from base.methods import (
+    get_ph_field_label,
+    get_ph_field_placeholder,
+    reload_queryset,
+)
 from base.models import (
     Announcement,
     AnnouncementComment,
@@ -202,6 +206,7 @@ class ModelForm(forms.ModelForm):
         checkbox_class = "oh-switch__checkbox"
 
         for field_name, field in self.fields.items():
+            field.label = get_ph_field_label(field_name, field.label)
             widget = field.widget
             label = _(field.label) if field.label else ""
 
@@ -216,7 +221,7 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                     }
                 )
 
@@ -231,7 +236,7 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                     }
                 )
 
@@ -250,7 +255,10 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": _(field.label.title()) if field.label else "",
+                        "placeholder": get_ph_field_placeholder(
+                            field_name,
+                            _(field.label.title()) if field.label else "",
+                        ),
                     }
                 )
 
@@ -267,7 +275,7 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                         "rows": 2,
                         "cols": 40,
                     }
@@ -317,6 +325,7 @@ class Form(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field_name, field in self.fields.items():
+            field.label = get_ph_field_label(field_name, field.label)
             widget = field.widget
             if isinstance(
                 widget, (forms.NumberInput, forms.EmailInput, forms.TextInput)
@@ -324,7 +333,10 @@ class Form(forms.Form):
                 if field.label is not None:
                     label = _(field.label)
                     field.widget.attrs.update(
-                        {"class": "oh-input w-100", "placeholder": label}
+                        {
+                            "class": "oh-input w-100",
+                            "placeholder": get_ph_field_placeholder(field_name, label),
+                        }
                     )
             elif isinstance(widget, (forms.Select,)):
                 label = ""
@@ -337,7 +349,7 @@ class Form(forms.Form):
                 field.widget.attrs.update(
                     {
                         "class": "oh-input w-100",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                         "rows": 2,
                         "cols": 40,
                     }

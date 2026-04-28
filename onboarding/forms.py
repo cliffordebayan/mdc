@@ -33,7 +33,11 @@ from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy as _
 
 from base.forms import ModelForm
-from base.methods import reload_queryset
+from base.methods import (
+    get_ph_field_label,
+    get_ph_field_placeholder,
+    reload_queryset,
+)
 from employee.filters import EmployeeFilter
 from employee.forms import EmployeeForm
 from employee.models import Employee
@@ -51,7 +55,8 @@ class UserCreationFormCustom(UserForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         reload_queryset(self.fields)
-        for _, field in self.fields.items():
+        for field_name, field in self.fields.items():
+            field.label = get_ph_field_label(field_name, field.label)
             widget = field.widget
             if isinstance(
                 widget,
@@ -65,7 +70,9 @@ class UserCreationFormCustom(UserForm):
                 field.widget.attrs.update(
                     {
                         "class": "oh-input oh-input--password w-100",
-                        "placeholder": field.label,
+                        "placeholder": get_ph_field_placeholder(
+                            field_name, field.label
+                        ),
                     }
                 )
             elif isinstance(widget, (forms.DateField)):
@@ -74,7 +81,12 @@ class UserCreationFormCustom(UserForm):
                 widget, (forms.NumberInput, forms.EmailInput, forms.TextInput)
             ):
                 field.widget.attrs.update(
-                    {"class": "oh-input w-100", "placeholder": field.label}
+                    {
+                        "class": "oh-input w-100",
+                        "placeholder": get_ph_field_placeholder(
+                            field_name, field.label
+                        ),
+                    }
                 )
             elif isinstance(widget, (forms.Select,)):
                 field.empty_label = f"---Choose {field.label}---"
@@ -83,7 +95,9 @@ class UserCreationFormCustom(UserForm):
                 field.widget.attrs.update(
                     {
                         "class": "oh-input w-100",
-                        "placeholder": field.label,
+                        "placeholder": get_ph_field_placeholder(
+                            field_name, field.label
+                        ),
                         "rows": 2,
                         "cols": 40,
                     }

@@ -35,7 +35,12 @@ from django.template.loader import render_to_string
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as trans
 
-from base.methods import eval_validate, reload_queryset
+from base.methods import (
+    eval_validate,
+    get_ph_field_label,
+    get_ph_field_placeholder,
+    reload_queryset,
+)
 from employee.models import (
     Actiontype,
     BonusPoint,
@@ -77,6 +82,7 @@ class ModelForm(forms.ModelForm):
         checkbox_class = "oh-switch__checkbox"
 
         for field_name, field in self.fields.items():
+            field.label = get_ph_field_label(field_name, field.label)
             widget = field.widget
             label = _(field.label) if field.label else ""
 
@@ -91,7 +97,7 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                     }
                 )
 
@@ -106,7 +112,7 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                     }
                 )
 
@@ -125,7 +131,10 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": _(field.label.title()) if field.label else "",
+                        "placeholder": get_ph_field_placeholder(
+                            field_name,
+                            _(field.label.title()) if field.label else "",
+                        ),
                     }
                 )
 
@@ -142,7 +151,7 @@ class ModelForm(forms.ModelForm):
                 widget.attrs.update(
                     {
                         "class": f"{existing_class} form-control",
-                        "placeholder": label,
+                        "placeholder": get_ph_field_placeholder(field_name, label),
                         "rows": 2,
                         "cols": 40,
                     }
@@ -379,7 +388,9 @@ class EmployeeWorkInformationForm(ModelForm):
         )
 
         for field in self.fields:
-            self.fields[field].widget.attrs["placeholder"] = self.fields[field].label
+            self.fields[field].widget.attrs["placeholder"] = get_ph_field_placeholder(
+                field, self.fields[field].label
+            )
             if disable:
                 self.fields[field].disabled = True
         field_names = {
@@ -525,7 +536,9 @@ class EmployeeBankDetailsUpdateForm(ModelForm):
         for visible in self.visible_fields():
             visible.field.widget.attrs["class"] = "oh-input w-100"
         for field in self.fields:
-            self.fields[field].widget.attrs["placeholder"] = self.fields[field].label
+            self.fields[field].widget.attrs["placeholder"] = get_ph_field_placeholder(
+                field, self.fields[field].label
+            )
 
     def as_p(self, *args, **kwargs):
         context = {"form": self}
@@ -552,7 +565,9 @@ class EmployeeInsuranceForm(ModelForm):
         for visible in self.visible_fields():
             visible.field.widget.attrs["class"] = "oh-input w-100"
         for field in self.fields:
-            self.fields[field].widget.attrs["placeholder"] = self.fields[field].label
+            self.fields[field].widget.attrs["placeholder"] = get_ph_field_placeholder(
+                field, self.fields[field].label
+            )
 
 
 excel_columns = [
@@ -573,7 +588,7 @@ excel_columns = [
     ("phone", trans("Phone")),
     ("address", trans("Address")),
     ("city", trans("City")),
-    ("state", trans("State")),
+    ("state", trans("Province")),
     ("country", trans("Country")),
     ("zip", trans("Zip Code")),
     # Emergency

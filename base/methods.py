@@ -39,6 +39,52 @@ def users_count(self):
 Group.add_to_class("users_count", property(users_count))
 
 
+PH_FIELD_LABEL_OVERRIDES = {
+    "state": "Province",
+    "zip": "Zip Code",
+}
+
+
+PH_FIELD_PLACEHOLDER_OVERRIDES = {
+    "address": "e.g. Brgy. 1, Laoag City, Ilocos Norte",
+    "city": "e.g. Laoag City",
+    "email": "example@mail.com",
+    "emergency_contact": "+63 917 123 4567",
+    "employee_first_name": "e.g. Juan",
+    "employee_last_name": "e.g. Dela Cruz",
+    "first_name": "e.g. Juan",
+    "firstname": "e.g. Juan",
+    "full_name": "e.g. Juan Dela Cruz",
+    "last_name": "e.g. Dela Cruz",
+    "lastname": "e.g. Dela Cruz",
+    "mobile": "+63 917 123 4567",
+    "name": "e.g. Juan Dela Cruz",
+    "phone": "+63 917 123 4567",
+    "state": "e.g. Ilocos Norte",
+    "username": "example@mail.com",
+    "zip": "e.g. 2900",
+}
+
+
+def get_ph_field_label(field_name, default_label):
+    """
+    Return Philippines-localized labels for common address fields.
+    """
+    key = str(field_name or "").lower()
+    override = PH_FIELD_LABEL_OVERRIDES.get(key)
+    if override:
+        return _(override)
+    return default_label
+
+
+def get_ph_field_placeholder(field_name, default_placeholder=""):
+    """
+    Return Philippines-localized sample placeholders for common contact fields.
+    """
+    key = str(field_name or "").lower()
+    return PH_FIELD_PLACEHOLDER_OVERRIDES.get(key, default_placeholder)
+
+
 def get_hq_company_logo_url(host=None, protocol=None):
     """
     Return the HQ company logo URL.
