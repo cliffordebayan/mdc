@@ -194,8 +194,28 @@ def build_my_attendance_activity_meta(paginated_attendances):
     if not attendance_rows:
         return activity_meta_by_attendance
 
-    employee_ids = {row.employee_id_id for row in attendance_rows if row.employee_id_id}
-    attendance_dates = {row.attendance_date for row in attendance_rows if row.attendance_date}
+    def _get_employee_id(row):
+        employee_id = getattr(row, "employee_id_id", None)
+        if employee_id:
+            return employee_id
+        employee = getattr(row, "employee_id", None)
+        if isinstance(employee, int):
+            return employee
+        return getattr(employee, "id", None) or getattr(employee, "pk", None)
+
+    def _get_attendance_date(row):
+        return getattr(row, "attendance_date", None) or getattr(row, "clock_in_date", None)
+
+    employee_ids = set()
+    for row in attendance_rows:
+        employee_id = _get_employee_id(row)
+        if employee_id:
+            employee_ids.add(employee_id)
+    attendance_dates = {
+        attendance_date
+        for row in attendance_rows
+        if (attendance_date := _get_attendance_date(row))
+    }
     if not employee_ids or not attendance_dates:
         return activity_meta_by_attendance
 
@@ -209,11 +229,11 @@ def build_my_attendance_activity_meta(paginated_attendances):
 
     activities_by_key = defaultdict(list)
     for activity in activities:
-        key = f"{activity.employee_id_id}|{activity.attendance_date}"
+        key = f"{_get_employee_id(activity)}|{_get_attendance_date(activity)}"
         activities_by_key[key].append(activity)
 
     for attendance in attendance_rows:
-        key = f"{attendance.employee_id_id}|{attendance.attendance_date}"
+        key = f"{_get_employee_id(attendance)}|{_get_attendance_date(attendance)}"
         row_activities = activities_by_key.get(key, [])
 
         first_check_in_image_activity = next(
@@ -228,18 +248,113 @@ def build_my_attendance_activity_meta(paginated_attendances):
             ),
             None,
         )
-        latest_location_activity = next(
-            (activity for activity in reversed(row_activities) if activity.gps_address),
-            None,
-        )
-        latest_maps_activity = next(
+        first_check_in_location_activity = next(
             (
                 activity
-                for activity in reversed(row_activities)
-                if activity.latitude and activity.longitude
+                for activity in row_activities
+                if activity.clock_in_gps_address
+                or (activity.gps_address and activity.clock_out is None)
             ),
             None,
         )
+        first_check_in_maps_activity = next(
+            (
+                activity
+                for activity in row_activities
+                if (
+                    activity.clock_in_latitude is not None
+                    and activity.clock_in_longitude is not None
+                )
+                or (
+                    activity.clock_out is None
+                    and activity.latitude is not None
+                    and activity.longitude is not None
+                )
+            ),
+            None,
+        )
+        last_check_out_location_activity = next(
+            (
+                activity
+                for activity in reversed(row_activities)
+                if activity.clock_out_gps_address
+                or (activity.gps_address and activity.clock_out is not None)
+            ),
+            None,
+        )
+        last_check_out_maps_activity = next(
+            (
+                activity
+                for activity in reversed(row_activities)
+                if (
+                    activity.clock_out_latitude is not None
+                    and activity.clock_out_longitude is not None
+                )
+                or (
+                    activity.clock_out is not None
+                    and activity.latitude is not None
+                    and activity.longitude is not None
+                )
+            ),
+            None,
+        )
+
+        check_in_location = (
+            first_check_in_location_activity.clock_in_gps_address
+            if first_check_in_location_activity
+            and first_check_in_location_activity.clock_in_gps_address
+            else (
+                first_check_in_location_activity.gps_address
+                if first_check_in_location_activity
+                else None
+            )
+        )
+        check_out_location = (
+            last_check_out_location_activity.clock_out_gps_address
+            if last_check_out_location_activity
+            and last_check_out_location_activity.clock_out_gps_address
+            else (
+                last_check_out_location_activity.gps_address
+                if last_check_out_location_activity
+                else None
+            )
+        )
+
+        check_in_maps_url = None
+        if first_check_in_maps_activity:
+            if (
+                first_check_in_maps_activity.clock_in_latitude is not None
+                and first_check_in_maps_activity.clock_in_longitude is not None
+            ):
+                check_in_maps_url = (
+                    "https://www.google.com/maps?q="
+                    f"{first_check_in_maps_activity.clock_in_latitude},"
+                    f"{first_check_in_maps_activity.clock_in_longitude}"
+                )
+            else:
+                check_in_maps_url = (
+                    "https://www.google.com/maps?q="
+                    f"{first_check_in_maps_activity.latitude},"
+                    f"{first_check_in_maps_activity.longitude}"
+                )
+
+        check_out_maps_url = None
+        if last_check_out_maps_activity:
+            if (
+                last_check_out_maps_activity.clock_out_latitude is not None
+                and last_check_out_maps_activity.clock_out_longitude is not None
+            ):
+                check_out_maps_url = (
+                    "https://www.google.com/maps?q="
+                    f"{last_check_out_maps_activity.clock_out_latitude},"
+                    f"{last_check_out_maps_activity.clock_out_longitude}"
+                )
+            else:
+                check_out_maps_url = (
+                    "https://www.google.com/maps?q="
+                    f"{last_check_out_maps_activity.latitude},"
+                    f"{last_check_out_maps_activity.longitude}"
+                )
 
         meta = {
             "check_in_image_url": (
@@ -252,14 +367,12 @@ def build_my_attendance_activity_meta(paginated_attendances):
                 if last_check_out_image_activity
                 else None
             ),
-            "location": (
-                latest_location_activity.gps_address if latest_location_activity else None
-            ),
-            "maps_url": (
-                f"https://www.google.com/maps?q={latest_maps_activity.latitude},{latest_maps_activity.longitude}"
-                if latest_maps_activity
-                else None
-            ),
+            "check_in_location": check_in_location,
+            "check_in_maps_url": check_in_maps_url,
+            "check_out_location": check_out_location,
+            "check_out_maps_url": check_out_maps_url,
+            "location": check_out_location or check_in_location,
+            "maps_url": check_out_maps_url or check_in_maps_url,
         }
 
         attendance.activity_meta = meta

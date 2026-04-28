@@ -108,18 +108,53 @@
             </div>
             {% endif %}
 
-            {% if activity.latitude and activity.longitude %}
+            {% if activity.clock_in_gps_address or activity.clock_in_latitude != None and activity.clock_in_longitude != None or activity.gps_address and not activity.clock_out or activity.clock_out == None and activity.latitude != None and activity.longitude != None %}
             <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
                 <div class="oh-timeoff-modal__stat">
-                    <span class="oh-timeoff-modal__stat-title">{% trans "Location" %}</span>
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Check In Location" %}</span>
                     <span class="oh-timeoff-modal__stat-count" style="font-size: 14px;">
-                        {% if activity.gps_address %}
+                        {% if activity.clock_in_gps_address %}
+                            <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                            {{ activity.clock_in_gps_address }}<br/>
+                        {% elif activity.gps_address and not activity.clock_out %}
                             <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
                             {{ activity.gps_address }}<br/>
                         {% endif %}
-                        <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" style="font-size:12px;">
-                            <ion-icon name="map-outline" style="vertical-align:middle;"></ion-icon> {% trans "View Map" %}
-                        </a>
+                        {% if activity.clock_in_latitude != None and activity.clock_in_longitude != None %}
+                            <a href="https://www.google.com/maps?q={{ activity.clock_in_latitude }},{{ activity.clock_in_longitude }}" target="_blank" rel="noopener noreferrer" style="font-size:12px;">
+                                <ion-icon name="map-outline" style="vertical-align:middle;"></ion-icon> {% trans "View Map" %}
+                            </a>
+                        {% elif activity.clock_out == None and activity.latitude != None and activity.longitude != None %}
+                            <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" style="font-size:12px;">
+                                <ion-icon name="map-outline" style="vertical-align:middle;"></ion-icon> {% trans "View Map" %}
+                            </a>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if activity.clock_out_gps_address or activity.clock_out_latitude != None and activity.clock_out_longitude != None or activity.gps_address and activity.clock_out or activity.clock_out and activity.latitude != None and activity.longitude != None %}
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Check Out Location" %}</span>
+                    <span class="oh-timeoff-modal__stat-count" style="font-size: 14px;">
+                        {% if activity.clock_out_gps_address %}
+                            <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                            {{ activity.clock_out_gps_address }}<br/>
+                        {% elif activity.gps_address and activity.clock_out %}
+                            <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                            {{ activity.gps_address }}<br/>
+                        {% endif %}
+                        {% if activity.clock_out_latitude != None and activity.clock_out_longitude != None %}
+                            <a href="https://www.google.com/maps?q={{ activity.clock_out_latitude }},{{ activity.clock_out_longitude }}" target="_blank" rel="noopener noreferrer" style="font-size:12px;">
+                                <ion-icon name="map-outline" style="vertical-align:middle;"></ion-icon> {% trans "View Map" %}
+                            </a>
+                        {% elif activity.clock_out and activity.latitude != None and activity.longitude != None %}
+                            <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" style="font-size:12px;">
+                                <ion-icon name="map-outline" style="vertical-align:middle;"></ion-icon> {% trans "View Map" %}
+                            </a>
+                        {% endif %}
                     </span>
                 </div>
             </div>

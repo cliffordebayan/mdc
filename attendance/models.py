@@ -83,6 +83,24 @@ class AttendanceActivity(HorillaModel):
         blank=True,
         verbose_name=_("Clock Out Selfie"),
     )
+    clock_in_latitude = models.FloatField(
+        null=True, blank=True, verbose_name=_("Clock In Latitude")
+    )
+    clock_in_longitude = models.FloatField(
+        null=True, blank=True, verbose_name=_("Clock In Longitude")
+    )
+    clock_in_gps_address = models.CharField(
+        max_length=500, null=True, blank=True, verbose_name=_("Clock In GPS Address")
+    )
+    clock_out_latitude = models.FloatField(
+        null=True, blank=True, verbose_name=_("Clock Out Latitude")
+    )
+    clock_out_longitude = models.FloatField(
+        null=True, blank=True, verbose_name=_("Clock Out Longitude")
+    )
+    clock_out_gps_address = models.CharField(
+        max_length=500, null=True, blank=True, verbose_name=_("Clock Out GPS Address")
+    )
     latitude = models.FloatField(null=True, blank=True, verbose_name=_("Latitude"))
     longitude = models.FloatField(null=True, blank=True, verbose_name=_("Longitude"))
     gps_address = models.CharField(max_length=500, null=True, blank=True, verbose_name=_("GPS Address"))
@@ -165,7 +183,41 @@ class AttendanceActivity(HorillaModel):
 
     @property
     def maps_url(self):
-        if self.latitude and self.longitude:
+        if self.clock_out_maps_url:
+            return self.clock_out_maps_url
+        if self.clock_in_maps_url:
+            return self.clock_in_maps_url
+        if self.latitude is not None and self.longitude is not None:
+            return f"https://www.google.com/maps?q={self.latitude},{self.longitude}"
+        return None
+
+    @property
+    def clock_in_maps_url(self):
+        if self.clock_in_latitude is not None and self.clock_in_longitude is not None:
+            return (
+                "https://www.google.com/maps?q="
+                f"{self.clock_in_latitude},{self.clock_in_longitude}"
+            )
+        if (
+            self.clock_out is None
+            and self.latitude is not None
+            and self.longitude is not None
+        ):
+            return f"https://www.google.com/maps?q={self.latitude},{self.longitude}"
+        return None
+
+    @property
+    def clock_out_maps_url(self):
+        if self.clock_out_latitude is not None and self.clock_out_longitude is not None:
+            return (
+                "https://www.google.com/maps?q="
+                f"{self.clock_out_latitude},{self.clock_out_longitude}"
+            )
+        if (
+            self.clock_out is not None
+            and self.latitude is not None
+            and self.longitude is not None
+        ):
             return f"https://www.google.com/maps?q={self.latitude},{self.longitude}"
         return None
 
@@ -395,6 +447,10 @@ class Attendance(HorillaModel):
 
     @property
     def location(self):
+        if self.check_out_location:
+            return self.check_out_location
+        if self.check_in_location:
+            return self.check_in_location
         activity = (
             self._day_activities()
             .filter(gps_address__isnull=False)
@@ -406,6 +462,10 @@ class Attendance(HorillaModel):
 
     @property
     def maps(self):
+        if self.check_out_maps:
+            return self.check_out_maps
+        if self.check_in_maps:
+            return self.check_in_maps
         activity = (
             self._day_activities()
             .filter(latitude__isnull=False, longitude__isnull=False)
@@ -414,6 +474,96 @@ class Attendance(HorillaModel):
         )
         if activity:
             return f"https://www.google.com/maps?q={activity.latitude},{activity.longitude}"
+        return None
+
+    @property
+    def check_in_location(self):
+        activity = (
+            self._day_activities()
+            .filter(clock_in_gps_address__isnull=False)
+            .exclude(clock_in_gps_address="")
+            .first()
+        )
+        if activity:
+            return activity.clock_in_gps_address
+        legacy_activity = (
+            self._day_activities()
+            .filter(gps_address__isnull=False, clock_out__isnull=True)
+            .exclude(gps_address="")
+            .first()
+        )
+        if legacy_activity:
+            return legacy_activity.gps_address
+        return None
+
+    @property
+    def check_out_location(self):
+        activity = (
+            self._day_activities()
+            .filter(clock_out_gps_address__isnull=False)
+            .exclude(clock_out_gps_address="")
+            .order_by("-clock_out_date", "-clock_out", "-id")
+            .first()
+        )
+        if activity:
+            return activity.clock_out_gps_address
+        legacy_activity = (
+            self._day_activities()
+            .filter(gps_address__isnull=False, clock_out__isnull=False)
+            .exclude(gps_address="")
+            .order_by("-clock_out_date", "-clock_out", "-id")
+            .first()
+        )
+        if legacy_activity:
+            return legacy_activity.gps_address
+        return None
+
+    @property
+    def check_in_maps(self):
+        activity = (
+            self._day_activities()
+            .filter(clock_in_latitude__isnull=False, clock_in_longitude__isnull=False)
+            .first()
+        )
+        if activity:
+            return (
+                "https://www.google.com/maps?q="
+                f"{activity.clock_in_latitude},{activity.clock_in_longitude}"
+            )
+        legacy_activity = (
+            self._day_activities()
+            .filter(latitude__isnull=False, longitude__isnull=False, clock_out__isnull=True)
+            .first()
+        )
+        if legacy_activity:
+            return f"https://www.google.com/maps?q={legacy_activity.latitude},{legacy_activity.longitude}"
+        return None
+
+    @property
+    def check_out_maps(self):
+        activity = (
+            self._day_activities()
+            .filter(clock_out_latitude__isnull=False, clock_out_longitude__isnull=False)
+            .order_by("-clock_out_date", "-clock_out", "-id")
+            .first()
+        )
+        if activity:
+            return (
+                "https://www.google.com/maps?q="
+                f"{activity.clock_out_latitude},{activity.clock_out_longitude}"
+            )
+        legacy_activity = (
+            self._day_activities()
+            .filter(
+                latitude__isnull=False,
+                longitude__isnull=False,
+                clock_out__isnull=False,
+            )
+            .order_by("-clock_out_date", "-clock_out", "-id")
+            .first()
+        )
+        if legacy_activity:
+            return f"https://www.google.com/maps?q={legacy_activity.latitude},{legacy_activity.longitude}"
         return None
 
     def requested_fields(self):

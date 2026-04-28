@@ -34,6 +34,10 @@
                   <div class="oh-sticky-table__th">{% trans "At Work" %}</div>
                   <div class="oh-sticky-table__th">{% trans "Pending Hours" %}</div>
                   <div class="oh-sticky-table__th">{% trans "Overtime" %}</div>
+                  <div class="oh-sticky-table__th">{% trans "Check In Location" %}</div>
+                  <div class="oh-sticky-table__th">{% trans "Check In Map" %}</div>
+                  <div class="oh-sticky-table__th">{% trans "Check Out Location" %}</div>
+                  <div class="oh-sticky-table__th">{% trans "Check Out Map" %}</div>
                 </div>
               </div>
               <div class="oh-sticky-table__tbody">
@@ -88,6 +92,26 @@
                   </div>
                   <div class="oh-sticky-table__td">
                     {{attendance.attendance_overtime}}
+                  </div>
+                  <div class="oh-sticky-table__td">{{ attendance.check_in_location|default:"&mdash;" }}</div>
+                  <div class="oh-sticky-table__td">
+                    {% if attendance.check_in_maps %}
+                    <a href="{{ attendance.check_in_maps }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
+                      {% trans "View Map" %}
+                    </a>
+                    {% else %}
+                    <span class="oh-text--light">&mdash;</span>
+                    {% endif %}
+                  </div>
+                  <div class="oh-sticky-table__td">{{ attendance.check_out_location|default:"&mdash;" }}</div>
+                  <div class="oh-sticky-table__td">
+                    {% if attendance.check_out_maps %}
+                    <a href="{{ attendance.check_out_maps }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
+                      {% trans "View Map" %}
+                    </a>
+                    {% else %}
+                    <span class="oh-text--light">&mdash;</span>
+                    {% endif %}
                   </div>
                   <div class="oh-sticky-table__td oh-sticky-table__right">
                     <div class="oh-btn-group">

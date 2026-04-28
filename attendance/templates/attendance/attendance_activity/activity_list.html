@@ -102,8 +102,10 @@
                         <div data-cell-index="13" data-cell-title="{% trans 'Work Hours' %}" class='oh-sticky-table__th'>{% trans "Work Hours" %}</div>
                         <div data-cell-index="14" data-cell-title="{% trans 'Pending Hour' %}" class='oh-sticky-table__th'>{% trans "Pending Hour" %}</div>
                         <div data-cell-index="15" data-cell-title="{% trans 'Overtime' %}" class='oh-sticky-table__th'>{% trans "Overtime" %}</div>
-                        <div data-cell-index="16" data-cell-title="{% trans 'Location' %}" class='oh-sticky-table__th'>{% trans "Location" %}</div>
-                        <div data-cell-index="17" data-cell-title="{% trans 'Maps' %}" class='oh-sticky-table__th'>{% trans "Maps" %}</div>
+                        <div data-cell-index="16" data-cell-title="{% trans 'Check In Location' %}" class='oh-sticky-table__th'>{% trans "Check In Location" %}</div>
+                        <div data-cell-index="17" data-cell-title="{% trans 'Check In Map' %}" class='oh-sticky-table__th'>{% trans "Check In Map" %}</div>
+                        <div data-cell-index="18" data-cell-title="{% trans 'Check Out Location' %}" class='oh-sticky-table__th'>{% trans "Check Out Location" %}</div>
+                        <div data-cell-index="19" data-cell-title="{% trans 'Check Out Map' %}" class='oh-sticky-table__th'>{% trans "Check Out Map" %}</div>
                         {% if perms.attendance.delete_attendanceactivity %}
                             <div class='oh-sticky-table__th oh-sticky-table__right' scope="col" style="width: 86px;">{% trans "Actions" %}</div>
                         {% endif %}
@@ -128,8 +130,8 @@
                                     <span class="oh-profile__name oh-text--dark">{{activity.employee_id}}</span>
                                 </div>
                             </div>
-                            <div data-cell-index="0" class="oh-sticky-table__td">{{ activity.employee_id.employee_work_info.branch_id|default:"—" }}</div>
-                            <div data-cell-index="1" class="oh-sticky-table__td">{{ activity.employee_id.employee_work_info.department_id|default:"—" }}</div>
+                            <div data-cell-index="0" class="oh-sticky-table__td">{{ activity.employee_id.employee_work_info.branch_id|default:"&mdash;" }}</div>
+                            <div data-cell-index="1" class="oh-sticky-table__td">{{ activity.employee_id.employee_work_info.department_id|default:"&mdash;" }}</div>
                             <div data-cell-index="2" class="oh-sticky-table__td dateformat_changer">{{activity.attendance_date}}</div>
                             <div data-cell-index="3" class="oh-sticky-table__td">{{activity.shift_day}}</div>
                             <div data-cell-index="4" class="oh-sticky-table__td dateformat_changer">{{activity.clock_in_date}}</div>
@@ -138,7 +140,7 @@
                                 {% if activity.clock_in_selfie %}
                                     <img src="{{activity.clock_in_selfie.url}}" alt="Clock In" style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;" onclick="openImageModal('{{activity.clock_in_selfie.url}}', 'Clock In Selfie')" />
                                 {% else %}
-                                    <span class="oh-text--light">—</span>
+                                    <span class="oh-text--light">&mdash;</span>
                                 {% endif %}
                             </div>
                             <div data-cell-index="7" class="oh-sticky-table__td dateformat_changer">{{activity.clock_out_date}}</div>
@@ -147,32 +149,69 @@
                                 {% if activity.clock_out_selfie %}
                                     <img src="{{activity.clock_out_selfie.url}}" alt="Clock Out" style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;" onclick="openImageModal('{{activity.clock_out_selfie.url}}', 'Clock Out Selfie')" />
                                 {% else %}
-                                    <span class="oh-text--light">—</span>
+                                    <span class="oh-text--light">&mdash;</span>
                                 {% endif %}
                             </div>
-                            <div data-cell-index="10" class="oh-sticky-table__td">{{ activity.shift|default:"—" }}</div>
-                            <div data-cell-index="11" class="oh-sticky-table__td">{{ activity.work_type|default:"—" }}</div>
-                            <div data-cell-index="12" class="oh-sticky-table__td">{{ activity.min_hour|default:"—" }}</div>
+                            <div data-cell-index="10" class="oh-sticky-table__td">{{ activity.shift|default:"&mdash;" }}</div>
+                            <div data-cell-index="11" class="oh-sticky-table__td">{{ activity.work_type|default:"&mdash;" }}</div>
+                            <div data-cell-index="12" class="oh-sticky-table__td">{{ activity.min_hour|default:"&mdash;" }}</div>
                             <div data-cell-index="13" class="oh-sticky-table__td">{{activity.work_hours}}</div>
-                            <div data-cell-index="14" class="oh-sticky-table__td">{{ activity.pending_hour|default:"—" }}</div>
-                            <div data-cell-index="15" class="oh-sticky-table__td">{{ activity.overtime|default:"—" }}</div>
+                            <div data-cell-index="14" class="oh-sticky-table__td">{{ activity.pending_hour|default:"&mdash;" }}</div>
+                            <div data-cell-index="15" class="oh-sticky-table__td">{{ activity.overtime|default:"&mdash;" }}</div>
                             <div data-cell-index="16" class="oh-sticky-table__td">
-                                {% if activity.gps_address %}
+                                {% if activity.clock_in_gps_address %}
+                                    <span title="{{ activity.clock_in_gps_address }}" style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                        <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                                        {{ activity.clock_in_gps_address }}
+                                    </span>
+                                {% elif activity.gps_address and not activity.clock_out %}
                                     <span title="{{ activity.gps_address }}" style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                         <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
                                         {{ activity.gps_address }}
                                     </span>
                                 {% else %}
-                                    <span class="oh-text--light">—</span>
+                                    <span class="oh-text--light">&mdash;</span>
                                 {% endif %}
                             </div>
                             <div data-cell-index="17" class="oh-sticky-table__td" onclick="event.stopPropagation();">
-                                {% if activity.latitude and activity.longitude %}
+                                {% if activity.clock_in_latitude != None and activity.clock_in_longitude != None %}
+                                    <a href="https://www.google.com/maps?q={{ activity.clock_in_latitude }},{{ activity.clock_in_longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
+                                        <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon> View Map
+                                    </a>
+                                {% elif activity.clock_out == None and activity.latitude != None and activity.longitude != None %}
                                     <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
                                         <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon> View Map
                                     </a>
                                 {% else %}
-                                    <span class="oh-text--light">—</span>
+                                    <span class="oh-text--light">&mdash;</span>
+                                {% endif %}
+                            </div>
+                            <div data-cell-index="18" class="oh-sticky-table__td">
+                                {% if activity.clock_out_gps_address %}
+                                    <span title="{{ activity.clock_out_gps_address }}" style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                        <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                                        {{ activity.clock_out_gps_address }}
+                                    </span>
+                                {% elif activity.gps_address and activity.clock_out %}
+                                    <span title="{{ activity.gps_address }}" style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                        <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                                        {{ activity.gps_address }}
+                                    </span>
+                                {% else %}
+                                    <span class="oh-text--light">&mdash;</span>
+                                {% endif %}
+                            </div>
+                            <div data-cell-index="19" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                                {% if activity.clock_out_latitude != None and activity.clock_out_longitude != None %}
+                                    <a href="https://www.google.com/maps?q={{ activity.clock_out_latitude }},{{ activity.clock_out_longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
+                                        <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon> View Map
+                                    </a>
+                                {% elif activity.clock_out and activity.latitude != None and activity.longitude != None %}
+                                    <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
+                                        <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon> View Map
+                                    </a>
+                                {% else %}
+                                    <span class="oh-text--light">&mdash;</span>
                                 {% endif %}
                             </div>
                             {% if perms.attendance.delete_attendanceactivity %}

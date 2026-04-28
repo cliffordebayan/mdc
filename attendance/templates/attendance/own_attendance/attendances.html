@@ -205,16 +205,28 @@
               {% trans "Overtime" %}
             </div>
             <div
-              data-cell-index="15" data-cell-title='{% trans "Location" %}'
+              data-cell-index="15" data-cell-title='{% trans "Check In Location" %}'
               class="oh-sticky-table__th"
             >
-              {% trans "Location" %}
+              {% trans "Check In Location" %}
             </div>
             <div
-              data-cell-index="16" data-cell-title='{% trans "Maps" %}'
+              data-cell-index="16" data-cell-title='{% trans "Check In Map" %}'
               class="oh-sticky-table__th"
             >
-              {% trans "Maps" %}
+              {% trans "Check In Map" %}
+            </div>
+            <div
+              data-cell-index="17" data-cell-title='{% trans "Check Out Location" %}'
+              class="oh-sticky-table__th"
+            >
+              {% trans "Check Out Location" %}
+            </div>
+            <div
+              data-cell-index="18" data-cell-title='{% trans "Check Out Map" %}'
+              class="oh-sticky-table__th"
+            >
+              {% trans "Check Out Map" %}
             </div>
           </div>
         </div>
@@ -301,22 +313,51 @@
               {{attendance.attendance_overtime}}
             </div>
             <div data-cell-index="15" class="oh-sticky-table__td">
-              {% if attendance.activity_meta.location %}
+              {% if attendance.activity_meta.check_in_location %}
                 <span
-                  title="{{ attendance.activity_meta.location }}"
+                  title="{{ attendance.activity_meta.check_in_location }}"
                   style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
                 >
                   <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
-                  {{ attendance.activity_meta.location }}
+                  {{ attendance.activity_meta.check_in_location }}
                 </span>
               {% else %}
                 <span class="oh-text--light">&mdash;</span>
               {% endif %}
             </div>
             <div data-cell-index="16" class="oh-sticky-table__td" onclick="event.stopPropagation();">
-              {% if attendance.activity_meta.maps_url %}
+              {% if attendance.activity_meta.check_in_maps_url %}
                 <a
-                  href="{{ attendance.activity_meta.maps_url }}"
+                  href="{{ attendance.activity_meta.check_in_maps_url }}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="oh-btn oh-btn--primary-outline oh-btn--sm"
+                  style="font-size: 11px; white-space: nowrap;"
+                >
+                  <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
+                  {% trans "View Map" %}
+                </a>
+              {% else %}
+                <span class="oh-text--light">&mdash;</span>
+              {% endif %}
+            </div>
+            <div data-cell-index="17" class="oh-sticky-table__td">
+              {% if attendance.activity_meta.check_out_location %}
+                <span
+                  title="{{ attendance.activity_meta.check_out_location }}"
+                  style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
+                >
+                  <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                  {{ attendance.activity_meta.check_out_location }}
+                </span>
+              {% else %}
+                <span class="oh-text--light">&mdash;</span>
+              {% endif %}
+            </div>
+            <div data-cell-index="18" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+              {% if attendance.activity_meta.check_out_maps_url %}
+                <a
+                  href="{{ attendance.activity_meta.check_out_maps_url }}"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="oh-btn oh-btn--primary-outline oh-btn--sm"

@@ -757,7 +757,7 @@ def public_clock_in(request):
         # Get the newly created activity and ensure location_verified is set
         activity = AttendanceActivity.objects.filter(
             employee_id=employee, clock_out__isnull=True
-        ).last()
+        ).order_by("attendance_date", "id").last()
 
         if not activity:
             logger.error(f"Activity not created for employee {employee.id}")
@@ -781,9 +781,12 @@ def public_clock_in(request):
             if latitude and longitude:
                 lat_f = float(latitude)
                 lng_f = float(longitude)
+                activity.clock_in_latitude = lat_f
+                activity.clock_in_longitude = lng_f
+                activity.clock_in_gps_address = _reverse_geocode(lat_f, lng_f)
                 activity.latitude = lat_f
                 activity.longitude = lng_f
-                activity.gps_address = _reverse_geocode(lat_f, lng_f)
+                activity.gps_address = activity.clock_in_gps_address
                 activity.location_verified = True
             else:
                 activity.location_verified = False
@@ -869,7 +872,7 @@ def public_clock_out(request):
         # Check if employee is clocked in
         open_activity = AttendanceActivity.objects.filter(
             employee_id=employee, clock_out__isnull=True
-        ).last()
+        ).order_by("attendance_date", "id").last()
 
         if not open_activity:
             logger.info(f"Clock out - Employee not clocked in: {employee_id}")
@@ -905,9 +908,8 @@ def public_clock_out(request):
             )
 
         # Get the just-closed activity and update it
-        closed_activity = AttendanceActivity.objects.filter(
-            employee_id=employee, attendance_date=attendance.attendance_date
-        ).order_by("-id").first()
+        open_activity.refresh_from_db()
+        closed_activity = open_activity
 
         # Ensure location_verified has a value (required field)
         if closed_activity and closed_activity.location_verified is None:
@@ -925,14 +927,15 @@ def public_clock_out(request):
                 if latitude and longitude:
                     lat_f = float(latitude)
                     lng_f = float(longitude)
+                    closed_activity.clock_out_latitude = lat_f
+                    closed_activity.clock_out_longitude = lng_f
+                    closed_activity.clock_out_gps_address = _reverse_geocode(lat_f, lng_f)
                     closed_activity.latitude = lat_f
                     closed_activity.longitude = lng_f
-                    closed_activity.gps_address = _reverse_geocode(lat_f, lng_f)
+                    closed_activity.gps_address = closed_activity.clock_out_gps_address
                     closed_activity.location_verified = True
-                else:
-                    closed_activity.location_verified = False
             except (ValueError, TypeError):
-                closed_activity.location_verified = False
+                pass
 
             closed_activity.save()
 

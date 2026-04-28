@@ -1,5 +1,7 @@
 import json
+import importlib
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.contrib.sessions.middleware import SessionMiddleware
@@ -8,11 +10,12 @@ from django.test import RequestFactory, SimpleTestCase
 from django.urls import resolve
 from django.urls.exceptions import Resolver404
 
+from attendance.forms import AttendanceActivityExportForm, AttendanceExportForm
 from attendance.models import Attendance
 from attendance.views.clock_in_out import clock_out_attendance_and_activity
 from attendance.views.portal import public_clock_in, public_clock_out, verify_pin
 from attendance.views import views as attendance_views
-from attendance.views.views import _delete_blocked_message
+from attendance.views.views import _delete_blocked_message, build_my_attendance_activity_meta
 
 
 def attach_session(request):
@@ -132,6 +135,7 @@ class PortalClockOutTests(SimpleTestCase):
     def setUp(self):
         self.factory = RequestFactory()
 
+    @patch("attendance.views.portal._reverse_geocode", return_value="Test Address")
     @patch("attendance.views.portal.clock_out_attendance_and_activity")
     @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 4, 10, 17, 0, 0))
     @patch("attendance.views.portal.AttendanceActivity")
@@ -144,6 +148,7 @@ class PortalClockOutTests(SimpleTestCase):
         attendance_activity_model,
         _now_mock,
         clock_out_helper_mock,
+        _reverse_geocode_mock,
     ):
         request = self.factory.post(
             "/attendance/portal/clock-out/",
@@ -161,15 +166,11 @@ class PortalClockOutTests(SimpleTestCase):
         employee_model.objects.get.return_value = employee
 
         open_activity_qs = MagicMock()
-        open_activity_qs.last.return_value = MagicMock()
-
-        closed_activity = MagicMock()
-        closed_activity.location_verified = True
-        closed_activity.clock_out = datetime(2026, 4, 10, 17, 0, 0)
-        closed_qs = MagicMock()
-        closed_qs.order_by.return_value.first.return_value = closed_activity
-
-        attendance_activity_model.objects.filter.side_effect = [open_activity_qs, closed_qs]
+        open_activity = MagicMock()
+        open_activity.location_verified = True
+        open_activity.clock_out = datetime(2026, 4, 10, 17, 0, 0)
+        open_activity_qs.order_by.return_value.last.return_value = open_activity
+        attendance_activity_model.objects.filter.return_value = open_activity_qs
 
         attendance = MagicMock()
         attendance.attendance_date = date(2026, 4, 10)
@@ -184,6 +185,122 @@ class PortalClockOutTests(SimpleTestCase):
         self.assertTrue(payload["success"])
         clock_out_helper_mock.assert_called_once()
         self.assertFalse(clock_out_helper_mock.call_args.kwargs["auto_validate"])
+
+    @patch("attendance.views.portal._reverse_geocode", return_value="Clock Out Address")
+    @patch("attendance.views.portal.clock_out_attendance_and_activity")
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 4, 10, 17, 0, 0))
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_clock_out_updates_open_activity_record_locations(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        _now_mock,
+        clock_out_helper_mock,
+        _reverse_geocode_mock,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/clock-out/",
+            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
+        )
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": "1",
+            "verified_at": datetime.now().timestamp(),
+        }
+
+        employee = MagicMock()
+        employee.id = 1
+        employee.get_full_name.return_value = "Test Employee"
+        employee_model.objects.get.return_value = employee
+
+        open_activity_qs = MagicMock()
+        open_activity = MagicMock()
+        open_activity.location_verified = True
+        open_activity.clock_out = datetime(2026, 4, 10, 17, 0, 0)
+        open_activity.clock_in_gps_address = "Clock In Address"
+        open_activity.clock_in_latitude = 14.5001
+        open_activity.clock_in_longitude = 120.9001
+        open_activity.clock_out_gps_address = None
+        open_activity.clock_out_latitude = None
+        open_activity.clock_out_longitude = None
+        open_activity_qs.order_by.return_value.last.return_value = open_activity
+        attendance_activity_model.objects.filter.return_value = open_activity_qs
+
+        attendance = MagicMock()
+        attendance.attendance_date = date(2026, 4, 10)
+        attendance.attendance_worked_hour = "08:00"
+        clock_out_helper_mock.return_value = attendance
+
+        response = public_clock_out(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)
+        self.assertTrue(payload["success"])
+        open_activity.refresh_from_db.assert_called_once()
+        self.assertEqual(open_activity.clock_in_gps_address, "Clock In Address")
+        self.assertEqual(open_activity.clock_out_gps_address, "Clock Out Address")
+        self.assertEqual(open_activity.clock_out_latitude, 14.6)
+        self.assertEqual(open_activity.clock_out_longitude, 121.0)
+
+    @patch("attendance.views.portal.clock_out_attendance_and_activity")
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 4, 10, 17, 0, 0))
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_clock_out_invalid_coordinates_preserve_clock_in_location(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        _now_mock,
+        clock_out_helper_mock,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/clock-out/",
+            {"employee_id": "1", "latitude": "invalid", "longitude": "invalid"},
+        )
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": "1",
+            "verified_at": datetime.now().timestamp(),
+        }
+
+        employee = MagicMock()
+        employee.id = 1
+        employee.get_full_name.return_value = "Test Employee"
+        employee_model.objects.get.return_value = employee
+
+        open_activity_qs = MagicMock()
+        open_activity = MagicMock()
+        open_activity.location_verified = True
+        open_activity.clock_out = datetime(2026, 4, 10, 17, 0, 0)
+        open_activity.clock_in_gps_address = "Clock In Address"
+        open_activity.clock_in_latitude = 14.5001
+        open_activity.clock_in_longitude = 120.9001
+        open_activity.clock_out_gps_address = None
+        open_activity.clock_out_latitude = None
+        open_activity.clock_out_longitude = None
+        open_activity_qs.order_by.return_value.last.return_value = open_activity
+        attendance_activity_model.objects.filter.return_value = open_activity_qs
+
+        attendance = MagicMock()
+        attendance.attendance_date = date(2026, 4, 10)
+        attendance.attendance_worked_hour = "08:00"
+        clock_out_helper_mock.return_value = attendance
+
+        response = public_clock_out(request)
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)
+        self.assertTrue(payload["success"])
+        self.assertEqual(open_activity.clock_in_gps_address, "Clock In Address")
+        self.assertEqual(open_activity.clock_in_latitude, 14.5001)
+        self.assertEqual(open_activity.clock_in_longitude, 120.9001)
+        self.assertIsNone(open_activity.clock_out_gps_address)
+        self.assertTrue(open_activity.location_verified)
 
 
 class PortalPinVerificationTests(SimpleTestCase):
@@ -639,3 +756,172 @@ class AttendanceDeleteAuthorizationTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 302)
         attendance.delete.assert_called_once()
+
+
+class AttendanceLocationMigrationTests(SimpleTestCase):
+    @staticmethod
+    def _run_migration(apps):
+        migration_module = importlib.import_module(
+            "attendance.migrations.0005_attendanceactivity_separate_clock_locations"
+        )
+        migration_module.backfill_separate_clock_locations(apps, None)
+
+    def test_backfill_closed_activity_sets_clock_out_location_only(self):
+        activity = SimpleNamespace(
+            clock_out=datetime(2026, 4, 10, 17, 0).time(),
+            latitude=14.601,
+            longitude=121.001,
+            gps_address="Closed Activity Address",
+            clock_in_latitude=None,
+            clock_in_longitude=None,
+            clock_in_gps_address=None,
+            clock_out_latitude=None,
+            clock_out_longitude=None,
+            clock_out_gps_address=None,
+            save=MagicMock(),
+        )
+
+        activities_qs = MagicMock()
+        activities_qs.iterator.return_value = iter([activity])
+        model = SimpleNamespace(objects=MagicMock())
+        model.objects.filter.return_value = activities_qs
+        apps = MagicMock()
+        apps.get_model.return_value = model
+
+        self._run_migration(apps)
+
+        self.assertIsNone(activity.clock_in_latitude)
+        self.assertIsNone(activity.clock_in_longitude)
+        self.assertIsNone(activity.clock_in_gps_address)
+        self.assertEqual(activity.clock_out_latitude, 14.601)
+        self.assertEqual(activity.clock_out_longitude, 121.001)
+        self.assertEqual(activity.clock_out_gps_address, "Closed Activity Address")
+        activity.save.assert_called_once()
+
+    def test_backfill_open_activity_sets_clock_in_location_only(self):
+        activity = SimpleNamespace(
+            clock_out=None,
+            latitude=14.602,
+            longitude=121.002,
+            gps_address="Open Activity Address",
+            clock_in_latitude=None,
+            clock_in_longitude=None,
+            clock_in_gps_address=None,
+            clock_out_latitude=None,
+            clock_out_longitude=None,
+            clock_out_gps_address=None,
+            save=MagicMock(),
+        )
+
+        activities_qs = MagicMock()
+        activities_qs.iterator.return_value = iter([activity])
+        model = SimpleNamespace(objects=MagicMock())
+        model.objects.filter.return_value = activities_qs
+        apps = MagicMock()
+        apps.get_model.return_value = model
+
+        self._run_migration(apps)
+
+        self.assertEqual(activity.clock_in_latitude, 14.602)
+        self.assertEqual(activity.clock_in_longitude, 121.002)
+        self.assertEqual(activity.clock_in_gps_address, "Open Activity Address")
+        self.assertIsNone(activity.clock_out_latitude)
+        self.assertIsNone(activity.clock_out_longitude)
+        self.assertIsNone(activity.clock_out_gps_address)
+        activity.save.assert_called_once()
+
+
+class AttendanceActivityMetaBuilderTests(SimpleTestCase):
+    @patch("attendance.views.views.AttendanceActivity")
+    def test_build_meta_returns_separate_in_and_out_location_data(
+        self,
+        attendance_activity_model,
+    ):
+        attendance_row = SimpleNamespace(
+            id=1,
+            employee_id_id=101,
+            attendance_date=date(2026, 4, 10),
+        )
+        paginated_attendances = SimpleNamespace(object_list=[attendance_row])
+
+        activities = [
+            SimpleNamespace(
+                employee_id_id=101,
+                attendance_date=date(2026, 4, 10),
+                clock_in_selfie=None,
+                clock_out_selfie=None,
+                clock_in_gps_address="Clock In Address",
+                clock_out_gps_address=None,
+                clock_in_latitude=14.501,
+                clock_in_longitude=120.901,
+                clock_out_latitude=None,
+                clock_out_longitude=None,
+                gps_address="Legacy In Address",
+                latitude=14.501,
+                longitude=120.901,
+                clock_out=None,
+            ),
+            SimpleNamespace(
+                employee_id_id=101,
+                attendance_date=date(2026, 4, 10),
+                clock_in_selfie=None,
+                clock_out_selfie=None,
+                clock_in_gps_address=None,
+                clock_out_gps_address="Clock Out Address",
+                clock_in_latitude=None,
+                clock_in_longitude=None,
+                clock_out_latitude=14.601,
+                clock_out_longitude=121.001,
+                gps_address="Legacy Out Address",
+                latitude=14.601,
+                longitude=121.001,
+                clock_out=datetime(2026, 4, 10, 17, 0).time(),
+            ),
+        ]
+
+        attendance_activity_model.objects.filter.return_value.order_by.return_value = (
+            activities
+        )
+
+        result = build_my_attendance_activity_meta(paginated_attendances)
+        meta = result[1]
+
+        self.assertEqual(meta["check_in_location"], "Clock In Address")
+        self.assertEqual(meta["check_out_location"], "Clock Out Address")
+        self.assertEqual(
+            meta["check_in_maps_url"],
+            "https://www.google.com/maps?q=14.501,120.901",
+        )
+        self.assertEqual(
+            meta["check_out_maps_url"],
+            "https://www.google.com/maps?q=14.601,121.001",
+        )
+        self.assertEqual(meta["location"], "Clock Out Address")
+        self.assertEqual(
+            meta["maps_url"],
+            "https://www.google.com/maps?q=14.601,121.001",
+        )
+
+
+class AttendanceExportFormFieldTests(SimpleTestCase):
+    def test_attendance_export_form_includes_separate_location_fields(self):
+        form = AttendanceExportForm()
+        choices = {value for value, _ in form.fields["selected_fields"].choices}
+
+        self.assertIn("check_in_location", choices)
+        self.assertIn("check_in_maps", choices)
+        self.assertIn("check_out_location", choices)
+        self.assertIn("check_out_maps", choices)
+        self.assertIn("location", choices)
+        self.assertIn("maps", choices)
+
+    def test_activity_export_form_includes_separate_location_fields(self):
+        form = AttendanceActivityExportForm()
+        choices = {value for value, _ in form.fields["selected_fields"].choices}
+
+        self.assertIn("clock_in_gps_address", choices)
+        self.assertIn("clock_in_maps_url", choices)
+        self.assertIn("clock_out_gps_address", choices)
+        self.assertIn("clock_out_maps_url", choices)
+        self.assertIn("gps_address", choices)
+        self.assertIn("maps_url", choices)

@@ -117,8 +117,10 @@
                                 hx-target="#tab_contents">
                                 {% trans "Overtime" %}
                             </div>
-                            <div data-cell-index="18" data-cell-title='{% trans "Location" %}' class="oh-sticky-table__th">{% trans "Location" %}</div>
-                            <div data-cell-index="19" data-cell-title='{% trans "Maps" %}' class="oh-sticky-table__th">{% trans "Maps" %}</div>
+                            <div data-cell-index="18" data-cell-title='{% trans "Check In Location" %}' class="oh-sticky-table__th">{% trans "Check In Location" %}</div>
+                            <div data-cell-index="19" data-cell-title='{% trans "Check In Map" %}' class="oh-sticky-table__th">{% trans "Check In Map" %}</div>
+                            <div data-cell-index="20" data-cell-title='{% trans "Check Out Location" %}' class="oh-sticky-table__th">{% trans "Check Out Location" %}</div>
+                            <div data-cell-index="21" data-cell-title='{% trans "Check Out Map" %}' class="oh-sticky-table__th">{% trans "Check Out Map" %}</div>
                             <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Actions" %}</div>
                         </div>
                     </div>
@@ -199,19 +201,41 @@
                                     {{attendance.attendance_overtime}}
                                 </div>
                                 <div data-cell-index="18" class="oh-sticky-table__td">
-                                    {% if attendance.activity_meta.location %}
-                                        <span title="{{ attendance.activity_meta.location }}"
+                                    {% if attendance.activity_meta.check_in_location %}
+                                        <span title="{{ attendance.activity_meta.check_in_location }}"
                                             style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                             <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
-                                            {{ attendance.activity_meta.location }}
+                                            {{ attendance.activity_meta.check_in_location }}
                                         </span>
                                     {% else %}
                                         <span class="oh-text--light">&mdash;</span>
                                     {% endif %}
                                 </div>
                                 <div data-cell-index="19" class="oh-sticky-table__td" onclick="event.stopPropagation();">
-                                    {% if attendance.activity_meta.maps_url %}
-                                        <a href="{{ attendance.activity_meta.maps_url }}" target="_blank" rel="noopener noreferrer"
+                                    {% if attendance.activity_meta.check_in_maps_url %}
+                                        <a href="{{ attendance.activity_meta.check_in_maps_url }}" target="_blank" rel="noopener noreferrer"
+                                            class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
+                                            <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
+                                            {% trans "View Map" %}
+                                        </a>
+                                    {% else %}
+                                        <span class="oh-text--light">&mdash;</span>
+                                    {% endif %}
+                                </div>
+                                <div data-cell-index="20" class="oh-sticky-table__td">
+                                    {% if attendance.activity_meta.check_out_location %}
+                                        <span title="{{ attendance.activity_meta.check_out_location }}"
+                                            style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                            <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                                            {{ attendance.activity_meta.check_out_location }}
+                                        </span>
+                                    {% else %}
+                                        <span class="oh-text--light">&mdash;</span>
+                                    {% endif %}
+                                </div>
+                                <div data-cell-index="21" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                                    {% if attendance.activity_meta.check_out_maps_url %}
+                                        <a href="{{ attendance.activity_meta.check_out_maps_url }}" target="_blank" rel="noopener noreferrer"
                                             class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
                                             <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
                                             {% trans "View Map" %}
@@ -403,8 +427,10 @@
                                     hx-target="#tab_contents">
                                     {% trans "Overtime" %}
                                 </div>
-                                <div data-cell-index="38" data-cell-title='{% trans "Location" %}' class="oh-sticky-table__th">{% trans "Location" %}</div>
-                                <div data-cell-index="39" data-cell-title='{% trans "Maps" %}' class="oh-sticky-table__th">{% trans "Maps" %}</div>
+                                <div data-cell-index="38" data-cell-title='{% trans "Check In Location" %}' class="oh-sticky-table__th">{% trans "Check In Location" %}</div>
+                                <div data-cell-index="39" data-cell-title='{% trans "Check In Map" %}' class="oh-sticky-table__th">{% trans "Check In Map" %}</div>
+                                <div data-cell-index="40" data-cell-title='{% trans "Check Out Location" %}' class="oh-sticky-table__th">{% trans "Check Out Location" %}</div>
+                                <div data-cell-index="41" data-cell-title='{% trans "Check Out Map" %}' class="oh-sticky-table__th">{% trans "Check Out Map" %}</div>
                                 <div class="oh-sticky-table__th">{% trans "Actions" %}</div>
                                 <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Confirmation" %}</div>
                             </div>
@@ -484,19 +510,41 @@
                                         {{attendance.attendance_overtime}}
                                     </div>
                                     <div data-cell-index="38" class="oh-sticky-table__td">
-                                        {% if attendance.activity_meta.location %}
-                                            <span title="{{ attendance.activity_meta.location }}"
+                                        {% if attendance.activity_meta.check_in_location %}
+                                            <span title="{{ attendance.activity_meta.check_in_location }}"
                                                 style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                                 <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
-                                                {{ attendance.activity_meta.location }}
+                                                {{ attendance.activity_meta.check_in_location }}
                                             </span>
                                         {% else %}
                                             <span class="oh-text--light">&mdash;</span>
                                         {% endif %}
                                     </div>
                                     <div data-cell-index="39" class="oh-sticky-table__td" onclick="event.stopPropagation();">
-                                        {% if attendance.activity_meta.maps_url %}
-                                            <a href="{{ attendance.activity_meta.maps_url }}" target="_blank" rel="noopener noreferrer"
+                                        {% if attendance.activity_meta.check_in_maps_url %}
+                                            <a href="{{ attendance.activity_meta.check_in_maps_url }}" target="_blank" rel="noopener noreferrer"
+                                                class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
+                                                <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
+                                                {% trans "View Map" %}
+                                            </a>
+                                        {% else %}
+                                            <span class="oh-text--light">&mdash;</span>
+                                        {% endif %}
+                                    </div>
+                                    <div data-cell-index="40" class="oh-sticky-table__td">
+                                        {% if attendance.activity_meta.check_out_location %}
+                                            <span title="{{ attendance.activity_meta.check_out_location }}"
+                                                style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                                <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                                                {{ attendance.activity_meta.check_out_location }}
+                                            </span>
+                                        {% else %}
+                                            <span class="oh-text--light">&mdash;</span>
+                                        {% endif %}
+                                    </div>
+                                    <div data-cell-index="41" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                                        {% if attendance.activity_meta.check_out_maps_url %}
+                                            <a href="{{ attendance.activity_meta.check_out_maps_url }}" target="_blank" rel="noopener noreferrer"
                                                 class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
                                                 <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
                                                 {% trans "View Map" %}
@@ -696,8 +744,10 @@
                                 hx-target="#tab_contents">
                                 {% trans "Overtime" %}
                             </div>
-                            <div data-cell-index="58" data-cell-title='{% trans "Location" %}' class="oh-sticky-table__th">{% trans "Location" %}</div>
-                            <div data-cell-index="59" data-cell-title='{% trans "Maps" %}' class="oh-sticky-table__th">{% trans "Maps" %}</div>
+                            <div data-cell-index="58" data-cell-title='{% trans "Check In Location" %}' class="oh-sticky-table__th">{% trans "Check In Location" %}</div>
+                            <div data-cell-index="59" data-cell-title='{% trans "Check In Map" %}' class="oh-sticky-table__th">{% trans "Check In Map" %}</div>
+                            <div data-cell-index="60" data-cell-title='{% trans "Check Out Location" %}' class="oh-sticky-table__th">{% trans "Check Out Location" %}</div>
+                            <div data-cell-index="61" data-cell-title='{% trans "Check Out Map" %}' class="oh-sticky-table__th">{% trans "Check Out Map" %}</div>
                             <div class="oh-sticky-table__th">{% trans "Actions" %}</div>
                             <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Confirmation" %}</div>
                         </div>
@@ -777,19 +827,41 @@
                                 {{attendance.attendance_overtime}}
                             </div>
                             <div data-cell-index="58" class="oh-sticky-table__td">
-                                {% if attendance.activity_meta.location %}
-                                    <span title="{{ attendance.activity_meta.location }}"
+                                {% if attendance.activity_meta.check_in_location %}
+                                    <span title="{{ attendance.activity_meta.check_in_location }}"
                                         style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                                         <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
-                                        {{ attendance.activity_meta.location }}
+                                        {{ attendance.activity_meta.check_in_location }}
                                     </span>
                                 {% else %}
                                     <span class="oh-text--light">&mdash;</span>
                                 {% endif %}
                             </div>
                             <div data-cell-index="59" class="oh-sticky-table__td" onclick="event.stopPropagation();">
-                                {% if attendance.activity_meta.maps_url %}
-                                    <a href="{{ attendance.activity_meta.maps_url }}" target="_blank" rel="noopener noreferrer"
+                                {% if attendance.activity_meta.check_in_maps_url %}
+                                    <a href="{{ attendance.activity_meta.check_in_maps_url }}" target="_blank" rel="noopener noreferrer"
+                                        class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
+                                        <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
+                                        {% trans "View Map" %}
+                                    </a>
+                                {% else %}
+                                    <span class="oh-text--light">&mdash;</span>
+                                {% endif %}
+                            </div>
+                            <div data-cell-index="60" class="oh-sticky-table__td">
+                                {% if attendance.activity_meta.check_out_location %}
+                                    <span title="{{ attendance.activity_meta.check_out_location }}"
+                                        style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                        <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                                        {{ attendance.activity_meta.check_out_location }}
+                                    </span>
+                                {% else %}
+                                    <span class="oh-text--light">&mdash;</span>
+                                {% endif %}
+                            </div>
+                            <div data-cell-index="61" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+                                {% if attendance.activity_meta.check_out_maps_url %}
+                                    <a href="{{ attendance.activity_meta.check_out_maps_url }}" target="_blank" rel="noopener noreferrer"
                                         class="oh-btn oh-btn--primary-outline oh-btn--sm" style="font-size: 11px; white-space: nowrap;">
                                         <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
                                         {% trans "View Map" %}

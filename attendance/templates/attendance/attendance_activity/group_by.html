@@ -59,6 +59,10 @@
                                                 hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=clock_out_date">
                                                 {% trans "Out Date" %}
                                             </div>
+                                            <div class='oh-sticky-table__th'>{% trans "Check In Location" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Check In Map" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Check Out Location" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Check Out Map" %}</div>
                                             {% if perms.attendance.delete_attendanceactivity %}
                                                 <div class='oh-sticky-table__th oh-sticky-table__right' scope="col" style="width: 80px;">{% trans "Actions" %}</div>
                                             {% endif %}
@@ -90,6 +94,50 @@
                                                 <div class="oh-sticky-table__td timeformat_changer">{{activity.clock_in}}</div>
                                                 <div class="oh-sticky-table__td timeformat_changer">{{activity.clock_out}}</div>
                                                 <div class="oh-sticky-table__td dateformat_changer">{{activity.clock_out_date}}
+                                                </div>
+                                                <div class="oh-sticky-table__td">
+                                                    {% if activity.clock_in_gps_address %}
+                                                        {{ activity.clock_in_gps_address }}
+                                                    {% elif activity.gps_address and not activity.clock_out %}
+                                                        {{ activity.gps_address }}
+                                                    {% else %}
+                                                        &mdash;
+                                                    {% endif %}
+                                                </div>
+                                                <div class="oh-sticky-table__td">
+                                                    {% if activity.clock_in_latitude != None and activity.clock_in_longitude != None %}
+                                                        <a href="https://www.google.com/maps?q={{ activity.clock_in_latitude }},{{ activity.clock_in_longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
+                                                            {% trans "View Map" %}
+                                                        </a>
+                                                    {% elif activity.clock_out == None and activity.latitude != None and activity.longitude != None %}
+                                                        <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
+                                                            {% trans "View Map" %}
+                                                        </a>
+                                                    {% else %}
+                                                        <span class="oh-text--light">&mdash;</span>
+                                                    {% endif %}
+                                                </div>
+                                                <div class="oh-sticky-table__td">
+                                                    {% if activity.clock_out_gps_address %}
+                                                        {{ activity.clock_out_gps_address }}
+                                                    {% elif activity.gps_address and activity.clock_out %}
+                                                        {{ activity.gps_address }}
+                                                    {% else %}
+                                                        &mdash;
+                                                    {% endif %}
+                                                </div>
+                                                <div class="oh-sticky-table__td">
+                                                    {% if activity.clock_out_latitude != None and activity.clock_out_longitude != None %}
+                                                        <a href="https://www.google.com/maps?q={{ activity.clock_out_latitude }},{{ activity.clock_out_longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
+                                                            {% trans "View Map" %}
+                                                        </a>
+                                                    {% elif activity.clock_out and activity.latitude != None and activity.longitude != None %}
+                                                        <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
+                                                            {% trans "View Map" %}
+                                                        </a>
+                                                    {% else %}
+                                                        <span class="oh-text--light">&mdash;</span>
+                                                    {% endif %}
                                                 </div>
                                                 {% if perms.attendance.delete_attendanceactivity %}
                                                     <div class="oh-sticky-table__td oh-sticky-table__right">
