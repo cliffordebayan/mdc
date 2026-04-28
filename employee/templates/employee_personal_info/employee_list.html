@@ -282,7 +282,7 @@
                 </form>
               {% endif %}
             {% endif %}
-            {% if perms.employee.delete_employee %}
+            {% if perms.employee.delete_employee and not emp.employee_user_id.is_superuser %}
               <form
                   action="{% url 'employee-delete' emp.id %}?view=list"
                   onsubmit="return confirm('{% trans "All non-active contracts of the employee will also be deleted. Do you want to continue ?" %}')"

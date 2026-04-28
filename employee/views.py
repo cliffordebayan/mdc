@@ -2025,14 +2025,23 @@ def employee_delete(request, obj_id):
 
     try:
         view = request.POST.get("view")
-        employee = Employee.objects.get(id=obj_id)
+        employee = Employee.objects.select_related("employee_user_id").get(id=obj_id)
+        user = employee.employee_user_id
+
+        if user and user.is_superuser:
+            messages.error(
+                request,
+                _("%(employee)s is a superuser and cannot be deleted.")
+                % {"employee": employee},
+            )
+            return HorillaRedirect(request, fallback_url=f"/view={view}")
+
         if apps.is_installed("payroll"):
             if employee.contract_set.all().exists():
                 contracts = employee.contract_set.all()
                 for contract in contracts:
                     if contract.contract_status != "active":
                         contract.delete()
-        user = employee.employee_user_id
         # try:
         #     user.delete()
         # except AttributeError:
@@ -2075,14 +2084,25 @@ def employee_bulk_delete(request):
     employees = Employee.objects.filter(id__in=ids).select_related("employee_user_id")
     for employee in employees:
         try:
+            user = employee.employee_user_id
+            if user and user.is_superuser:
+                messages.error(
+                    request,
+                    _("%(employee)s is a superuser and cannot be deleted.")
+                    % {"employee": employee},
+                )
+                continue
+
             if apps.is_installed("payroll"):
                 if employee.contract_set.all().exists():
                     contracts = employee.contract_set.all()
                     for contract in contracts:
                         if contract.contract_status != "active":
                             contract.delete()
-            user = employee.employee_user_id
-            user.delete()
+            if user:
+                user.delete()
+            else:
+                employee.delete()
             deleted_count += 1
         except Employee.DoesNotExist:
             messages.error(request, _("Employee not found."))
