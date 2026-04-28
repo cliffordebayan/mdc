@@ -152,12 +152,17 @@
                                               <button  class="oh-btn oh-btn--light-bkg w-100" title="{% trans 'Edit' %}" data-toggle="oh-modal-toggle"
                                                   data-target="#objectUpdateModal" hx-get="{% url 'request-update' leave_request.id %}"
                                                   hx-target="#objectUpdateModalTarget"><ion-icon name="create-outline"></ion-icon></button>
+                                              {% if request.user.is_superuser or request.user|is_reportingmanager or perms.leave.delete_leaverequest or request.user|is_leave_approval_manager %}
+                                                {% if request.user.is_superuser or leave_request.status == 'requested' %}
+                                                  <a class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100" id="delete-link"
+                                                  hx-confirm="{% trans "Are you sure you want to delete ?" %}" hx-get="{% url 'request-delete' leave_request.id %}?{{pd}}" hx-target="#leaveRequest"  title="{% trans 'Delete' %}"><ion-icon
+                                                      name="trash-outline"></ion-icon></a>
+                                                {% else %}
+                                                  <button class="oh-btn oh-btn--light-bkg w-100" disabled>
+                                                      <ion-icon name="trash-outline"></ion-icon>
+                                                  </button>
+                                                {% endif %}
                                               {% endif %}
-                                              {% if request.user|is_reportingmanager or perms.attendance.delete_leaverequest %}
-                                              <a class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100" id="delete-link"
-                                              hx-confirm="{% trans "Are you sure you want to delete ?" %}" hx-get="{% url 'request-delete' leave_request.id %}?{{pd}}" hx-target="#leaveRequest"  title="{% trans 'Delete' %}"><ion-icon
-                                                  name="trash-outline">group_by</ion-icon></a>
-
                                           </div>
                                       </div>
                                       <div class="oh-sticky-table__td" onclick="event.stopPropagation()">

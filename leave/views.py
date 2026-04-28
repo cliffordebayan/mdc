@@ -69,6 +69,73 @@ from leave.threading import LeaveMailSendThread
 from notifications.signals import notify
 
 
+def _delete_blocked_message(protected_objects):
+    """
+    Build a user-facing message for ProtectedError dependencies.
+    """
+    model_verbose_names_set = {
+        __(obj._meta.verbose_name.capitalize()) for obj in protected_objects
+    }
+    model_names_str = ", ".join(model_verbose_names_set)
+    return _("Deletion blocked by related records: {}.").format(model_names_str)
+
+
+def _delete_orphan_leave_request_files(file_ids):
+    """
+    Delete request files that are no longer referenced by any comment model.
+    """
+    if not file_ids:
+        return
+
+    orphan_files = LeaverequestFile.objects.filter(id__in=file_ids)
+    related_field_names = {field.name for field in LeaverequestFile._meta.get_fields()}
+    comment_relations = {
+        "leaverequestcomment",
+        "leaveallocationrequestcomment",
+        "compensatoryleaverequestcomment",
+    }
+    for relation_name in comment_relations.intersection(related_field_names):
+        orphan_files = orphan_files.filter(**{f"{relation_name}__isnull": True})
+    orphan_files.delete()
+
+
+def _force_cleanup_leave_request_dependencies(leave_request):
+    """
+    Remove/detach known dependencies before superuser force-delete.
+    """
+    LeaveRequestConditionApproval.objects.filter(leave_request_id=leave_request).delete()
+
+    file_ids = list(
+        LeaverequestFile.objects.filter(leaverequestcomment__request_id=leave_request)
+        .values_list("id", flat=True)
+        .distinct()
+    )
+    LeaverequestComment.objects.filter(request_id=leave_request).delete()
+    _delete_orphan_leave_request_files(file_ids)
+
+    if apps.is_installed("attendance"):
+        with contextlib.suppress(Exception):
+            WorkRecords = get_horilla_model_class(
+                app_label="attendance", model="workrecords"
+            )
+            WorkRecords.objects.filter(leave_request_id=leave_request).update(
+                leave_request_id=None
+            )
+
+
+def _delete_leave_request_record(leave_request, force_delete=False):
+    """
+    Delete a leave request, optionally cleaning dependencies first.
+    """
+    if force_delete:
+        _force_cleanup_leave_request_dependencies(leave_request)
+    try:
+        leave_request.delete()
+        return True, None
+    except ProtectedError as e:
+        return False, _delete_blocked_message(e.protected_objects)
+
+
 def generate_error_report(error_list, error_data, file_name):
     """
     Function used to generate error excle file for imported datas
@@ -957,12 +1024,24 @@ def leave_request_delete(request, id):
     previous_data = request.GET.urlencode()
     try:
         leave_request = LeaveRequest.objects.get(id=id)
-        messages.success(request, _("Leave request deleted successfully.."))
-        leave_request.delete()
+        force_delete = request.user.is_superuser
+        if not force_delete and leave_request.status != "requested":
+            messages.error(
+                request,
+                _("You cannot delete leave request with status {}.").format(
+                    leave_request.status
+                ),
+            )
+        else:
+            deleted, error_message = _delete_leave_request_record(
+                leave_request, force_delete=force_delete
+            )
+            if deleted:
+                messages.success(request, _("Leave request deleted successfully.."))
+            elif error_message:
+                messages.error(request, error_message)
     except (LeaveRequest.DoesNotExist, OverflowError, ValueError):
         messages.error(request, _("Leave request not found."))
-    except ProtectedError:
-        messages.error(request, _("Related entries exists"))
     hx_target = request.META.get("HTTP_HX_TARGET", None)
     if hx_target == "leaveRequest":
         leave_requests = LeaveRequest.objects.all()
@@ -3757,29 +3836,54 @@ def leave_request_bulk_delete(request):
     """
     ids = request.POST["ids"]
     ids = json.loads(ids)
-    count = 0  # To track the number of successfully deleted requests
+    count = 0
+    blocked_count = 0
+    force_delete = request.user.is_superuser
     for leave_request_id in ids:
         try:
             leave_request = LeaveRequest.objects.get(id=leave_request_id)
             employee = leave_request.employee_id
-            if leave_request.status == "requested":
-                leave_request.delete()
-                count += 1
-            else:
+            if not force_delete and leave_request.status != "requested":
+                blocked_count += 1
                 messages.error(
                     request,
                     _("{}'s leave request cannot be deleted.".format(employee)),
                 )
+                continue
+
+            deleted, error_message = _delete_leave_request_record(
+                leave_request, force_delete=force_delete
+            )
+            if deleted:
+                count += 1
+            else:
+                blocked_count += 1
+                messages.error(
+                    request,
+                    error_message
+                    or _("{}'s leave request cannot be deleted.".format(employee)),
+                )
+        except (LeaveRequest.DoesNotExist, OverflowError, ValueError):
+            blocked_count += 1
+            messages.error(request, _("Leave request not found."))
         except Exception as e:
+            blocked_count += 1
             messages.error(request, _("An error occurred: {}.".format(str(e))))
 
     if count > 0:
         messages.success(
             request,
-            _("{count}  leave request(s) successfully deleted.".format(count=count)),
+            _("{count} leave request(s) successfully deleted.").format(count=count),
         )
 
-    return JsonResponse({"message": "Success"})
+    return JsonResponse(
+        {
+            "message": "Success",
+            "deleted_count": count,
+            "blocked_count": blocked_count,
+            "requested_count": len(ids),
+        }
+    )
 
 
 @login_required
