@@ -132,11 +132,30 @@ def convert_nan(field, dicts):
     This method is returns None or field value
     """
     field_value = dicts.get(field)
-    try:
-        float(field_value)
+    if field_value is None:
         return None
-    except ValueError:
-        return field_value
+
+    if pd.isna(field_value):
+        return None
+
+    if isinstance(field_value, str):
+        field_value = field_value.strip()
+        if not field_value or field_value.lower() in {"nan", "none", "null"}:
+            return None
+
+    return field_value
+
+
+def to_int_or_default(value, default=0):
+    """
+    Convert value to int and return a default value on invalid input.
+    """
+    if value in (None, ""):
+        return default
+    try:
+        return int(float(value))
+    except (ValueError, TypeError):
+        return default
 
 
 def dynamic_prefix_sort(item):
@@ -655,24 +674,49 @@ def bulk_create_job_role_import(success_lists):
     """
     Bulk creation of job role instances based on the excel import of employees
     """
-    # Extract unique (job_role, job_position) pairs, filtering out empty values
+    # Extract unique (job_role, job_position, department) triplets, filtering out empty values
     job_roles_to_import = {
-        (role, pos)
+        (role, pos, dept)
         for work_info in success_lists
         if (role := convert_nan("Job Role", work_info))
         and (pos := convert_nan("Job Position", work_info))
+        and (dept := convert_nan("Department", work_info))
     }
 
-    # Prefetch existing data efficiently
-    job_positions = JobPosition.objects.only("id", "job_position")
-    existing_job_roles = set(JobRole.objects.values_list("job_role", "job_position_id"))
+    if not job_roles_to_import:
+        return
+
+    departments = {dept for _, _, dept in job_roles_to_import}
+    positions = {pos for _, pos, _ in job_roles_to_import}
+    roles = {role for role, _, _ in job_roles_to_import}
+
+    # Prefetch existing data efficiently using a deterministic (department, position) key
+    job_positions = (
+        JobPosition.objects.filter(
+            department_id__department__in=departments,
+            job_position__in=positions,
+        )
+        .select_related("department_id")
+        .only("id", "job_position", "department_id__department")
+    )
+    job_position_map = {
+        (jp.department_id.department, jp.job_position): jp for jp in job_positions
+    }
+
+    job_position_ids = [jp.id for jp in job_positions]
+    existing_job_roles = set(
+        JobRole.objects.filter(
+            job_position_id__in=job_position_ids,
+            job_role__in=roles,
+        ).values_list("job_role", "job_position_id")
+    )
 
     # Create new job roles
     new_job_roles = [
-        JobRole(job_role=role, job_position_id=job_positions[pos].id)
-        for role, pos in job_roles_to_import
-        if pos in job_positions
-        and (role, job_positions[pos].id) not in existing_job_roles
+        JobRole(job_role=role, job_position_id=job_position.id)
+        for role, pos, dept in job_roles_to_import
+        if (job_position := job_position_map.get((dept, pos)))
+        and (role, job_position.id) not in existing_job_roles
     ]
 
     # Bulk create if there are new roles
@@ -949,16 +993,8 @@ def bulk_create_work_info_import(success_lists):
         _ce = work_info.get("End Date")
         contract_end_date = _ce if (_ce is not None and not pd.isnull(_ce)) else None
 
-        basic_salary = (
-            convert_nan("Salary", work_info)
-            if type(convert_nan("Salary", work_info)) is int
-            else 0
-        )
-        salary_hour = (
-            convert_nan("Salary Hour", work_info)
-            if type(convert_nan("Salary Hour", work_info)) is int
-            else 0
-        )
+        basic_salary = to_int_or_default(convert_nan("Salary", work_info))
+        salary_hour = to_int_or_default(convert_nan("Salary Hour", work_info))
 
         if employee_work_info is None:
             # Create a new instance

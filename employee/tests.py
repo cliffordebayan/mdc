@@ -1,3 +1,141 @@
-from django.test import TestCase
+from io import BytesIO
+from unittest.mock import patch
 
-# Create your tests here.
+import pandas as pd
+from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TransactionTestCase
+from django.urls import reverse
+
+from employee.models import Employee, EmployeeBankDetails, EmployeeWorkInformation
+from horilla.horilla_middlewares import _thread_locals
+
+
+class EmployeeImportFlowTests(TransactionTestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        self.user = User.objects.create_superuser(
+            username="admin",
+            email="admin@example.com",
+            password="password123",
+        )
+        Employee.objects.create(
+            employee_user_id=self.user,
+            employee_first_name="Admin",
+            employee_last_name="User",
+            email="admin@example.com",
+            phone="09170000000",
+            gender="male",
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def _build_excel_file(self, rows):
+        file_buffer = BytesIO()
+        pd.DataFrame(rows).to_excel(file_buffer, index=False)
+        return SimpleUploadedFile(
+            "work_info_import.xlsx",
+            file_buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    def _valid_import_row(self, **overrides):
+        row = {
+            "Employee No": "EMP1001",
+            "First Name": "John",
+            "Last Name": "Doe",
+            "Phone": "+639171234567",
+            "Email": "john.doe@example.com",
+            "Gender": "male",
+            "Department": "",
+            "Job Position": "",
+            "Job Role": "",
+            "Work Type": "",
+            "Shift Information": "",
+            "Employee Type": "",
+            "Reporting Manager": "",
+            "Company": "",
+            "Work Location": "Main Office",
+            "Joining Date": "2024-01-15",
+            "Salary": 30000,
+            "Salary Hour": 150,
+            "Gcash": "09171234567",
+            "Metrobank": "000123456789",
+        }
+        row.update(overrides)
+        return row
+
+    def _post_import(self, file_buffer):
+        with patch("employee.views.threading.Thread") as view_thread, patch(
+            "employee.methods.methods.threading.Thread"
+        ) as methods_thread:
+            view_thread.return_value.start.return_value = None
+            methods_thread.return_value.start.return_value = None
+            return self.client.post(
+                reverse("work-info-import"),
+                {"file": file_buffer},
+                HTTP_HX_REQUEST="true",
+            )
+
+    def test_work_info_import_template_is_downloadable(self):
+        response = self.client.get(reverse("work-info-import-file"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment;", response.get("Content-Disposition", ""))
+        self.assertIn(
+            'filename="work_info_template.xlsx"',
+            response.get("Content-Disposition", ""),
+        )
+
+    def test_work_info_import_creates_employee_and_work_info(self):
+        file_buffer = self._build_excel_file([self._valid_import_row()])
+
+        response = self._post_import(file_buffer)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Employee.objects.filter(employee_no="EMP1001").exists())
+
+        employee = Employee.objects.get(employee_no="EMP1001")
+        work_info = EmployeeWorkInformation.objects.get(employee_id=employee)
+        self.assertEqual(work_info.basic_salary, 30000)
+        self.assertEqual(work_info.salary_hour, 150)
+
+        self.assertIn("Import Successful", response.content.decode("utf-8"))
+
+    def test_work_info_import_rejects_unknown_company_and_shows_error_download(self):
+        file_buffer = self._build_excel_file(
+            [self._valid_import_row(**{"Employee No": "EMP1002", "Company": "Unknown Co"})]
+        )
+
+        response = self._post_import(file_buffer)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Employee.objects.filter(employee_no="EMP1002").exists())
+        self.assertIn("Download Error File", response.content.decode("utf-8"))
+
+    def test_work_info_import_preserves_numeric_and_bank_values(self):
+        file_buffer = self._build_excel_file(
+            [
+                self._valid_import_row(
+                    **{
+                        "Employee No": "EMP1003",
+                        "Email": "numeric.user@example.com",
+                        "Salary": 45678,
+                        "Salary Hour": 220,
+                        "Gcash": "09179998888",
+                        "Metrobank": "009900110022",
+                    }
+                )
+            ]
+        )
+
+        response = self._post_import(file_buffer)
+
+        self.assertEqual(response.status_code, 200)
+        employee = Employee.objects.get(employee_no="EMP1003")
+        work_info = EmployeeWorkInformation.objects.get(employee_id=employee)
+        self.assertEqual(work_info.basic_salary, 45678)
+        self.assertEqual(work_info.salary_hour, 220)
+
+        bank_accounts = EmployeeBankDetails.objects.filter(employee_id=employee)
+        self.assertTrue(bank_accounts.filter(bank_name="GCash").exists())
+        self.assertTrue(bank_accounts.filter(bank_name="Metrobank").exists())

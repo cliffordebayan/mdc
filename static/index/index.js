@@ -457,17 +457,44 @@ function handleDownloadAndRefresh(event, url) {
     // Use in import_popup.html file
     event.preventDefault();
 
-    // Create a temporary hidden iframe to trigger the download
-    const iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    iframe.src = url;
-    document.body.appendChild(iframe);
+    fetch(url, {
+        method: "GET",
+        credentials: "same-origin",
+    })
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error(`Download failed with status ${response.status}`);
+            }
 
-    // Refresh the page after a short delay
-    setTimeout(function () {
-        document.body.removeChild(iframe); // Clean up the iframe
-        window.location.reload(); // Refresh the page
-    }, 500); // Adjust the delay as needed
+            const disposition = response.headers.get("content-disposition") || "";
+            const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+            const filename = filenameMatch
+                ? decodeURIComponent(filenameMatch[1]).replace(/"/g, "").trim()
+                : "ImportError.xlsx";
+
+            return response.blob().then((blob) => ({ blob, filename }));
+        })
+        .then(({ blob, filename }) => {
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = downloadUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(downloadUrl);
+            setTimeout(function () {
+                window.location.reload();
+            }, 300);
+        })
+        .catch((error) => {
+            console.error("Error downloading file:", error);
+            Swal.fire({
+                icon: "error",
+                title: "Download failed",
+                text: "Unable to download the error file. Please try again.",
+            });
+        });
 }
 
 function toggleCommentButton(e) {
