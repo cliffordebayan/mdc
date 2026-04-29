@@ -2029,7 +2029,11 @@ class ResetPasswordForm(SetPasswordForm):
             request = getattr(_thread_locals, "request", None)
             if request:
                 messages.success(request, _("Password changed successfully"))
-        return super().save()
+        user = super().save()
+        if hasattr(user, "is_new_employee") and user.is_new_employee:
+            user.is_new_employee = False
+            user.save(update_fields=["is_new_employee"])
+        return user
 
     def clean_confirm_password(self):
         """
