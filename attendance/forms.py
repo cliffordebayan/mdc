@@ -879,6 +879,7 @@ class LateComeEarlyOutExportForm(forms.Form):
         for field in model_fields
         if hasattr(field, "verbose_name") and field.name not in excluded_fields
     ]
+    field_choices_1.append(("get_late_early_duration_export", _("Late/Early Duration")))
     model_fields_2 = Attendance._meta.get_fields()
     field_choices_2 = [
         ("attendance_id__" + field.name, field.verbose_name)

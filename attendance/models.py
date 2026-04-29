@@ -29,7 +29,7 @@ from attendance.methods.utils import (
 )
 from base.horilla_company_manager import HorillaCompanyManager
 from base.methods import is_company_leave, is_holiday
-from base.models import Company, EmployeeShift, EmployeeShiftDay, WorkType
+from base.models import Company, EmployeeShift, EmployeeShiftDay, EmployeeShiftSchedule, WorkType
 from employee.models import Employee
 from horilla.methods import get_horilla_model_class
 from horilla.models import HorillaModel, upload_path
@@ -1078,6 +1078,57 @@ class AttendanceLateComeEarlyOut(HorillaModel):
         This method is used to return the total penalties in the late early instance
         """
         return self.penaltyaccounts_set.count()
+
+    def get_late_early_duration(self):
+        attendance = self.attendance_id
+        if not attendance.shift_id or not attendance.attendance_day:
+            return None
+        try:
+            schedule = EmployeeShiftSchedule.objects.get(
+                shift_id=attendance.shift_id,
+                day=attendance.attendance_day,
+            )
+        except EmployeeShiftSchedule.DoesNotExist:
+            return None
+
+        if self.type == "late_come":
+            if not attendance.attendance_clock_in or not schedule.start_time:
+                return None
+            clock_in_dt = datetime.combine(
+                attendance.attendance_clock_in_date, attendance.attendance_clock_in
+            )
+            start_dt = datetime.combine(
+                attendance.attendance_clock_in_date, schedule.start_time
+            )
+            diff = clock_in_dt - start_dt
+        elif self.type == "early_out":
+            if not attendance.attendance_clock_out or not schedule.end_time:
+                return None
+            clock_out_dt = datetime.combine(
+                attendance.attendance_clock_out_date, attendance.attendance_clock_out
+            )
+            end_date = (
+                attendance.attendance_clock_in_date + timedelta(days=1)
+                if schedule.is_night_shift
+                else attendance.attendance_clock_out_date
+            )
+            end_dt = datetime.combine(end_date, schedule.end_time)
+            diff = end_dt - clock_out_dt
+        else:
+            return None
+
+        seconds = int(diff.total_seconds())
+        if seconds <= 0:
+            return None
+        hours, rem = divmod(seconds, 3600)
+        minutes = rem // 60
+        return f"{hours:02d}:{minutes:02d}"
+
+    def get_late_early_duration_export(self):
+        duration = self.get_late_early_duration()
+        if duration is None:
+            return None
+        return duration + ":00"
 
     def save(self, *args, **kwargs) -> None:
         super().save(*args, **kwargs)
