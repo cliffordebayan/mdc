@@ -45,6 +45,7 @@
                 <div class='oh-sticky-table__th' scope="col" hx-target='#report-container' hx-get="{% url 'late-come-early-out-search' %}?{{pd}}&sortby=employee_id__employee_first_name">{% trans "Employee" %}</div>
                 <div class='oh-sticky-table__th' scope="col" hx-target='#report-container' hx-get="{% url 'late-come-early-out-search' %}?{{pd}}&sortby=type">{% trans "Type" %}</div>
                 <div class='oh-sticky-table__th' scope="col">{% trans "Late/Early By" %}</div>
+                <div class='oh-sticky-table__th' scope="col">{% trans "Shift" %}</div>
                 <div class='oh-sticky-table__th' scope="col" hx-target='#report-container' hx-get="{% url 'late-come-early-out-search' %}?{{pd}}&sortby=attendance_id__attendance_date">{% trans "Attendance Date" %}</div>
                 <div class='oh-sticky-table__th' scope="col" hx-target='#report-container' hx-get="{% url 'late-come-early-out-search' %}?{{pd}}&sortby=">{% trans "Check-In" %}</div>
                 <div class='oh-sticky-table__th' scope="col" hx-target='#report-container' hx-get="{% url 'late-come-early-out-search' %}?{{pd}}&sortby=attendance_id__attendance_clock_in_date">{% trans "In Date" %}</div>
@@ -91,6 +92,7 @@
                   {% endif %}
                 </div>
                 <div class='oh-sticky-table__td'>{{ late_in_early_out.get_late_early_duration|default:"—" }}</div>
+                <div class='oh-sticky-table__td'>{{ late_in_early_out.attendance_id.shift_id|default:"—" }}</div>
                 <div class='oh-sticky-table__td dateformat_changer'>{{late_in_early_out.attendance_id.attendance_date}}</div>
                 <div class='oh-sticky-table__td timeformat_changer'>{{late_in_early_out.attendance_id.attendance_clock_in}}</div>
                 <div class='oh-sticky-table__td dateformat_changer'>{{late_in_early_out.attendance_id.attendance_clock_in_date}}</div>

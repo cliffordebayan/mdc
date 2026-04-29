@@ -37,6 +37,7 @@
               <div class="oh-sticky-table__th {% if request.sort_option.order == '-employee_id__employee_first_name' %}arrow-up {% elif request.sort_option.order == 'employee_id__employee_first_name' %}arrow-down {% else %} arrow-up-down {% endif %}" scope="col" hx-target='#report-container' hx-get="{% url 'late-come-early-out-search' %}?{{pd}}&sortby=employee_id__employee_first_name">{% trans "Employee" %}</div>
               <div class="oh-sticky-table__th {% if request.sort_option.order == '-type' %}arrow-up {% elif request.sort_option.order == 'type' %} arrow-down {% else %} arrow-up-down {% endif %}" data-cell-index="1" data-cell-title='{% trans "Type" %}' scope="col" hx-target='#report-container' hx-get="{% url 'late-come-early-out-search' %}?{{pd}}&sortby=type">{% trans "Type" %}</div>
               <div class="oh-sticky-table__th" data-cell-index="10" data-cell-title='{% trans "Late/Early By" %}' scope="col">{% trans "Late/Early By" %}</div>
+              <div class="oh-sticky-table__th" data-cell-index="11" data-cell-title='{% trans "Shift" %}' scope="col">{% trans "Shift" %}</div>
               <div style="width:170px" class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_id__attendance_date' %}arrow-up {% elif request.sort_option.order == 'attendance_id__attendance_date' %}arrow-down {% else %} arrow-up-down {% endif %}" data-cell-index="2" data-cell-title='{% trans "Attendance Date" %}' scope="col" hx-target='#report-container' hx-get="{% url 'late-come-early-out-search' %}?{{pd}}&sortby=attendance_id__attendance_date">{% trans "Attendance Date"%}</div>
               <div class="oh-sticky-table__th" data-cell-index="3" data-cell-title='{% trans "Check-In" %}' scope="col">{% trans "Check-In" %}</div>
               <div class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_id__attendance_clock_in_date' %}arrow-up {% elif request.sort_option.order == 'attendance_id__attendance_clock_in_date' %}arrow-down {% else %} arrow-up-down {% endif %}" data-cell-index="4" data-cell-title='{% trans "In-Date" %}' scope="col" hx-target='#report-container' hx-get="{% url 'late-come-early-out-search' %}?{{pd}}&sortby=attendance_id__attendance_clock_in_date">{% trans "In Date" %}</div>
@@ -80,6 +81,7 @@
                 {{late_in_early_out.get_type_display}}
               </div>
               <div data-cell-index="10" class='oh-sticky-table__td'>{{ late_in_early_out.get_late_early_duration|default:"—" }}</div>
+              <div data-cell-index="11" class='oh-sticky-table__td'>{{ late_in_early_out.attendance_id.shift_id|default:"—" }}</div>
               <div data-cell-index="2" class='oh-sticky-table__td dateformat_changer'>{{late_in_early_out.attendance_id.attendance_date}}</div>
               <div data-cell-index="3" class='oh-sticky-table__td timeformat_changer'>{{late_in_early_out.attendance_id.attendance_clock_in}}</div>
               <div data-cell-index="4" class='oh-sticky-table__td dateformat_changer'>{{late_in_early_out.attendance_id.attendance_clock_in_date}}</div>
