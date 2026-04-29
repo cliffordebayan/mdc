@@ -481,11 +481,15 @@ class Employee(models.Model):
                 ):
                     today = datetime.now().date()
                     yesterday = today - timedelta(days=1)
-                    working_employees = Attendance.objects.filter(
+                    working_employees = set(
+                        Attendance.objects.filter(
                         attendance_date__gte=yesterday,
                         attendance_date__lte=today,
                         attendance_clock_out_date__isnull=True,
-                    ).values_list("employee_id", flat=True)
+                        )
+                        .values_list("employee_id", flat=True)
+                        .distinct()
+                    )
                     setattr(request, "working_employees", working_employees)
                 working_employees = request.working_employees
                 return self.pk in working_employees

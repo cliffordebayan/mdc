@@ -434,6 +434,9 @@
         $(anchorElement).parent().find('#newTab').hide();
     }
 
+    {% if is_birthday %}
+    const c = document.getElementById('c');
+    if (c) {
     var w = c.width = window.innerWidth,
         h = c.height = window.innerHeight,
         ctx = c.getContext('2d'),
@@ -808,6 +811,8 @@
 
         ctx.font = opts.charSize + 'px Verdana';
     })
+    }
+    {% endif %}
 
 </script>
 <script src="{% static 'build/js/dashboardDriver.js' %}"></script>

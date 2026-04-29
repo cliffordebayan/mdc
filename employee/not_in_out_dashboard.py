@@ -17,13 +17,13 @@ from django.shortcuts import render
 
 from base.backends import ConfiguredEmailBackend
 from base.forms import MailTemplateForm
-from base.methods import export_data, generate_pdf
+from base.methods import export_data, filtersubordinatesemployeemodel, generate_pdf
 from base.models import HorillaMailTemplate
-from employee.filters import EmployeeFilter
 from employee.models import Employee
 from horilla import settings
 from horilla.decorators import login_required, manager_can_enter
 from horilla.http.response import HorillaRedirect
+from horilla.methods import get_horilla_model_class
 
 
 def paginator_qry(qryset, page_number):
@@ -44,11 +44,19 @@ def not_in_yet(request):
     """
     page_number = request.GET.get("page")
     previous_data = request.GET.urlencode()
-    emps = (
-        EmployeeFilter({"not_in_yet": date.today()})
-        .qs.exclude(employee_work_info__isnull=True)
-        .filter(is_active=True)
+    emps = Employee.objects.select_related("employee_work_info").filter(
+        is_active=True
+    ).exclude(employee_work_info__isnull=True)
+    emps = filtersubordinatesemployeemodel(
+        request=request, queryset=emps, perm="employee.view_employee"
     )
+    if apps.is_installed("attendance"):
+        Attendance = get_horilla_model_class("attendance", "attendance")
+        working_ids = Attendance.objects.filter(
+            attendance_date=date.today(),
+            attendance_clock_out__isnull=True,
+        ).values_list("employee_id", flat=True)
+        emps = emps.exclude(id__in=working_ids)
 
     return render(
         request,
@@ -67,12 +75,28 @@ def not_out_yet(request):
     This context processor wil return the employees, if they not marked the attendance
     for the day
     """
-    emps = (
-        EmployeeFilter({"not_out_yet": date.today()})
-        .qs.exclude(employee_work_info__isnull=True)
-        .filter(is_active=True)
+    page_number = request.GET.get("page")
+    previous_data = request.GET.urlencode()
+    emps = Employee.objects.select_related("employee_work_info").filter(
+        is_active=True
+    ).exclude(employee_work_info__isnull=True)
+    emps = filtersubordinatesemployeemodel(
+        request=request, queryset=emps, perm="employee.view_employee"
     )
-    return render(request, "dashboard/not_out_yet.html", {"employees": emps})
+    if apps.is_installed("attendance"):
+        Attendance = get_horilla_model_class("attendance", "attendance")
+        working_ids = Attendance.objects.filter(
+            attendance_date=date.today(),
+            attendance_clock_out__isnull=True,
+        ).values_list("employee_id", flat=True)
+        emps = emps.filter(id__in=working_ids)
+    else:
+        emps = emps.none()
+    return render(
+        request,
+        "dashboard/not_out_yet.html",
+        {"employees": paginator_qry(emps, page_number), "pd": previous_data},
+    )
 
 
 @login_required

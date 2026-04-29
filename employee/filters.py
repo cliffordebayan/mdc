@@ -8,6 +8,7 @@ This page is used to register filter for employee models
 import django
 import django_filters
 from django import forms
+from django.db.models import Q
 from django.utils.translation import gettext as _
 from django_filters import CharFilter
 
@@ -19,7 +20,6 @@ from employee.models import DisciplinaryAction, Employee, Policy
 from horilla.filters import FilterSet, HorillaFilterSet, filter_by_name
 from horilla.horilla_middlewares import _thread_locals
 from horilla_documents.models import Document
-from horilla_views.templatetags.generic_template_filters import getattribute
 
 
 class EmployeeFilter(HorillaFilterSet):
@@ -170,8 +170,6 @@ class EmployeeFilter(HorillaFilterSet):
         """
         Override the default filtering behavior to handle None option and filter queryset for reporting manager.
         """
-        from django.db.models import Q
-
         # Handle default accessibility and filter based on reporting manager
 
         request = getattr(_thread_locals, "request", None)
@@ -207,17 +205,19 @@ class EmployeeFilter(HorillaFilterSet):
         """
         Employee search method
         """
-        value = value.lower()
-
         if self.data.get("search_field"):
             return queryset
+        value = (value or "").strip()
+        if not value:
+            return queryset
 
-        def _icontains(instance):
-            result = str(getattribute(instance, "get_full_name")).lower()
-            return instance.pk if value in result else None
-
-        ids = list(filter(None, map(_icontains, queryset)))
-        return queryset.filter(id__in=ids)
+        return queryset.filter(
+            Q(employee_first_name__icontains=value)
+            | Q(employee_middle_name__icontains=value)
+            | Q(employee_last_name__icontains=value)
+            | Q(employee_no__icontains=value)
+            | Q(email__icontains=value)
+        )
 
 
 class EmployeeReGroup:

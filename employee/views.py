@@ -196,6 +196,26 @@ BLOCKED_EXTENSIONS = {
 }
 
 
+EMPLOYEE_LIST_SELECT_RELATED_FIELDS = (
+    "employee_user_id",
+    "employee_work_info",
+    "employee_work_info__job_position_id",
+    "employee_work_info__department_id",
+    "employee_work_info__shift_id",
+    "employee_work_info__work_type_id",
+    "employee_work_info__job_role_id",
+    "employee_work_info__reporting_manager_id",
+    "employee_work_info__company_id",
+)
+
+
+def employee_list_queryset():
+    """
+    Shared queryset for employee list/card pages to avoid N+1 lookups.
+    """
+    return Employee.objects.select_related(*EMPLOYEE_LIST_SELECT_RELATED_FIELDS)
+
+
 def _check_reporting_manager(request, *args, **kwargs):
     if kwargs.get("obj_id"):
         obj_id = kwargs["obj_id"]
@@ -1126,6 +1146,15 @@ def paginator_qry(qryset, page_number):
     return qryset
 
 
+def _clear_reporting_manager_relations(employee):
+    """
+    Clear subordinate reporting-manager links before employee deletion.
+    """
+    EmployeeWorkInformation.objects.filter(reporting_manager_id=employee).update(
+        reporting_manager_id=None
+    )
+
+
 @login_required
 @enter_if_accessible(
     feature="employee_view",
@@ -1141,7 +1170,7 @@ def employee_view(request):
     page_number = request.GET.get("page")
     error_message = request.session.pop("error_message", None)
 
-    queryset = Employee.objects.filter()
+    queryset = employee_list_queryset()
     filter_obj = EmployeeFilter(request.GET, queryset=queryset).qs
     if request.GET.get("is_active") != "False":
         filter_obj = filter_obj.filter(is_active=True)
@@ -1149,10 +1178,12 @@ def employee_view(request):
     update_fields = BulkUpdateFieldForm()
     data_dict = parse_qs(previous_data)
     get_key_instances(Employee, data_dict)
-    emp = Employee.objects.filter()
+    emp = queryset
 
     # Store the employees in the session
-    request.session["filtered_employees"] = [employee.id for employee in queryset]
+    request.session["filtered_employees"] = list(
+        filter_obj.values_list("id", flat=True)
+    )
 
     return render(
         request,
@@ -1867,7 +1898,7 @@ def employee_filter_view(request):
     """
     previous_data = request.GET.urlencode()
     field = request.GET.get("field")
-    queryset = Employee.objects.filter()
+    queryset = employee_list_queryset()
     selected_company = request.session.get("selected_company")
     employees = EmployeeFilter(request.GET, queryset=queryset).qs
     if request.GET.get("is_active") != "False":
@@ -1892,7 +1923,9 @@ def employee_filter_view(request):
         employees = paginator_qry(employees, page_number)
 
         # Store the employees in the session
-        request.session["filtered_employees"] = [employee.id for employee in employees]
+        request.session["filtered_employees"] = list(
+            employees.object_list.values_list("id", flat=True)
+        )
 
     return render(
         request,
@@ -1919,7 +1952,7 @@ def employee_card(request):
     if isinstance(search, type(None)):
         search = ""
     employees = filtersubordinatesemployeemodel(
-        request, Employee.objects.all(), "employee.view_employee"
+        request, employee_list_queryset(), "employee.view_employee"
     )
     if request.GET.get("is_active") is None:
         filter_obj = EmployeeFilter(
@@ -1960,14 +1993,16 @@ def employee_list(request):
     if request.GET.get("is_active") is None:
         filter_obj = EmployeeFilter(
             request.GET,
-            queryset=Employee.objects.filter(
+            queryset=employee_list_queryset().filter(
                 employee_first_name__icontains=search, is_active=True
             ),
         )
     else:
         filter_obj = EmployeeFilter(
             request.GET,
-            queryset=Employee.objects.filter(employee_first_name__icontains=search),
+            queryset=employee_list_queryset().filter(
+                employee_first_name__icontains=search
+            ),
         )
     employees = filtersubordinatesemployeemodel(
         request, filter_obj.qs, "employee.view_employee"
@@ -2043,6 +2078,7 @@ def employee_delete(request, obj_id):
                 for contract in contracts:
                     if contract.contract_status != "active":
                         contract.delete()
+        _clear_reporting_manager_relations(employee)
         # try:
         #     user.delete()
         # except AttributeError:
@@ -2100,10 +2136,10 @@ def employee_bulk_delete(request):
                     for contract in contracts:
                         if contract.contract_status != "active":
                             contract.delete()
+            _clear_reporting_manager_relations(employee)
+            employee.delete()
             if user:
                 user.delete()
-            else:
-                employee.delete()
             deleted_count += 1
         except Employee.DoesNotExist:
             messages.error(request, _("Employee not found."))
@@ -2361,7 +2397,7 @@ def employee_search(request):
     search = request.GET["search"]
     view = request.GET["view"]
     previous_data = request.GET.urlencode()
-    employees = EmployeeFilter(request.GET).qs
+    employees = EmployeeFilter(request.GET, queryset=employee_list_queryset()).qs
     if search == "":
         employees = employees.filter(is_active=True)
     page_number = request.GET.get("page")
@@ -3319,7 +3355,7 @@ def employee_select(request):
     if page_number == "all":
         employees = Employee.objects.filter(is_active=True)
 
-    employee_ids = [str(emp.id) for emp in employees]
+    employee_ids = list(employees.values_list("id", flat=True))
     total_count = employees.count()
 
     context = {"employee_ids": employee_ids, "total_count": total_count}
@@ -3342,7 +3378,7 @@ def employee_select_filter(request):
         filtered_employees = filtersubordinatesemployeemodel(
             request=request, queryset=employee_filter.qs, perm="employee.view_employee"
         )
-        employee_ids = [str(emp.id) for emp in filtered_employees]
+        employee_ids = list(filtered_employees.values_list("id", flat=True))
         total_count = filtered_employees.count()
 
         context = {"employee_ids": employee_ids, "total_count": total_count}

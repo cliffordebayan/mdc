@@ -37,6 +37,11 @@ from horilla.decorators import hx_request_required, login_required
 from horilla.methods import get_horilla_model_class
 
 
+def _page_ids(page_or_queryset):
+    object_list = getattr(page_or_queryset, "object_list", page_or_queryset)
+    return [instance.id for instance in object_list]
+
+
 def find_on_time(request, today, week_day, department=None):
     """
     This method is used to find count for on time attendances
@@ -153,7 +158,12 @@ def dashboard_approve_overtimes(request):
     min_ot = strtime_seconds("00:00")
     if condition is not None and condition.minimum_overtime_to_approve is not None:
         min_ot = strtime_seconds(condition.minimum_overtime_to_approve)
-    ot_attendances = Attendance.objects.filter(
+    ot_attendances = Attendance.objects.select_related(
+        "employee_id",
+        "employee_id__employee_work_info",
+        "shift_id",
+        "work_type_id",
+    ).filter(
         overtime_second__gte=min_ot,
         attendance_validated=True,
         employee_id__is_active=True,
@@ -165,9 +175,8 @@ def dashboard_approve_overtimes(request):
         queryset=ot_attendances,
     )
 
-    id_list = [ot.id for ot in ot_attendances]
-    ot_attendances_ids = json.dumps(list(id_list))
     ot_attendances = paginator_qry(ot_attendances, page_number)
+    ot_attendances_ids = json.dumps(_page_ids(ot_attendances))
     context = {
         "overtime_attendances": ot_attendances,
         "ot_attendances_ids": ot_attendances_ids,
@@ -192,7 +201,12 @@ def dashboard_validate_attendances(request):
     if referer == "/":
         main_dashboard = True
     page_number = request.GET.get("page")
-    validate_attendances = Attendance.objects.filter(
+    validate_attendances = Attendance.objects.select_related(
+        "employee_id",
+        "employee_id__employee_work_info",
+        "shift_id",
+        "work_type_id",
+    ).filter(
         attendance_validated=False, employee_id__is_active=True
     )
 
@@ -202,10 +216,8 @@ def dashboard_validate_attendances(request):
         queryset=validate_attendances,
     )
 
-    validate_id_list = [val.id for val in validate_attendances]
-    validate_attendances_ids = json.dumps(list(validate_id_list))
-
     validate_attendances = paginator_qry(validate_attendances, page_number)
+    validate_attendances_ids = json.dumps(_page_ids(validate_attendances))
     context = {
         "validate_attendances": validate_attendances,
         "validate_attendances_ids": validate_attendances_ids,
