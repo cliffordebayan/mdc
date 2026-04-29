@@ -102,7 +102,7 @@ class Employee(models.Model):
     state = models.CharField(max_length=100, null=True, blank=True)
     city = models.CharField(max_length=30, null=True, blank=True)
     zip = models.CharField(max_length=20, null=True, blank=True)
-    dob = models.DateField(null=True, blank=True)
+    dob = models.DateField(null=True, blank=True, verbose_name=_("Date of Birth"))
     gender = models.CharField(
         max_length=10, null=True, choices=choice_gender, default="male"
     )
@@ -1097,3 +1097,26 @@ ACCESSBILITY_FEATURE.append(("gender_chart", "Can view Gender Chart"))
 ACCESSBILITY_FEATURE.append(("department_chart", "Can view Department Chart"))
 ACCESSBILITY_FEATURE.append(("employees_chart", "Can view Employees Chart"))
 ACCESSBILITY_FEATURE.append(("birthday_view", "Can view Birthdays"))
+
+
+class EmployeeOnboardingPortal(models.Model):
+    """
+    Token-based portal that lets an existing employee set their password and
+    fill in their own profile data (photo, personal info, bank details).
+    """
+
+    employee_id = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="onboarding_portals",
+        verbose_name=_("Employee"),
+    )
+    token = models.CharField(max_length=200, unique=True)
+    used = models.BooleanField(default=False)
+    count = models.IntegerField(
+        default=0,
+        help_text="0=set-password, 1=profile-photo, 2=personal-details, 3=bank-details, 4=done",
+    )
+
+    def __str__(self):
+        return f"EmployeeOnboardingPortal({self.employee_id}, count={self.count})"

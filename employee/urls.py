@@ -450,4 +450,35 @@ urlpatterns = [
         views.send_pin_to_email,
         name="send-pin-email",
     ),
+    # Employee self-service onboarding portal
+    path(
+        "send-employee-portal/<int:obj_id>/",
+        views.send_employee_portal_link,
+        name="send-employee-portal",
+    ),
+    path(
+        "employee-portal/set-password/<str:token>/",
+        views.employee_portal_set_password,
+        name="employee-portal-set-password",
+    ),
+    path(
+        "employee-portal/profile/<str:token>/",
+        views.employee_portal_profile,
+        name="employee-portal-profile",
+    ),
+    path(
+        "employee-portal/personal/<str:token>/",
+        views.employee_portal_personal,
+        name="employee-portal-personal",
+    ),
+    path(
+        "employee-portal/bank/<str:token>/",
+        views.employee_portal_bank,
+        name="employee-portal-bank",
+    ),
+    path(
+        "employee-portal/done/",
+        views.employee_portal_done,
+        name="employee-portal-done",
+    ),
 ]

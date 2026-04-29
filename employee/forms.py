@@ -883,3 +883,62 @@ class EmployeeGeneralSettingPrefixForm(forms.ModelForm):
             "employee_no_prefix": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "company_id": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
         }
+
+
+class EmployeePortalPersonalForm(ModelForm):
+    """
+    Form used in the employee self-service portal for updating personal info.
+    """
+
+    class Meta:
+        model = Employee
+        fields = [
+            "employee_first_name",
+            "employee_middle_name",
+            "employee_last_name",
+            "employee_extension",
+            "phone",
+            "dob",
+            "gender",
+            "address",
+            "country",
+            "state",
+            "city",
+            "zip",
+            "qualification",
+            "experience",
+            "marital_status",
+            "children",
+            "emergency_contact",
+            "emergency_contact_name",
+            "emergency_contact_relation",
+            "tin_number",
+            "sss_number",
+            "hdmf_number",
+            "philhealth_number",
+        ]
+        widgets = {
+            "employee_first_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "employee_middle_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "employee_last_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "employee_extension": forms.TextInput(attrs={"class": "oh-input w-100", "placeholder": "e.g. Jr., Sr., III"}),
+            "phone": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "dob": forms.DateInput(attrs={"class": "oh-input w-100", "type": "date"}),
+            "gender": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "address": forms.Textarea(attrs={"class": "oh-input w-100", "rows": 3}),
+            "country": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "state": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "city": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "zip": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "qualification": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "experience": forms.NumberInput(attrs={"class": "oh-input w-100"}),
+            "marital_status": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "children": forms.NumberInput(attrs={"class": "oh-input w-100"}),
+            "emergency_contact": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "emergency_contact_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "emergency_contact_relation": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "tin_number": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "sss_number": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "hdmf_number": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "philhealth_number": forms.TextInput(attrs={"class": "oh-input w-100"}),
+        }

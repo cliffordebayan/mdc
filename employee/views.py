@@ -16,6 +16,7 @@ import calendar
 import json
 import operator
 import os
+import secrets
 import threading
 from datetime import date, datetime, timedelta
 from io import BytesIO
@@ -25,6 +26,8 @@ import pandas as pd
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import login
+from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
@@ -47,6 +50,7 @@ from accessibility.decorators import enter_if_accessible
 from accessibility.methods import update_employee_accessibility_cache
 from accessibility.middlewares import ACCESSIBILITY_CACHE_USER_KEYS
 from accessibility.models import DefaultAccessibility
+from base.backends import ConfiguredEmailBackend
 from base.forms import ModelForm
 from base.methods import (
     choosesubordinates,
@@ -80,6 +84,7 @@ from employee.forms import (
     EmployeeGeneralSettingPrefixForm,
     EmployeeInsuranceForm,
     EmployeeNoteForm,
+    EmployeePortalPersonalForm,
     EmployeeTagForm,
     EmployeeWorkInformationForm,
     EmployeeWorkInformationUpdateForm,
@@ -110,6 +115,7 @@ from employee.models import (
     EmployeeGeneralSetting,
     EmployeeInsurance,
     EmployeeNote,
+    EmployeeOnboardingPortal,
     EmployeeTag,
     EmployeeWorkInformation,
     NoteFiles,
@@ -4079,3 +4085,219 @@ def send_pin_to_email(request, obj_id):
         messages.error(request, _("Failed to send PIN email. Please check email configuration."))
 
     return redirect(request.META.get("HTTP_REFERER", "employee-view"))
+
+
+# ---------------------------------------------------------------------------
+# Employee Self-Service Onboarding Portal
+# ---------------------------------------------------------------------------
+
+
+def _employee_portal_step_redirect(portal):
+    """Return a redirect to the next incomplete portal step, or None if at step 0."""
+    token = portal.token
+    if portal.count >= 3:
+        return redirect("employee-portal-bank", token)
+    if portal.count == 2:
+        return redirect("employee-portal-personal", token)
+    if portal.count == 1:
+        return redirect("employee-portal-profile", token)
+    return None
+
+
+@login_required
+@permission_required(["employee.add_employee"])
+def send_employee_portal_link(request, obj_id):
+    """Send a self-service portal link to an employee so they can set their password
+    and fill in their own profile data."""
+    employee = get_object_or_404(Employee, pk=obj_id)
+
+    if request.method == "POST":
+        token = secrets.token_hex(15)
+        portal, created = EmployeeOnboardingPortal.objects.get_or_create(
+            employee_id=employee,
+            defaults={"token": token},
+        )
+        if not created:
+            portal.token = token
+            portal.used = False
+            portal.count = 0
+            portal.save()
+
+        protocol = "https" if request.is_secure() else "http"
+        host = request.get_host()
+        portal_url = f"{protocol}://{host}/employee/employee-portal/set-password/{token}"
+
+        send_to = (
+            getattr(getattr(employee, "employee_work_info", None), "email", None)
+            or employee.email
+        )
+
+        html_message = render_to_string(
+            "employee/portal/email_template.html",
+            {
+                "employee": employee,
+                "portal_url": portal_url,
+                "host": host,
+                "protocol": protocol,
+            },
+            request=request,
+        )
+        email_msg = EmailMessage(
+            subject=_("Complete Your Employee Profile"),
+            body=html_message,
+            to=[send_to],
+        )
+        email_msg.content_subtype = "html"
+        try:
+            email_msg.send()
+            messages.success(request, _("Portal link sent to %(email)s") % {"email": send_to})
+        except Exception as e:
+            logger.error(e)
+            messages.error(request, _("Failed to send portal link. Please check email configuration."))
+
+    return HorillaRedirect(request)
+
+
+def employee_portal_set_password(request, token):
+    """Step 1 — Employee sets their own password via the portal link."""
+    portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
+    if portal is None or portal.used:
+        return render(request, "404.html")
+
+    step_redirect = _employee_portal_step_redirect(portal)
+    if step_redirect is not None:
+        return step_redirect
+
+    employee = portal.employee_id
+    user = employee.employee_user_id
+    form = SetPasswordForm(user)
+
+    if request.method == "POST":
+        form = SetPasswordForm(user, request.POST)
+        if form.is_valid():
+            form.save()
+            login(request, user)
+            portal.count = 1
+            portal.save()
+            messages.success(request, _("Password set successfully."))
+            return redirect("employee-portal-profile", token)
+
+    company = None
+    if hasattr(employee, "employee_work_info") and employee.employee_work_info:
+        company = employee.employee_work_info.company_id
+
+    return render(
+        request,
+        "employee/portal/set_password.html",
+        {"form": form, "employee": employee, "company": company, "token": token},
+    )
+
+
+def employee_portal_profile(request, token):
+    """Step 2 — Employee uploads a profile picture."""
+    portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
+    if portal is None or portal.used:
+        return render(request, "404.html")
+
+    if portal.count >= 2:
+        return _employee_portal_step_redirect(portal)
+
+    employee = portal.employee_id
+
+    if request.method == "POST":
+        profile = request.FILES.get("profile")
+        if profile is not None:
+            employee.employee_profile = profile
+            employee.save()
+            portal.count = 2
+            portal.save()
+            messages.success(request, _("Profile picture updated successfully."))
+            return redirect("employee-portal-personal", token)
+
+    company = None
+    if hasattr(employee, "employee_work_info") and employee.employee_work_info:
+        company = employee.employee_work_info.company_id
+
+    return render(
+        request,
+        "employee/portal/profile.html",
+        {
+            "employee": employee,
+            "token": token,
+            "company": company,
+        },
+    )
+
+
+def employee_portal_personal(request, token):
+    """Step 3 — Employee fills in personal details."""
+    portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
+    if portal is None or portal.used:
+        return render(request, "404.html")
+
+    if portal.count >= 3:
+        return _employee_portal_step_redirect(portal)
+
+    employee = portal.employee_id
+    form = EmployeePortalPersonalForm(instance=employee)
+
+    if request.method == "POST":
+        form = EmployeePortalPersonalForm(request.POST, instance=employee)
+        if form.is_valid():
+            form.save()
+            portal.count = 3
+            portal.save()
+            messages.success(request, _("Personal details saved successfully."))
+            return redirect("employee-portal-bank", token)
+
+    company = None
+    if hasattr(employee, "employee_work_info") and employee.employee_work_info:
+        company = employee.employee_work_info.company_id
+
+    return render(
+        request,
+        "employee/portal/personal_details.html",
+        {"form": form, "employee": employee, "company": company, "token": token},
+    )
+
+
+def employee_portal_bank(request, token):
+    """Step 4 — Employee fills in bank details."""
+    portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
+    if portal is None or portal.used:
+        return render(request, "404.html")
+
+    employee = portal.employee_id
+    bank_info = EmployeeBankDetails.objects.filter(employee_id=employee).first()
+    form = EmployeeBankDetailsUpdateForm(instance=bank_info)
+
+    if request.method == "POST":
+        form = EmployeeBankDetailsUpdateForm(request.POST, instance=bank_info)
+        if form.is_valid():
+            bank_detail = form.save(commit=False)
+            bank_detail.employee_id = employee
+            bank_detail.save()
+            if bank_detail.is_primary:
+                EmployeeBankDetails.objects.filter(employee_id=employee).exclude(
+                    pk=bank_detail.pk
+                ).update(is_primary=False)
+            portal.count = 4
+            portal.used = True
+            portal.save()
+            messages.success(request, _("Bank details saved successfully."))
+            return redirect("employee-portal-done")
+
+    company = None
+    if hasattr(employee, "employee_work_info") and employee.employee_work_info:
+        company = employee.employee_work_info.company_id
+
+    return render(
+        request,
+        "employee/portal/bank_details.html",
+        {"form": form, "employee": employee, "company": company, "token": token},
+    )
+
+
+def employee_portal_done(request):
+    """Final page — shown after the employee completes all portal steps."""
+    return render(request, "employee/portal/done.html")

@@ -1,0 +1,76 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { margin: 0; background-color: #e5e5e5; }
+    table { border-spacing: 0; }
+    td { padding: 0; }
+    img { border: 0; }
+    .hr-wrapper { width: 100%; table-layout: fixed; background-color: #e5e5e5; padding-bottom: 60px; }
+    .hr-table-main {
+      background-color: #fff;
+      margin: 0 auto;
+      width: 100%;
+      max-width: 650px;
+      border-spacing: 0;
+      font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+      color: #1c1c1c;
+      margin-top: 15px;
+    }
+    .hr-table-main__header { table-layout: fixed; padding: 15px; width: 100%; }
+    .hr-link { color: #6f6f6f; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <center class="hr-wrapper">
+    <table class="hr-table-main" width="100%" style="margin-top:60px;">
+      <tr>
+        <td>
+          <table class="hr-table-main__header">
+            <tr>
+              <td style="width:50%">
+                <strong style="font-size:16px;color:#1c1c1c;">{{ employee.employee_work_info.company_id|default:"Company" }}</strong>
+              </td>
+              <td style="width:50%;text-align:right;">
+                <a href="#" class="hr-link">View in browser</a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:15px 25px 0 25px;font-size:24px;" align="center">
+          <strong>Hello {{ employee.get_full_name }}, please complete your employee profile.</strong>
+        </td>
+      </tr>
+      <tr>
+        <td align="center" style="padding-top:0px;">
+          <p style="width:90%;">Your HR team has created your employee account. Please use the button below to set your password and fill in your personal details. This link can only be used once.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:15px" align="center">
+          <a href="{{ portal_url }}" style="
+            background-color:#e54f37;
+            color:#fff;
+            border-radius:10px;
+            display:inline-block;
+            padding:15px 25px;
+            text-decoration:none;
+            font-weight:bold;
+          ">Complete Profile</a>
+        </td>
+      </tr>
+      <tr>
+        <td align="center" style="padding:15px;color:#5c5c5c;font-size:12px;">
+          This link was sent to you because your email is registered as an employee account.
+        </td>
+      </tr>
+    </table>
+  </center>
+</body>
+</html>
