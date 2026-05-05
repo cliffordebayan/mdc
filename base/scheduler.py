@@ -235,7 +235,7 @@ def rotate_shift():
         )
         emp_shift.update(is_active=False)
 
-    for rotating_shift in rotating_shifts_modified:
+    for rotating_shift in (rotating_shifts_modified or []):
         based_on = rotating_shift.based_on
         # after day condition
         if based_on == "after":
