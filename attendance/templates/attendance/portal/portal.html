@@ -319,10 +319,17 @@
             left: 0;
             width: 100vw;
             height: 100vh;
+            height: 100dvh;
             display: grid;
             grid-template-columns: 1fr 1fr;
             background: #f8f9fa;
             z-index: 9999;
+            overflow: hidden;
+        }
+
+        /* Scroll wrapper: transparent on desktop (grid sees children directly) */
+        .clock-scroll-inner {
+            display: contents;
         }
 
         /* Left: camera */
@@ -776,6 +783,8 @@
                 padding-bottom: 60px;
                 gap: 10px;
                 overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                min-height: 0;
             }
 
             .clock-live-time {
@@ -850,14 +859,25 @@
                 font-size: 18px;
             }
 
-            /* Single unified scroll: the fixed container scrolls, not the inner panel */
+            /* On mobile: fixed outer clips; inner wrapper is the single scroll */
             .clock-fullscreen {
-                grid-template-rows: 35vh auto;
-                overflow-y: auto;
+                display: block;
+                overflow: hidden;
+            }
+
+            .clock-scroll-inner {
+                display: flex;
+                flex-direction: column;
+                position: absolute;
+                inset: 0;
+                overflow-y: scroll;
+                -webkit-overflow-scrolling: touch;
             }
 
             .clock-camera-panel {
-                max-height: 35vh;
+                flex: 0 0 45vh;
+                height: 45vh;
+                max-height: none;
                 overflow: hidden;
             }
 
@@ -889,11 +909,13 @@
             }
 
             .clock-info-panel {
-                padding: 14px 12px 16px;
+                flex: 0 0 auto;
+                padding: 14px 12px 24px;
                 gap: 10px;
                 justify-content: flex-start;
                 background: #f8f9fa;
-                overflow-y: visible; /* no inner scroll — parent .clock-fullscreen scrolls as one */
+                overflow: visible;
+                min-height: unset;
             }
 
             .clock-company-logo {
@@ -1023,9 +1045,9 @@
 
         /* Very small phones */
         @media (max-width: 400px) {
-            .clock-fullscreen {
-                grid-template-rows: 35vh auto;
-                overflow-y: auto;
+            .clock-camera-panel {
+                flex: 0 0 40vh;
+                height: 40vh;
             }
 
             .clock-live-time {
@@ -1079,6 +1101,11 @@
                 min-height: 48px;
                 font-size: 17px !important;
             }
+        }
+
+        /* Prevent page behind from scrolling when clock step is active */
+        body.clock-step-active {
+            overflow: hidden;
         }
     </style>
 </head>
@@ -1169,6 +1196,7 @@
                 <!-- Step 3: Fullscreen Clock In/Out -->
                 <div class="self-service-step" id="step-clock">
                     <div class="clock-fullscreen">
+                        <div class="clock-scroll-inner">
                         <!-- LEFT: Camera -->
                         <div class="clock-camera-panel">
                             <video id="video-preview" playsinline autoplay style="display:none;"></video>
@@ -1250,6 +1278,7 @@
                                 </button>
                             </div>
                         </div>
+                        </div><!-- /.clock-scroll-inner -->
                     </div>
                 </div>
 
@@ -2146,6 +2175,11 @@
         function showStep(step) {
             $('.self-service-step').css('display', 'none').removeClass('active');
             $('#step-' + step).css('display', 'block').addClass('active');
+            if (step === 'clock') {
+                document.body.classList.add('clock-step-active');
+            } else {
+                document.body.classList.remove('clock-step-active');
+            }
             if (step === 'search') {
                 focusSearchInput();
             }
