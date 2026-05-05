@@ -850,8 +850,10 @@
                 font-size: 18px;
             }
 
+            /* Single unified scroll: the fixed container scrolls, not the inner panel */
             .clock-fullscreen {
-                grid-template-rows: 35vh 1fr;
+                grid-template-rows: 35vh auto;
+                overflow-y: auto;
             }
 
             .clock-camera-panel {
@@ -891,6 +893,7 @@
                 gap: 10px;
                 justify-content: flex-start;
                 background: #f8f9fa;
+                overflow-y: visible; /* no inner scroll — parent .clock-fullscreen scrolls as one */
             }
 
             .clock-company-logo {
@@ -1021,7 +1024,8 @@
         /* Very small phones */
         @media (max-width: 400px) {
             .clock-fullscreen {
-                grid-template-rows: 35vh 1fr;
+                grid-template-rows: 35vh auto;
+                overflow-y: auto;
             }
 
             .clock-live-time {
