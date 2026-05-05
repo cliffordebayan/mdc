@@ -61,14 +61,20 @@ from base.methods import (
     sortby,
 )
 from base.models import (
+    Branch,
+    BusinessUnit,
     Company,
+    CostCenter,
     Department,
     EmailLog,
+    EmployeeShift,
+    EmployeeType,
     JobPosition,
     JobRole,
     RotatingShiftAssign,
     RotatingWorkTypeAssign,
     ShiftRequest,
+    WorkType,
     WorkTypeRequest,
 )
 from base.views import generate_error_report
@@ -95,6 +101,7 @@ from employee.methods.methods import (
     bulk_create_department_import,
     bulk_create_employee_import,
     bulk_create_employee_types,
+    bulk_create_insurance_import,
     bulk_create_job_position_import,
     bulk_create_job_role_import,
     bulk_create_shifts,
@@ -102,7 +109,9 @@ from employee.methods.methods import (
     bulk_create_work_info_import,
     bulk_create_work_types,
     bulk_set_tags_import,
-    error_data_template,
+    get_error_data_template,
+    get_import_bank_names,
+    get_import_insurance_names,
     get_ordered_employee_nos,
     process_employee_records,
     set_initial_password,
@@ -2755,27 +2764,343 @@ def work_info_import_file(request):
     """
     This method is used to return the excel file of import Employee instances
     """
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    bank_names = get_import_bank_names()
+    insurance_names = get_import_insurance_names()
+
     columns = [
         "Employee No",
         "First Name",
+        "Middle Name",
         "Last Name",
+        "Extension",
+        "Date of Birth",
+        "Gender",
+        "Address",
+        "Country",
+        "Province",
+        "City",
+        "Qualification",
+        "Experience",
+        "Marital Status",
+        "Children",
+        "Emergency Contact",
+        "Emergency Contact Name",
+        "Emergency Contact Relation",
+        "TIN Number",
+        "SSS Number",
+        "HDMF Number",
+        "PhilHealth Number",
         "Phone",
         "Email",
-        "Gender",
+        "Company",
+        "Department",
+        "Job Position",
+        "Job Role",
+        "Shift Information",
+        "Employee Type",
+        "Reporting Manager",
+        "Work Location",
+        "Branch",
+        "Cost Center",
+        "Business Unit",
+        "Work Type",
+        "Salary",
+        "Salary Hour",
+        "Joining Date",
+        "End Date",
+        "Employee Status",
+        "Tags",
+        "Is Active",
+        "Work Email",
+        "Work Phone",
+        *bank_names,
+        *[col for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")],
     ]
     example = {
         "Employee No": "EMP001",
-        "First Name": "Sample",
-        "Last Name": "Employee",
-        "Phone": "09171234567",
-        "Email": "sample.employee@example.com",
+        "First Name": "Clifford Allen",
+        "Middle Name": "",
+        "Last Name": "Ebayan",
+        "Extension": "",
+        "Date of Birth": "",
         "Gender": "male",
+        "Address": "",
+        "Country": "",
+        "Province": "",
+        "City": "",
+        "Qualification": "",
+        "Experience": "",
+        "Marital Status": "single",
+        "Children": "",
+        "Emergency Contact": "",
+        "Emergency Contact Name": "",
+        "Emergency Contact Relation": "",
+        "TIN Number": "",
+        "SSS Number": "",
+        "HDMF Number": "",
+        "PhilHealth Number": "",
+        "Phone": "09171234567",
+        "Email": "clifford.ebayan@example.com",
+        "Company": "Martin Development Corporation",
+        "Department": "Information Technology",
+        "Job Position": "",
+        "Job Role": "",
+        "Shift Information": "Morning Shift 8-5 (M-F)",
+        "Employee Type": "",
+        "Reporting Manager": "",
+        "Work Location": "",
+        "Branch": "MAIN",
+        "Cost Center": "",
+        "Business Unit": "",
+        "Work Type": "",
+        "Salary": "",
+        "Salary Hour": "",
+        "Joining Date": "2026-04-23",
+        "End Date": "",
+        "Employee Status": "active",
+        "Tags": "",
+        "Is Active": "true",
+        "Work Email": "",
+        "Work Phone": "",
+        **{bank: "" for bank in bank_names},
+        **{col: "" for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")},
     }
-    data_frame = pd.DataFrame([example], columns=columns)
 
-    response = HttpResponse(content_type="application/ms-excel")
+    # --- Query DB values for relational fields ---
+
+    db_ref_fields = {
+        "Company": list(Company.objects.values_list("company", flat=True)),
+        "Department": list(Department.objects.values_list("department", flat=True)),
+        "Job Position": list(JobPosition.objects.values_list("job_position", flat=True)),
+        "Job Role": list(JobRole.objects.values_list("job_role", flat=True)),
+        "Shift Information": list(EmployeeShift.objects.values_list("employee_shift", flat=True)),
+        "Employee Type": list(EmployeeType.objects.values_list("employee_type", flat=True)),
+        "Work Type": list(WorkType.objects.values_list("work_type", flat=True)),
+        "Branch": list(Branch.objects.values_list("branch", flat=True)),
+        "Cost Center": list(CostCenter.objects.values_list("name", flat=True)),
+        "Business Unit": list(BusinessUnit.objects.values_list("name", flat=True)),
+    }
+
+    philippine_provinces = [
+        "Abra", "Agusan del Norte", "Agusan del Sur", "Aklan", "Albay",
+        "Antique", "Apayao", "Aurora", "Basilan", "Bataan", "Batanes",
+        "Batangas", "Benguet", "Biliran", "Bohol", "Bukidnon", "Bulacan",
+        "Cagayan", "Camarines Norte", "Camarines Sur", "Camiguin", "Capiz",
+        "Catanduanes", "Cavite", "Cebu", "Cotabato", "Davao de Oro",
+        "Davao del Norte", "Davao del Sur", "Davao Occidental", "Davao Oriental",
+        "Dinagat Islands", "Eastern Samar", "Guimaras", "Ifugao",
+        "Ilocos Norte", "Ilocos Sur", "Iloilo", "Isabela", "Kalinga",
+        "La Union", "Laguna", "Lanao del Norte", "Lanao del Sur", "Leyte",
+        "Maguindanao del Norte", "Maguindanao del Sur", "Marinduque", "Masbate",
+        "Metro Manila", "Misamis Occidental", "Misamis Oriental",
+        "Mountain Province", "Negros Occidental", "Negros Oriental",
+        "Northern Samar", "Nueva Ecija", "Nueva Vizcaya",
+        "Occidental Mindoro", "Oriental Mindoro", "Palawan", "Pampanga",
+        "Pangasinan", "Quezon", "Quirino", "Rizal", "Romblon", "Samar",
+        "Sarangani", "Siquijor", "Sorsogon", "South Cotabato",
+        "Southern Leyte", "Sultan Kudarat", "Sulu", "Surigao del Norte",
+        "Surigao del Sur", "Tarlac", "Tawi-Tawi", "Zambales",
+        "Zamboanga del Norte", "Zamboanga del Sur", "Zamboanga Sibugay",
+    ]
+
+    philippine_cities = [
+        # NCR
+        "Caloocan", "Las Pinas", "Makati", "Malabon", "Mandaluyong", "Manila",
+        "Marikina", "Muntinlupa", "Navotas", "Paranaque", "Pasay", "Pasig",
+        "Quezon City", "San Juan", "Taguig", "Valenzuela",
+        # Ilocos Region
+        "Batac", "Laoag", "Candon", "Vigan", "San Fernando (La Union)",
+        "Dagupan", "San Carlos (Pangasinan)", "Urdaneta",
+        # Cagayan Valley
+        "Cauayan", "Ilagan", "Santiago", "Tuguegarao",
+        # Central Luzon
+        "Balanga", "Angeles", "Mabalacat", "San Fernando (Pampanga)",
+        "Cabanatuan", "Gapan", "Munoz", "Palayan", "San Jose (Nueva Ecija)",
+        "Olongapo", "Tarlac City",
+        # CALABARZON
+        "Antipolo", "Bacoor", "Cavite City", "Dasmarinas", "General Trias",
+        "Imus", "Tagaytay", "Trece Martires", "Binan", "Calamba",
+        "San Pablo", "Santa Rosa", "Batangas City", "Lipa", "Tanauan",
+        "Lucena",
+        # MIMAROPA
+        "Puerto Princesa",
+        # Bicol
+        "Iriga", "Naga", "Legazpi", "Ligao", "Tabaco", "Masbate City",
+        "Sorsogon City",
+        # Western Visayas
+        "Bacolod", "Bago", "Cadiz", "Escalante", "Himamaylan", "Kabankalan",
+        "La Carlota", "Sagay", "San Carlos (Negros Occidental)", "Silay",
+        "Sipalay", "Talisay (Negros Occidental)", "Victorias",
+        "Iloilo City", "Passi", "Roxas",
+        # Central Visayas
+        "Carcar", "Cebu City", "Danao", "Lapu-Lapu", "Mandaue",
+        "Naga (Cebu)", "Talisay (Cebu)", "Toledo", "Tagbilaran",
+        "Bais", "Bayawan", "Canlaon", "Dumaguete", "Guihulngan", "Tanjay",
+        # Eastern Visayas
+        "Baybay", "Ormoc", "Tacloban", "Calbayog", "Catbalogan", "Borongan",
+        # Zamboanga Peninsula
+        "Dapitan", "Dipolog", "Isabela City", "Pagadian", "Zamboanga City",
+        # Northern Mindanao
+        "Cagayan de Oro", "Gingoog", "Oroquieta", "Ozamiz", "Tangub",
+        "Iligan", "Malaybalay", "Valencia",
+        # Davao Region
+        "Davao City", "Digos", "Island Garden City of Samal", "Mati",
+        "Panabo", "Tagum",
+        # SOCCSKSARGEN
+        "General Santos", "Kidapawan", "Koronadal", "Tacurong",
+        # Caraga
+        "Bayugan", "Bislig", "Butuan", "Cabadbaran", "Surigao City", "Tandag",
+        # BARMM
+        "Cotabato City", "Marawi",
+        # CAR
+        "Baguio", "Tabuk",
+    ]
+
+    geo_ref_fields = {
+        "Country": ["Philippines"],
+        "Province": philippine_provinces,
+        "City": philippine_cities,
+    }
+
+    static_choices = {
+        "Gender": ["male", "female", "other"],
+        "Marital Status": ["single", "married", "divorced"],
+        "Employee Status": ["active", "resigned", "awol", "terminated", "retired"],
+        "Is Active": ["true", "false"],
+    }
+
+    wb = Workbook()
+
+    # --- Build Reference sheet with DB values and geo lists ---
+    ref_ws = wb.active
+    ref_ws.title = "Reference"
+    header_font = Font(bold=True)
+    header_fill = PatternFill("solid", fgColor="D9E1F2")
+
+    all_ref_fields = {**db_ref_fields, **geo_ref_fields}
+    ref_col_ranges = {}
+    for col_idx, (field_name, values) in enumerate(all_ref_fields.items(), start=1):
+        col_letter = get_column_letter(col_idx)
+        header_cell = ref_ws.cell(row=1, column=col_idx, value=field_name)
+        header_cell.font = header_font
+        header_cell.fill = header_fill
+        for row_idx, val in enumerate(values, start=2):
+            ref_ws.cell(row=row_idx, column=col_idx, value=val)
+        max_row = len(values) + 1
+        ref_col_ranges[field_name] = f"Reference!${col_letter}$2:${col_letter}${max_row}" if values else None
+        ref_ws.column_dimensions[col_letter].width = max(len(field_name), *(len(str(v)) for v in values) if values else [10]) + 2
+
+    # --- Build Import Template sheet ---
+    ws = wb.create_sheet("Import Template", 0)
+    wb.active = ws
+
+    col_map = {col: idx for idx, col in enumerate(columns, start=1)}
+
+    header_fill_blue = PatternFill("solid", fgColor="1F4E79")
+    header_font_white = Font(bold=True, color="FFFFFF")
+
+    for col_idx, col_name in enumerate(columns, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=col_name)
+        cell.font = header_font_white
+        cell.fill = header_fill_blue
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        ws.column_dimensions[get_column_letter(col_idx)].width = max(len(col_name), 15)
+
+    for col_idx, col_name in enumerate(columns, start=1):
+        ws.cell(row=2, column=col_idx, value=example.get(col_name, ""))
+
+    ws.row_dimensions[1].height = 30
+
+    geo_field_names = set(geo_ref_fields.keys())
+
+    # --- Add data validations for DB-backed fields (stop on invalid) ---
+    for field_name, formula_range in ref_col_ranges.items():
+        if field_name not in col_map or not formula_range:
+            continue
+        col_letter = get_column_letter(col_map[field_name])
+        is_geo = field_name in geo_field_names
+        dv = DataValidation(
+            type="list",
+            formula1=formula_range,
+            allow_blank=True,
+            showDropDown=False,
+            showErrorMessage=True,
+            errorStyle="warning" if is_geo else "stop",
+            error=(
+                "This value is not in the list. You may still proceed if entering a municipality."
+                if is_geo
+                else "Value not found in database. See the Reference sheet for valid values."
+            ),
+            errorTitle="Not in List" if is_geo else "Invalid Value",
+        )
+        dv.sqref = f"{col_letter}2:{col_letter}1000"
+        ws.add_data_validation(dv)
+
+    # --- Add data validations for static choice fields ---
+    for field_name, choices in static_choices.items():
+        if field_name not in col_map:
+            continue
+        col_letter = get_column_letter(col_map[field_name])
+        formula = '"' + ",".join(choices) + '"'
+        dv = DataValidation(
+            type="list",
+            formula1=formula,
+            allow_blank=True,
+            showDropDown=False,
+            showErrorMessage=True,
+            error=f"Valid values: {', '.join(choices)}",
+            errorTitle="Invalid Value",
+        )
+        dv.sqref = f"{col_letter}2:{col_letter}1000"
+        ws.add_data_validation(dv)
+
+    # --- Add yes/no dropdown and date validations for insurance columns ---
+    for insurance_name in insurance_names:
+        enroll_col = insurance_name
+        start_col = f"{insurance_name} Start Date"
+        end_col = f"{insurance_name} End Date"
+
+        if enroll_col in col_map:
+            col_letter = get_column_letter(col_map[enroll_col])
+            dv = DataValidation(
+                type="list",
+                formula1='"yes,no"',
+                allow_blank=True,
+                showDropDown=False,
+                showErrorMessage=True,
+                error='Enter "yes" to enroll or "no" to skip.',
+                errorTitle="Invalid Value",
+            )
+            dv.sqref = f"{col_letter}2:{col_letter}1000"
+            ws.add_data_validation(dv)
+
+        for date_col in (start_col, end_col):
+            if date_col in col_map:
+                col_letter = get_column_letter(col_map[date_col])
+                dv = DataValidation(
+                    type="date",
+                    allow_blank=True,
+                    showErrorMessage=True,
+                    error="Enter a valid date (YYYY-MM-DD).",
+                    errorTitle="Invalid Date",
+                )
+                dv.sqref = f"{col_letter}2:{col_letter}1000"
+                ws.add_data_validation(dv)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    response = HttpResponse(
+        output.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
     response["Content-Disposition"] = 'attachment; filename="work_info_template.xlsx"'
-    data_frame.to_excel(response, index=False)
     return response
 
 
@@ -2860,6 +3185,7 @@ def work_info_import(request):
                         bulk_create_work_info_import(success_list)
                         bulk_create_bank_details_import(success_list)
                         bulk_set_tags_import(success_list)
+                        bulk_create_insurance_import(success_list)
                 except Exception as e:
                     messages.error(request, _("Error Occured {}").format(e))
                     logger.error(e)
@@ -2893,7 +3219,7 @@ def work_info_import(request):
 
             path_info = (
                 generate_error_report(
-                    error_list, error_data_template, "EmployeesImportError.xlsx"
+                    error_list, get_error_data_template(), "EmployeesImportError.xlsx"
                 )
                 if error_count
                 else None

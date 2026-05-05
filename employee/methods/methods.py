@@ -33,43 +33,115 @@ logger = logging.getLogger(__name__)
 
 is_postgres = connection.vendor == "postgresql"
 
-error_data_template = {
-    field: []
-    for field in [
-        "Employee No",
-        "First Name",
-        "Last Name",
-        "Phone",
-        "Email",
-        "Gender",
-        "Department",
-        "Job Position",
-        "Job Role",
-        "Work Type",
-        "Shift",
-        "Employee Type",
-        "Reporting Manager",
-        "Company",
-        "Location",
-        "Date Joining",
-        "Contract End Date",
-        "Basic Salary",
-        "Salary Hour",
-        "Email Error",
-        "First Name Error",
-        "Name and Email Error",
-        "Phone Error",
-        "Gender Error",
-        "Joining Date Error",
-        "Contract Date Error",
-        "Employee No Error",
-        "Basic Salary Error",
-        "Salary Hour Error",
-        "User ID Error",
-        "Company Error",
-        "Import Error",
-    ]
-}
+DEFAULT_BANK_NAMES = ["GCash", "Metrobank"]
+DEFAULT_INSURANCE_NAMES = []
+
+
+def get_import_bank_names():
+    """Returns the ordered list of bank names for import: defaults + any added in DB."""
+    db_banks = list(
+        EmployeeBankDetails.objects.values_list("bank_name", flat=True).distinct()
+    )
+    seen = set()
+    result = []
+    for name in DEFAULT_BANK_NAMES + db_banks:
+        if name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
+
+
+def get_import_insurance_names():
+    """Returns the ordered list of insurance plan names for import: any saved in DB."""
+    from employee.models import EmployeeInsurance
+
+    db_insurance = list(
+        EmployeeInsurance.objects.values_list("name", flat=True).distinct()
+    )
+    seen = set()
+    result = []
+    for name in DEFAULT_INSURANCE_NAMES + db_insurance:
+        if name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
+
+
+def get_error_data_template():
+    """Returns a fresh error-report template dict with dynamic bank/insurance columns."""
+    bank_names = get_import_bank_names()
+    insurance_names = get_import_insurance_names()
+    return {
+        field: []
+        for field in [
+            "Employee No",
+            "First Name",
+            "Middle Name",
+            "Last Name",
+            "Extension",
+            "Date of Birth",
+            "Gender",
+            "Address",
+            "Country",
+            "Province",
+            "City",
+            "Qualification",
+            "Experience",
+            "Marital Status",
+            "Children",
+            "Emergency Contact",
+            "Emergency Contact Name",
+            "Emergency Contact Relation",
+            "TIN Number",
+            "SSS Number",
+            "HDMF Number",
+            "PhilHealth Number",
+            "Phone",
+            "Email",
+            "Company",
+            "Department",
+            "Job Position",
+            "Job Role",
+            "Shift Information",
+            "Employee Type",
+            "Reporting Manager",
+            "Work Location",
+            "Branch",
+            "Cost Center",
+            "Business Unit",
+            "Work Type",
+            "Salary",
+            "Salary Hour",
+            "Joining Date",
+            "End Date",
+            "Employee Status",
+            "Tags",
+            "Is Active",
+            "Work Email",
+            "Work Phone",
+            *bank_names,
+            *[col for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")],
+            "Email Error",
+            "First Name Error",
+            "Name and Email Error",
+            "Phone Error",
+            "Gender Error",
+            "Joining Date Error",
+            "Contract Date Error",
+            "DOB Error",
+            "Work Email Error",
+            "Employee No Error",
+            "Basic Salary Error",
+            "Salary Hour Error",
+            "User ID Error",
+            "Company Error",
+            "Import Error",
+        ]
+    }
+
+
+# Keep for backward compatibility — callers that imported this directly still work.
+error_data_template = get_error_data_template()
 
 
 def chunked(iterable, size):
@@ -326,11 +398,12 @@ def process_employee_records(data_frame):
             )
             save = False
 
-        # Optional date: Date of Birth
-        import_valid_date(emp.get("Date of Birth"), "Date of Birth", errors, "DOB Error")
+        # Optional date: Date of Birth — store parsed value back so bulk_create receives a date object
+        dob_parsed = import_valid_date(emp.get("Date of Birth"), "Date of Birth", errors, "DOB Error")
+        emp["Date of Birth"] = dob_parsed
 
         # Optional Work Email
-        work_email = str(emp.get("Work Email") or "").strip().lower()
+        work_email = str(convert_nan("Work Email", emp) or "").strip().lower()
         if work_email and not email_regex.match(work_email):
             errors["Work Email Error"] = "Invalid work email address."
             save = False
@@ -528,7 +601,7 @@ def bulk_create_employee_import(success_lists):
             children=_parse_children(row),
             address=convert_nan("Address", row) or None,
             city=convert_nan("City", row) or None,
-            state=convert_nan("State", row) or None,
+            state=convert_nan("Province", row) or None,
             country=convert_nan("Country", row) or None,
             zip=convert_nan("Zip Code", row) or None,
             emergency_contact_name=convert_nan("Emergency Contact Name", row) or None,
@@ -1101,13 +1174,14 @@ def bulk_create_bank_details_import(success_lists):
         ).values_list("employee_id", "bank_name")
     )
 
+    bank_names = get_import_bank_names()
     bank_details_to_create = []
     for row in success_lists:
         emp = existing_employees.get(row["Employee No"])
         if not emp:
             continue
-        for col, bank_name in [("Gcash", "GCash"), ("Metrobank", "Metrobank")]:
-            account_no = convert_nan(col, row)
+        for bank_name in bank_names:
+            account_no = convert_nan(bank_name, row)
             if account_no and (emp.pk, bank_name) not in existing_bank_keys:
                 bank_details_to_create.append(
                     EmployeeBankDetails(
@@ -1171,3 +1245,86 @@ def bulk_set_tags_import(success_lists):
         tag_objs = [tag_map[t.strip()] for t in tags_raw.split(",") if t.strip() in tag_map]
         if tag_objs:
             wi.tags.add(*tag_objs)
+
+
+def _parse_date_value(raw):
+    """Parse a date value from an import cell; return a date or None."""
+    if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+        return None
+    if isinstance(raw, (date, datetime)):
+        return raw if isinstance(raw, date) else raw.date()
+    s = str(raw).strip()
+    if not s or s.lower() in {"nan", "none", ""}:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def bulk_create_insurance_import(success_lists):
+    """
+    Creates EmployeeInsurance records from dynamic insurance plan columns.
+    Per plan there are three columns: <name> (yes/no), <name> Start Date, <name> End Date.
+    Only rows with "yes" in the enrollment column are processed.
+    """
+    from employee.models import EmployeeInsurance
+
+    insurance_names = get_import_insurance_names()
+    if not insurance_names:
+        return
+
+    rows_with_insurance = [
+        row for row in success_lists
+        if any(
+            str(convert_nan(name, row) or "").strip().lower() == "yes"
+            for name in insurance_names
+        )
+    ]
+    if not rows_with_insurance:
+        return
+
+    employee_nos = [row["Employee No"] for row in rows_with_insurance]
+    existing_employees = {
+        emp.employee_no: emp
+        for emp in Employee.objects.entire().filter(employee_no__in=employee_nos).only("employee_no")
+    }
+
+    existing_insurance_keys = set(
+        EmployeeInsurance.objects.filter(
+            employee_id__in=existing_employees.values()
+        ).values_list("employee_id", "name")
+    )
+
+    insurance_to_create = []
+    for row in rows_with_insurance:
+        emp = existing_employees.get(row["Employee No"])
+        if not emp:
+            continue
+        for insurance_name in insurance_names:
+            enrolled = str(convert_nan(insurance_name, row) or "").strip().lower()
+            if enrolled != "yes":
+                continue
+            if (emp.pk, insurance_name) in existing_insurance_keys:
+                continue
+            start_date = _parse_date_value(row.get(f"{insurance_name} Start Date"))
+            end_date = _parse_date_value(row.get(f"{insurance_name} End Date"))
+            insurance_to_create.append(
+                EmployeeInsurance(
+                    employee_id=emp,
+                    name=insurance_name,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            )
+            existing_insurance_keys.add((emp.pk, insurance_name))
+
+    if insurance_to_create:
+        with transaction.atomic():
+            EmployeeInsurance.objects.bulk_create(
+                insurance_to_create,
+                batch_size=None if is_postgres else 999,
+                ignore_conflicts=True,
+            )

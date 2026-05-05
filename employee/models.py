@@ -613,6 +613,13 @@ class Employee(models.Model):
             user.user_permissions.add(view_ownprofile)
             user.user_permissions.add(change_ownprofile)
 
+        else:
+            user = employee.employee_user_id
+            if user.email != self.email:
+                user.username = self.email
+                user.email = self.email
+                user.save()
+
         if not hasattr(self, "employee_work_info"):
             EmployeeWorkInformation.objects.get_or_create(employee_id=self)
             return self.save()
