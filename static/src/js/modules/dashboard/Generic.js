@@ -53,15 +53,80 @@ class Generic {
     // Remove Keayboard
     $(window).on("keyup", this.keyboardRemove.bind(this));
 
-    // Dashboard Cards Movable ss
-    $(".oh-dashboard__movable-cards").sortable({
-      cursor: "row-resize",
-      opacity: "0.55",
-      items: ".oh-card-dashboard--moveable",
-    });
+    // Dashboard cards are reorderable on desktop, but mobile touch gestures
+    // should scroll the page instead of starting a drag.
+    this.setupDashboardSortable();
   }
 
   // Methods
+
+  /**
+   * Enable dashboard card sorting only where drag gestures do not block page
+   * scroll. This keeps desktop reordering while making mobile scrolling reliable.
+   */
+  setupDashboardSortable() {
+    const sortableSelector = ".oh-dashboard__movable-cards";
+    const mobileQuery = window.matchMedia("(max-width: 767.98px)");
+    const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+    const cancelSelector = [
+      "canvas",
+      "a",
+      "button",
+      "input",
+      "select",
+      "textarea",
+      "label",
+      ".oh-dropdown",
+      ".oh-dropdown__menu",
+      ".oh-modal",
+      "[data-toggle='oh-modal-toggle']",
+      "[hx-get]",
+      "[hx-post]",
+      "[hx-put]",
+      "[hx-patch]",
+      "[hx-delete]",
+    ].join(", ");
+
+    const syncDashboardSortable = () => {
+      const shouldDisable = mobileQuery.matches || coarsePointerQuery.matches;
+
+      $(sortableSelector).each(function () {
+        const sortableEl = $(this);
+        const initialized = Boolean(sortableEl.data("ui-sortable"));
+
+        if (shouldDisable) {
+          if (initialized) {
+            sortableEl.sortable("destroy");
+          }
+          return;
+        }
+
+        if (!initialized) {
+          sortableEl.sortable({
+            cursor: "row-resize",
+            opacity: "0.55",
+            items: ".oh-card-dashboard--moveable",
+            cancel: cancelSelector,
+          });
+        } else {
+          sortableEl.sortable("option", "cancel", cancelSelector);
+        }
+      });
+    };
+
+    const watchQuery = (query) => {
+      if (query.addEventListener) {
+        query.addEventListener("change", syncDashboardSortable);
+      } else if (query.addListener) {
+        query.addListener(syncDashboardSortable);
+      }
+    };
+
+    syncDashboardSortable();
+    watchQuery(mobileQuery);
+    watchQuery(coarsePointerQuery);
+    $(document).on("htmx:afterSwap", syncDashboardSortable);
+  }
 
   /**
    *  Make input editable

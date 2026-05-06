@@ -3261,15 +3261,62 @@ var Generic = /*#__PURE__*/function () {
       // Remove Keayboard
       jquery__WEBPACK_IMPORTED_MODULE_0___default()(window).on("keyup", this.keyboardRemove.bind(this));
 
-      // Dashboard Cards Movable ss
-      jquery__WEBPACK_IMPORTED_MODULE_0___default()(".oh-dashboard__movable-cards").sortable({
-        cursor: "row-resize",
-        opacity: "0.55",
-        items: ".oh-card-dashboard--moveable"
-      });
+      // Dashboard cards are reorderable on desktop, but mobile touch gestures
+      // should scroll the page instead of starting a drag.
+      this.setupDashboardSortable();
     }
 
     // Methods
+
+    /**
+     * Enable dashboard card sorting only where drag gestures do not block page
+     * scroll. This keeps desktop reordering while making mobile scrolling reliable.
+     */
+  }, {
+    key: "setupDashboardSortable",
+    value: function setupDashboardSortable() {
+      var sortableSelector = ".oh-dashboard__movable-cards";
+      var mobileQuery = window.matchMedia("(max-width: 767.98px)");
+      var coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+      var cancelSelector = ["canvas", "a", "button", "input", "select", "textarea", "label", ".oh-dropdown", ".oh-dropdown__menu", ".oh-modal", "[data-toggle='oh-modal-toggle']", "[hx-get]", "[hx-post]", "[hx-put]", "[hx-patch]", "[hx-delete]"].join(", ");
+
+      var syncDashboardSortable = function syncDashboardSortable() {
+        var shouldDisable = mobileQuery.matches || coarsePointerQuery.matches;
+        jquery__WEBPACK_IMPORTED_MODULE_0___default()(sortableSelector).each(function () {
+          var sortableEl = jquery__WEBPACK_IMPORTED_MODULE_0___default()(this);
+          var initialized = Boolean(sortableEl.data("ui-sortable"));
+          if (shouldDisable) {
+            if (initialized) {
+              sortableEl.sortable("destroy");
+            }
+            return;
+          }
+          if (!initialized) {
+            sortableEl.sortable({
+              cursor: "row-resize",
+              opacity: "0.55",
+              items: ".oh-card-dashboard--moveable",
+              cancel: cancelSelector
+            });
+          } else {
+            sortableEl.sortable("option", "cancel", cancelSelector);
+          }
+        });
+      };
+
+      var watchQuery = function watchQuery(query) {
+        if (query.addEventListener) {
+          query.addEventListener("change", syncDashboardSortable);
+        } else if (query.addListener) {
+          query.addListener(syncDashboardSortable);
+        }
+      };
+
+      syncDashboardSortable();
+      watchQuery(mobileQuery);
+      watchQuery(coarsePointerQuery);
+      jquery__WEBPACK_IMPORTED_MODULE_0___default()(document).on("htmx:afterSwap", syncDashboardSortable);
+    }
 
     /**
      *  Make input editable

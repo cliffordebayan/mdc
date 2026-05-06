@@ -70,6 +70,19 @@
     #main {
         overflow-x: clip;
     }
+
+    .oh-dashboard,
+    .oh-dashboard .dashboardChart,
+    .oh-dashboard .oh-card-dashboard--moveable,
+    .oh-dashboard .oh-card-dashboard,
+    .oh-dashboard .oh-card-dashboard__body,
+    .oh-dashboard canvas {
+        touch-action: pan-y !important;
+    }
+
+    .oh-dashboard canvas {
+        pointer-events: none !important;
+    }
 }
 
 .oh-modal__close--custom {
