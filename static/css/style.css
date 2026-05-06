@@ -437,7 +437,7 @@ form label {
 
 
 .oh-navbar {
-    z-index: 15 !important;
+    z-index: 1000 !important;
 }
 
 .swal2-actions {
@@ -785,6 +785,46 @@ form label {
 
 @media (max-width: 767.98px) {
     .oh-wrapper-main--closed {
+        grid-template-columns: auto;
+    }
+}
+
+#sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 199;
+}
+
+#sidebar-overlay.active {
+    display: block;
+}
+
+@media (max-width: 767.98px) {
+    .oh-navbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000 !important;
+    }
+
+    #main {
+        padding-top: 65px;
+    }
+
+    .oh-wrapper-main:not(.oh-wrapper-main--closed) #sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        z-index: 200;
+        overflow-y: auto;
+        padding-top: 65px;
+    }
+
+    .oh-wrapper-main:not(.oh-wrapper-main--closed) {
         grid-template-columns: auto;
     }
 }
