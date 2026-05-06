@@ -35,9 +35,6 @@ setTimeout(() => {
     if ($('#addAnnouncement').length) {
         steps.push({ element: '#addAnnouncement', popover: { title: 'Add announcement', description: 'Create announcement from dashboard' } });
     }
-    if ($('#quickActions').length) {
-        steps.push({ element: '#quickActions', popover: { title: 'Quick Actions', description: 'Create Quick Requests' } });
-    }
     if ($('.oh-sidebar__company').length) {
         steps.push({ element: '.oh-sidebar__company:nth-child(1)', popover: { title: 'Company', description: 'Your current company access' } });
     }

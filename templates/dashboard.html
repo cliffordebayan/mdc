@@ -120,7 +120,21 @@
                 aria-label="arrow-back-outline"></ion-icon>{% trans "Back" %}</a>
     </div>
     <!-- end of back button -->
-    <div class="oh-dashboard row" id="dashboard" style="padding-bottom: 3.5rem;">
+    <div class="oh-dashboard row" id="dashboard" style="padding-top: 0; padding-bottom: 3.5rem;">
+        <div class="col-12 d-flex justify-content-end my-3">
+            <button
+                type="button"
+                class="oh-btn oh-btn--secondary oh-btn--shadow oh-btn--small"
+                data-toggle="oh-modal-toggle"
+                data-target="#objectDetailsModal"
+                hx-get="{% url 'employee-chart-show' %}"
+                hx-target="#objectDetailsModalTarget"
+                title="{% trans 'Dashboard Charts' %}"
+            >
+                <ion-icon class="me-1" name="bar-chart-outline"></ion-icon>
+                {% trans "Dashboard Charts" %}
+            </button>
+        </div>
 
 
         <div class="oh-dashboard__left col-12 col-sm-12 col-md-12 col-lg-9">
