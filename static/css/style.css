@@ -63,6 +63,15 @@
     padding: 0 !important;
 }
 
+/* Fix mobile scroll: overflow-x: hidden creates a scroll context that intercepts
+   touch events, causing the page to stick. clip achieves the same visual result
+   without creating a scroll container. */
+@media (max-width: 767.98px) {
+    #main {
+        overflow-x: clip;
+    }
+}
+
 .oh-modal__close--custom {
     border: none;
     background: none;
