@@ -204,7 +204,7 @@ def pwa_manifest(request):
     """
     Return a dynamic web app manifest using HQ company branding.
     """
-    default_name = "Horilla"
+    default_name = "HRMS"
     default_icon = "/static/favicons/apple-touch-icon.png"
     company = Company.objects.filter(hq=True).last()
 
@@ -228,6 +228,41 @@ def pwa_manifest(request):
         ],
     }
     return JsonResponse(manifest, content_type="application/manifest+json")
+
+
+def clean_branding_label(label):
+    """
+    Remove internal product branding from user-facing labels only.
+    """
+    label = str(label)
+    replacements = {
+        "Horilla ": "",
+        "horilla ": "",
+        "Horilla": "",
+        "horilla": "",
+    }
+    for old, new in replacements.items():
+        label = label.replace(old, new)
+    return " ".join(label.split()).strip()
+
+
+def app_display_name(app_name):
+    """
+    Convert app identifiers into user-facing permission section names.
+    """
+    label = clean_branding_label(app_name.replace("_", " ").title())
+    if label.lower() == "ldap":
+        return "LDAP"
+    if label.lower() == "hrms":
+        return "HRMS"
+    return label
+
+
+def model_display_name(model):
+    """
+    Convert model metadata into user-facing permission model names.
+    """
+    return clean_branding_label(model._meta.verbose_name.capitalize())
 
 
 # Create your views here.
@@ -1087,11 +1122,11 @@ def user_group_table(request):
         for model in get_models_in_app(app_name):
             app_models.append(
                 {
-                    "verbose_name": model._meta.verbose_name.capitalize(),
+                    "verbose_name": model_display_name(model),
                     "model_name": model._meta.model_name,
                 }
             )
-        permissions.append({"app": app_name.capitalize(), "app_models": app_models})
+        permissions.append({"app": app_display_name(app_name), "app_models": app_models})
     if request.method == "POST":
         form = UserGroupForm(request.POST)
         if form.is_valid():
@@ -1156,12 +1191,12 @@ def user_group(request):
         for model in get_models_in_app(app_name):
             app_models.append(
                 {
-                    "verbose_name": model._meta.verbose_name.capitalize(),
+                    "verbose_name": model_display_name(model),
                     "model_name": model._meta.model_name,
                 }
             )
         permissions.append(
-            {"app": app_name.capitalize().replace("_", " "), "app_models": app_models}
+            {"app": app_display_name(app_name), "app_models": app_models}
         )
     groups = Group.objects.all()
     return render(
@@ -1192,11 +1227,11 @@ def user_group_search(request):
         for model in get_models_in_app(app_name):
             app_models.append(
                 {
-                    "verbose_name": model._meta.verbose_name.capitalize(),
+                    "verbose_name": model_display_name(model),
                     "model_name": model._meta.model_name,
                 }
             )
-        permissions.append({"app": app_name.capitalize(), "app_models": app_models})
+        permissions.append({"app": app_display_name(app_name), "app_models": app_models})
     search = ""
     if request.GET.get("search"):
         search = str(request.GET["search"])
@@ -1338,11 +1373,11 @@ def object_delete(request, obj_id, **kwargs):
         )
     except model.DoesNotExist:
         delete_error = True
-        messages.error(request, _("{} not found.").format(model._meta.verbose_name))
+        messages.error(request, _("{} not found.").format(model_display_name(model)))
     except ProtectedError as e:
         model_verbose_names_set = set()
         for obj in e.protected_objects:
-            model_verbose_names_set.add(_(obj._meta.verbose_name.capitalize()))
+            model_verbose_names_set.add(_(clean_branding_label(obj._meta.verbose_name.capitalize())))
 
         model_names_str = ", ".join(model_verbose_names_set)
         delete_error = True
@@ -1404,7 +1439,7 @@ def object_duplicate(request, obj_id, **kwargs):
     try:
         original_object = model.objects.get(id=obj_id)
     except model.DoesNotExist:
-        messages.error(request, f"{model._meta.verbose_name} object does not exist.")
+        messages.error(request, f"{model_display_name(model)} object does not exist.")
         if request.headers.get("HX-Request"):
             return HttpResponse(status=204, headers={"HX-Refresh": "true"})
         return HorillaRedirect(request)
@@ -1537,7 +1572,7 @@ def mail_server_test_email(request):
     instance_id = request.GET.get("instance_id")
     white_labelling = getattr(horilla_apps, "WHITE_LABELLING", False)
     image_path = None
-    company_name = "Horilla"
+    company_name = "HRMS"
 
     if white_labelling:
         hq = Company.objects.filter(hq=True).last()
@@ -3572,10 +3607,10 @@ def employee_permission_assign(request):
         context["show_assign"] = True
     permissions = [
         {
-            "app": app_name.capitalize().replace("_", " "),
+            "app": app_display_name(app_name),
             "app_models": [
                 {
-                    "verbose_name": model._meta.verbose_name.capitalize(),
+                    "verbose_name": model_display_name(model),
                     "model_name": model._meta.model_name,
                 }
                 for model in get_models_in_app(app_name)
@@ -3613,10 +3648,10 @@ def employee_permission_search(request, codename=None, uid=None):
         context["show_assign"] = True
     permissions = [
         {
-            "app": app_name.capitalize().replace("_", " "),
+            "app": app_display_name(app_name),
             "app_models": [
                 {
-                    "verbose_name": model._meta.verbose_name.capitalize(),
+                    "verbose_name": model_display_name(model),
                     "model_name": model._meta.model_name,
                 }
                 for model in get_models_in_app(app_name)
@@ -3703,12 +3738,12 @@ def permission_table(request):
             if model not in no_permission_models:
                 app_models.append(
                     {
-                        "verbose_name": model._meta.verbose_name.capitalize(),
+                        "verbose_name": model_display_name(model),
                         "model_name": model._meta.model_name,
                     }
                 )
         permissions.append(
-            {"app": app_name.capitalize().replace("_", " "), "app_models": app_models}
+            {"app": app_display_name(app_name), "app_models": app_models}
         )
     if request.method == "POST":
         form = AssignPermission(request.POST)

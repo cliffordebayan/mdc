@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n basefilters %}
 <div class="row">
     <div class="col-12 col-sm-12 col-md-12 col-lg-12">
         <div class="oh-card p-4">
@@ -54,7 +54,7 @@
                                         data-label="Permissions"
                                         data-count="{{employee.employee_user_id.get_user_permissions|length}}"
                                     >
-                                        {{permission}}
+                                        {{permission|clean_branding}}
                                         {% if perms.change_permissions %}
                                         <form
                                             hx-post="{% url 'remove-permission' permission employee.employee_user_id.id %}?page={{pd}}"

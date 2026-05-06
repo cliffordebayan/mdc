@@ -153,3 +153,29 @@ def readable(value):
     except:
         value = value
     return value
+
+
+@register.filter(name="clean_branding")
+def clean_branding(value):
+    """
+    Remove internal product branding from user-facing labels.
+    """
+    try:
+        value = str(value)
+        replacements = {
+            "Horilla ": "",
+            "horilla_": "",
+            "horilla.": "",
+            "horilla ": "",
+            "Horilla": "",
+            "horilla": "",
+        }
+        for old, new in replacements.items():
+            value = value.replace(old, new)
+        value = value.replace("_", " ").replace(".", " ")
+        value = " ".join(value.split()).strip()
+        value = value.replace("mailtemplate", "mail template")
+        value = value.replace("audittag", "audit tag")
+        return value.title()
+    except:
+        return value

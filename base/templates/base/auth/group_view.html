@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n basefilters %}
 <div class="row">
 	<div class="col-12 col-sm-12 col-md-12 col-lg-12">
 		<div class="oh-card p-4">
@@ -44,7 +44,7 @@
 										data-label="Permissions"
 										data-count="{{gp.permissions.all|length}}"
 									>
-										{{permission}} {% if perms.change_group %}
+										{{permission|clean_branding}} {% if perms.change_group %}
 										<form
 											action="{% url 'group-permission-remove' permission.id gp.id %}"
 											method="post"
