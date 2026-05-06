@@ -832,6 +832,10 @@ form label {
         z-index: 1000 !important;
     }
 
+    .oh-modal.oh-modal--show {
+        z-index: 1050 !important;
+    }
+
     #main {
         padding-top: 65px;
     }
