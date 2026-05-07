@@ -922,7 +922,7 @@ class EmployeePortalPersonalForm(ModelForm):
             "employee_middle_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "employee_last_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "employee_extension": forms.TextInput(attrs={"class": "oh-input w-100", "placeholder": "e.g. Jr., Sr., III"}),
-            "phone": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "phone": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "11", "minlength": "11"}),
             "dob": forms.DateInput(attrs={"class": "oh-input w-100", "type": "date"}),
             "gender": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
             "address": forms.Textarea(attrs={"class": "oh-input w-100", "rows": 3}),
@@ -934,11 +934,63 @@ class EmployeePortalPersonalForm(ModelForm):
             "experience": forms.NumberInput(attrs={"class": "oh-input w-100"}),
             "marital_status": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
             "children": forms.NumberInput(attrs={"class": "oh-input w-100"}),
-            "emergency_contact": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "emergency_contact": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "11", "minlength": "11"}),
             "emergency_contact_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "emergency_contact_relation": forms.TextInput(attrs={"class": "oh-input w-100"}),
-            "tin_number": forms.TextInput(attrs={"class": "oh-input w-100"}),
-            "sss_number": forms.TextInput(attrs={"class": "oh-input w-100"}),
-            "hdmf_number": forms.TextInput(attrs={"class": "oh-input w-100"}),
-            "philhealth_number": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "tin_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "16", "minlength": "16"}),
+            "sss_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "12", "minlength": "12"}),
+            "hdmf_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "14", "minlength": "14"}),
+            "philhealth_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "14", "minlength": "14"}),
         }
+
+    def clean_phone(self):
+        value = self.cleaned_data.get("phone")
+        if value and not value.isdigit():
+            raise forms.ValidationError("Phone number must contain digits only.")
+        if value and len(value) != 11:
+            raise forms.ValidationError("Phone number must be exactly 11 digits.")
+        if value and not value.startswith("0"):
+            raise forms.ValidationError("Phone number must start with 0.")
+        return value
+
+    def clean_emergency_contact(self):
+        value = self.cleaned_data.get("emergency_contact")
+        if value and not value.isdigit():
+            raise forms.ValidationError("Emergency contact must contain digits only.")
+        if value and len(value) != 11:
+            raise forms.ValidationError("Emergency contact must be exactly 11 digits.")
+        if value and not value.startswith("0"):
+            raise forms.ValidationError("Emergency contact must start with 0.")
+        return value
+
+    def _validate_id_format(self, field_name, value, pattern, length, label):
+        import re
+        if value and not re.fullmatch(pattern, value):
+            raise forms.ValidationError(
+                f"Enter a valid {label} in the format shown (e.g. {self.fields[field_name].widget.attrs.get('placeholder', '')})."
+            )
+        return value
+
+    def clean_tin_number(self):
+        return self._validate_id_format(
+            "tin_number", self.cleaned_data.get("tin_number"),
+            r"\d{3}-\d{3}-\d{3}-\d{4}", 16, "TIN Number"
+        )
+
+    def clean_sss_number(self):
+        return self._validate_id_format(
+            "sss_number", self.cleaned_data.get("sss_number"),
+            r"\d{2}-\d{7}-\d", 12, "SSS Number"
+        )
+
+    def clean_hdmf_number(self):
+        return self._validate_id_format(
+            "hdmf_number", self.cleaned_data.get("hdmf_number"),
+            r"\d{4}-\d{4}-\d{4}", 14, "Pag-IBIG Number"
+        )
+
+    def clean_philhealth_number(self):
+        return self._validate_id_format(
+            "philhealth_number", self.cleaned_data.get("philhealth_number"),
+            r"\d{2}-\d{9}-\d", 14, "PhilHealth Number"
+        )
