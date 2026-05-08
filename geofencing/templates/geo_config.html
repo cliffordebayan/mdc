@@ -1,4 +1,89 @@
-<form hx-post="{% url 'geo-config' %}" hx-swap="none" hx-on-htmx-after-request="$('#reloadMessagesButton').click();">
-    {% csrf_token %}
-    {{form.as_p}}
-</form>
+<div class="oh-inner-sidebar-content">
+  <div class="oh-inner-sidebar-content__header d-flex justify-content-between align-items-center">
+    <h2 class="oh-inner-sidebar-content__title">Branch Geofences</h2>
+    <button class="oh-btn oh-btn--secondary oh-btn--shadow"
+            data-toggle="oh-modal-toggle"
+            data-target="#objectCreateModal"
+            hx-get="{% url 'geo-config-add' %}"
+            hx-target="#objectCreateModalTarget"
+            hx-swap="innerHTML">
+      <ion-icon name="add-outline" class="me-1"></ion-icon>Add Geofence
+    </button>
+  </div>
+
+  {% if geofences %}
+  <div class="oh-sticky-table">
+    <div class="oh-sticky-table__table oh-table--sortable">
+      <div class="oh-sticky-table__thead">
+        <div class="oh-sticky-table__tr">
+          <div class="oh-sticky-table__th">Branch</div>
+          <div class="oh-sticky-table__th">Latitude</div>
+          <div class="oh-sticky-table__th">Longitude</div>
+          <div class="oh-sticky-table__th">Radius (m)</div>
+          <div class="oh-sticky-table__th">Status</div>
+          <div class="oh-sticky-table__th">Excluded Employees</div>
+          <div class="oh-sticky-table__th oh-sticky-table__right">Actions</div>
+        </div>
+      </div>
+      <div class="oh-sticky-table__tbody">
+        {% for geo in geofences %}
+        <div class="oh-sticky-table__tr">
+          <div class="oh-sticky-table__sd">{{ geo.branch_id.branch|default:"—" }}</div>
+          <div class="oh-sticky-table__td">{{ geo.latitude|floatformat:6 }}</div>
+          <div class="oh-sticky-table__td">{{ geo.longitude|floatformat:6 }}</div>
+          <div class="oh-sticky-table__td">{{ geo.radius_in_meters }}</div>
+          <div class="oh-sticky-table__td">
+            {% if geo.start %}
+              <span class="oh-badge oh-badge--success">Active</span>
+            {% else %}
+              <span class="oh-badge oh-badge--danger">Inactive</span>
+            {% endif %}
+          </div>
+          <div class="oh-sticky-table__td">
+            {% with excl=geo.excluded_employees.all %}
+              {% if excl %}
+                {% for emp in excl %}<span class="oh-badge oh-badge--warning me-1">{{ emp.get_full_name }}</span>{% endfor %}
+              {% else %}
+                <span class="text-muted" style="font-size:12px">—</span>
+              {% endif %}
+            {% endwith %}
+          </div>
+          <div class="oh-sticky-table__td oh-sticky-table__right">
+            <div class="oh-btn-group">
+              <button class="oh-btn oh-btn--light-bkg w-50"
+                      data-toggle="oh-modal-toggle"
+                      data-target="#objectUpdateModal"
+                      hx-get="{% url 'geo-config-edit' geo.pk %}"
+                      hx-target="#objectUpdateModalTarget"
+                      hx-swap="innerHTML"
+                      title="Edit">
+                <ion-icon name="create-outline"></ion-icon>
+              </button>
+              <button class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-50"
+                      onclick="geoDeleteConfirm({{ geo.pk }}, '{{ geo.branch_id.branch|default:'this geofence' }}')"
+                      title="Remove">
+                <ion-icon name="trash-outline"></ion-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:200px;">
+    <h5 class="oh-404__subtitle">No geofences configured yet.</h5>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function geoDeleteConfirm(pk, branchName) {
+  if (!confirm('Delete the geofence for "' + branchName + '"?')) return;
+  fetch("{% url 'geo-config' %}?action=delete&pk=" + pk, {
+    method: "POST",
+    headers: { "X-CSRFToken": document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "" },
+  }).then(() => htmx.ajax("GET", "{% url 'geo-config' %}", { target: "#geo", swap: "innerHTML" }));
+}
+</script>

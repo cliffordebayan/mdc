@@ -561,8 +561,8 @@ urlpatterns = [
         },
     ),
     path(
-        "settings/geo-face-config/",
+        "settings/geo-fence/",
         attendance.views.geofaceconfig.geofaceconfig,
-        name="geo-face-config",
+        name="geo-fence-config",
     ),
 ]

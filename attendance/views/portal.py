@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta
 import pytz
 from django.conf import settings
 from django.utils import timezone
+from geopy.distance import geodesic
 
 from django.contrib.auth.models import User
 from django.db.models import Q
@@ -125,6 +126,33 @@ def _get_client_ip(request):
         pass
     logger.debug(f"[IP] resolved from REMOTE_ADDR: {ip}")
     return ip
+
+
+def _geofence_check(employee, work_info, latitude, longitude):
+    """
+    Return an error message string if the employee is outside their branch geofence,
+    or None if the clock action should be allowed.
+    """
+    try:
+        from geofencing.models import GeoFencing
+        branch = work_info.branch_id if work_info else None
+        if not branch:
+            return None
+        try:
+            geo = GeoFencing.objects.get(branch_id=branch, start=True)
+        except GeoFencing.DoesNotExist:
+            return None
+        if geo.excluded_employees.filter(pk=employee.pk).exists():
+            return None
+        distance = geodesic(
+            (geo.latitude, geo.longitude),
+            (float(latitude), float(longitude)),
+        ).meters
+        if distance > geo.radius_in_meters:
+            return "You are outside the allowed location for your branch."
+    except Exception:
+        pass
+    return None
 
 
 def _ip_is_allowed(request):
@@ -672,6 +700,11 @@ def public_clock_in(request):
                 status=200,
             )
 
+        # Geofence check
+        geo_error = _geofence_check(employee, work_info, latitude, longitude)
+        if geo_error:
+            return JsonResponse({"success": False, "message": geo_error}, status=200)
+
         # Check if already clocked in
         if AttendanceActivity.objects.filter(
             employee_id=employee, clock_out__isnull=True
@@ -868,6 +901,12 @@ def public_clock_out(request):
             return JsonResponse(
                 {"success": False, "message": "Employee not found"}, status=200
             )
+
+        # Geofence check
+        work_info_out = getattr(employee, "employee_work_info", None)
+        geo_error = _geofence_check(employee, work_info_out, latitude, longitude)
+        if geo_error:
+            return JsonResponse({"success": False, "message": geo_error}, status=200)
 
         # Check if employee is clocked in
         open_activity = AttendanceActivity.objects.filter(

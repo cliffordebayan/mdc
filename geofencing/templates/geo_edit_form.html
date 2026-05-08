@@ -1,0 +1,32 @@
+<div class="oh-modal__dialog-header pb-0">
+  <span class="oh-modal__dialog-title">Edit Geofence – {{ geo.branch_id.branch|default:"No Branch" }}</span>
+  <button class="oh-modal__close" aria-label="Close">
+    <ion-icon name="close-outline"></ion-icon>
+  </button>
+</div>
+
+<div class="oh-modal__dialog-body">
+  <form id="geoEditForm"
+        hx-post="{% url 'geo-config' %}"
+        hx-target="#geo"
+        hx-swap="innerHTML"
+        hx-on::after-request="$('#objectUpdateModal').removeClass('oh-modal--show'); $('#reloadMessagesButton').click();"
+        class="oh-profile-section pt-0">
+    {% csrf_token %}
+    <input type="hidden" name="geo_id" value="{{ geo.pk }}">
+    {% for field in form %}
+    <div class="oh-input__group mb-3">
+      <label class="oh-input__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.help_text %}<small class="text-muted d-block mt-1">{{ field.help_text }}</small>{% endif %}
+      {% if field.errors %}<div class="text-danger small mt-1">{{ field.errors }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </form>
+</div>
+
+<div class="oh-modal__dialog-footer p-0">
+  <button type="submit" form="geoEditForm" class="oh-btn oh-btn--secondary oh-btn--shadow">
+    Update Geofence
+  </button>
+</div>

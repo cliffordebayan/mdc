@@ -1,4 +1,3 @@
-from geopy.geocoders import Nominatim
 from rest_framework import serializers
 
 from .models import GeoFencing
@@ -7,24 +6,18 @@ from .models import GeoFencing
 class GeoFencingSetupSerializer(serializers.ModelSerializer):
     class Meta:
         model = GeoFencing
-        fields = "__all__"
+        fields = ["id", "branch_id", "latitude", "longitude", "radius_in_meters", "start", "excluded_employees"]
 
     def validate(self, data):
-        geolocator = Nominatim(user_agent="geo_checker")  # Use a unique user-agent
         start = data.get("start")
         if start:
-            try:
-                latitude = data.get("latitude")
-                longitude = data.get("longitude")
-                location = geolocator.reverse((latitude, longitude), exactly_one=True)
-                if not location:
-                    raise serializers.ValidationError("Invalid Location")
-            except Exception as e:
-                raise serializers.ValidationError(e)
+            latitude = data.get("latitude")
+            longitude = data.get("longitude")
+            if latitude is None or longitude is None:
+                raise serializers.ValidationError("Latitude and longitude are required when geofence is active.")
         return data
 
 
-class EmployeeLocationSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = GeoFencing
-        fields = ["latitude", "longitude"]
+class EmployeeLocationSerializer(serializers.Serializer):
+    latitude = serializers.FloatField()
+    longitude = serializers.FloatField()
