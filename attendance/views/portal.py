@@ -130,7 +130,7 @@ def _get_client_ip(request):
 
 def _geofence_check(employee, work_info, latitude, longitude):
     """
-    Return an error message string if the employee is outside their branch geofence,
+    Return a dict with error details if the employee is outside their branch geofence,
     or None if the clock action should be allowed.
     """
     try:
@@ -149,7 +149,14 @@ def _geofence_check(employee, work_info, latitude, longitude):
             (float(latitude), float(longitude)),
         ).meters
         if distance > geo.radius_in_meters:
-            return "You are outside the allowed location for your branch."
+            return {
+                "message": "You are outside the allowed location for your branch.",
+                "geo_center_lat": geo.latitude,
+                "geo_center_lng": geo.longitude,
+                "geo_radius_meters": geo.radius_in_meters,
+                "user_lat": float(latitude),
+                "user_lng": float(longitude),
+            }
     except Exception:
         pass
     return None
@@ -703,7 +710,7 @@ def public_clock_in(request):
         # Geofence check
         geo_error = _geofence_check(employee, work_info, latitude, longitude)
         if geo_error:
-            return JsonResponse({"success": False, "message": geo_error}, status=200)
+            return JsonResponse({"success": False, "geo_fence_violation": True, **geo_error}, status=200)
 
         # Check if already clocked in
         if AttendanceActivity.objects.filter(
@@ -906,7 +913,7 @@ def public_clock_out(request):
         work_info_out = getattr(employee, "employee_work_info", None)
         geo_error = _geofence_check(employee, work_info_out, latitude, longitude)
         if geo_error:
-            return JsonResponse({"success": False, "message": geo_error}, status=200)
+            return JsonResponse({"success": False, "geo_fence_violation": True, **geo_error}, status=200)
 
         # Check if employee is clocked in
         open_activity = AttendanceActivity.objects.filter(

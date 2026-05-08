@@ -15,6 +15,7 @@
     <link rel="icon" type="image/png" sizes="16x16"
         href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-16x16.png' %}{% endif %}">
     <link rel="stylesheet" href="{% static '/build/css/style.min.css' %}" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="manifest" href="{% url 'pwa-manifest' %}" />
     <style>
         /* ── Search step (unchanged) ── */
@@ -748,6 +749,11 @@
             margin-bottom: 10px;
         }
 
+        /* ── Geo fence error overlay ── */
+        #geofence-error-overlay {
+            border-top: 4px solid #dc3545;
+        }
+
         /* ── Utilities ── */
         .loading {
             display: inline-block;
@@ -1279,6 +1285,28 @@
                             </div>
                         </div>
                         </div><!-- /.clock-scroll-inner -->
+
+                        <!-- Geo Fence Violation Overlay (shown immediately on clock step) -->
+                        <div id="geofence-error-overlay" style="display:none; position:absolute; inset:0; z-index:300; background:#fff; overflow-y:auto; padding:24px;">
+                            <div style="max-width:500px; margin:0 auto;">
+                                <h4 style="color:#dc3545; margin-bottom:12px;">
+                                    <ion-icon name="location-outline"></ion-icon>
+                                    {% trans "Outside Allowed Area" %}
+                                </h4>
+                                <div id="geofence-error-map" style="height:280px; border-radius:8px; border:1px solid #ddd; margin-bottom:14px;"></div>
+                                <div class="error-card" style="margin-bottom:14px;">
+                                    <p id="geofence-error-text" style="margin:0 0 6px;"></p>
+                                    <p id="geofence-error-distance" class="small" style="margin:0; color:#6c757d;"></p>
+                                </div>
+                                <button type="button" class="oh-btn oh-btn--secondary w-100 mb-2" id="geofence-retry-btn">
+                                    <ion-icon name="refresh-outline" class="me-2"></ion-icon>{% trans "Try Again" %}
+                                </button>
+                                <button type="button" class="btn-back w-100" id="geofence-reset-btn">
+                                    <ion-icon name="person-outline" style="margin-right:6px;"></ion-icon>{% trans "Clock Another Employee" %}
+                                </button>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
 
@@ -1299,6 +1327,7 @@
     <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
     <script type="module" src="{% static 'images/ionicons/ui_icons/ionicons/ionicons.esm.js' %}"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
         const CSRF_TOKEN = '{{ csrf_token }}';
@@ -1312,6 +1341,7 @@
         let locationAccuracy = null;
         let pinInput = '';
         const PIN_LENGTH = 6;
+        let geofenceMap = null;
 
         // Server time offset: difference between server clock and client clock
         // This is re-synced from the server every 30 seconds so employees
@@ -1536,6 +1566,19 @@
                 $('#location-coordinates').text('');
                 $('#retry-location-btn').hide();
                 initializeLocationCapture();
+            });
+
+            // Geo fence error overlay buttons
+            $('#geofence-retry-btn').on('click', function () {
+                $('#geofence-error-overlay').css('display', 'none');
+                if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
+            });
+
+            $('#geofence-reset-btn').on('click', function () {
+                $('#geofence-error-overlay').css('display', 'none');
+                if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
+                resetForm();
+                showStep('search');
             });
 
             $(document).on('keydown', function (e) {
@@ -2065,6 +2108,8 @@
 
                 if (data.success) {
                     showConfirmation(data, 'success');
+                } else if (data.geo_fence_violation) {
+                    showGeofenceError(data);
                 } else {
                     showConfirmation(data, 'error');
                 }
@@ -2111,6 +2156,8 @@
 
                 if (data.success) {
                     showConfirmation(data, 'success');
+                } else if (data.geo_fence_violation) {
+                    showGeofenceError(data);
                 } else {
                     showConfirmation(data, 'error');
                 }
@@ -2120,6 +2167,67 @@
             } finally {
                 btn.html(originalText).prop('disabled', false);
             }
+        }
+
+        // Show geo fence violation overlay immediately on the clock step
+        function showGeofenceError(data) {
+            $('#geofence-error-text').text(data.message || '{% trans "You are outside the allowed location." %}');
+            $('#geofence-error-distance').text(
+                '{% trans "You must be within" %} ' + data.geo_radius_meters + 'm {% trans "of the required location." %}'
+            );
+            $('#geofence-error-overlay').css('display', 'block');
+
+            // Countdown on "Clock Another Employee" button — auto-resets after 10s
+            const $resetBtn = $('#geofence-reset-btn');
+            const resetBtnOriginalHtml = $resetBtn.html();
+            let countdown = 10;
+            $resetBtn.html(
+                '<ion-icon name="person-outline" style="margin-right:6px;"></ion-icon>{% trans "Clock Another Employee" %} (' + countdown + ')'
+            );
+            const geofenceCountdownInterval = setInterval(function () {
+                countdown--;
+                if (countdown > 0) {
+                    $resetBtn.html(
+                        '<ion-icon name="person-outline" style="margin-right:6px;"></ion-icon>{% trans "Clock Another Employee" %} (' + countdown + ')'
+                    );
+                } else {
+                    clearInterval(geofenceCountdownInterval);
+                    $resetBtn.html(resetBtnOriginalHtml);
+                    $('#geofence-error-overlay').css('display', 'none');
+                    if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
+                    resetForm();
+                    showStep('search');
+                }
+            }, 1000);
+
+            if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
+
+            setTimeout(function () {
+                geofenceMap = L.map('geofence-error-map');
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(geofenceMap);
+
+                var center = [data.geo_center_lat, data.geo_center_lng];
+                var userPos = [data.user_lat, data.user_lng];
+
+                L.circle(center, {
+                    radius: data.geo_radius_meters,
+                    color: '#28a745', fillColor: '#28a745', fillOpacity: 0.15, weight: 2
+                }).addTo(geofenceMap);
+
+                L.marker(center, { icon: L.divIcon({
+                    html: '<div style="width:14px;height:14px;border-radius:50%;background:#28a745;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
+                    className: '', iconSize: [14, 14], iconAnchor: [7, 7]
+                })}).addTo(geofenceMap).bindPopup('<b>{% trans "Required Location" %}</b>');
+
+                L.marker(userPos, { icon: L.divIcon({
+                    html: '<div style="width:14px;height:14px;border-radius:50%;background:#dc3545;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
+                    className: '', iconSize: [14, 14], iconAnchor: [7, 7]
+                })}).addTo(geofenceMap).bindPopup('<b>{% trans "Your Location" %}</b>').openPopup();
+
+                geofenceMap.fitBounds(L.latLngBounds([center, userPos]).pad(0.4));
+            }, 150);
         }
 
         // Show confirmation
