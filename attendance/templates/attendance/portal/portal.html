@@ -2177,29 +2177,6 @@
             );
             $('#geofence-error-overlay').css('display', 'block');
 
-            // Countdown on "Clock Another Employee" button — auto-resets after 10s
-            const $resetBtn = $('#geofence-reset-btn');
-            const resetBtnOriginalHtml = $resetBtn.html();
-            let countdown = 10;
-            $resetBtn.html(
-                '<ion-icon name="person-outline" style="margin-right:6px;"></ion-icon>{% trans "Clock Another Employee" %} (' + countdown + ')'
-            );
-            const geofenceCountdownInterval = setInterval(function () {
-                countdown--;
-                if (countdown > 0) {
-                    $resetBtn.html(
-                        '<ion-icon name="person-outline" style="margin-right:6px;"></ion-icon>{% trans "Clock Another Employee" %} (' + countdown + ')'
-                    );
-                } else {
-                    clearInterval(geofenceCountdownInterval);
-                    $resetBtn.html(resetBtnOriginalHtml);
-                    $('#geofence-error-overlay').css('display', 'none');
-                    if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
-                    resetForm();
-                    showStep('search');
-                }
-            }, 1000);
-
             if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
 
             setTimeout(function () {
