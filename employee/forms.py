@@ -240,6 +240,17 @@ class EmployeeForm(ModelForm):
         self.fields["email"].widget.attrs["autocomplete"] = "email"
         self.fields["phone"].widget.attrs["autocomplete"] = "phone"
         self.fields["address"].widget.attrs["autocomplete"] = "address"
+        _id_field_attrs = {
+            "tin_number":        {"maxlength": "16", "placeholder": "739-614-693-0000"},
+            "sss_number":        {"maxlength": "12", "placeholder": "01-2878550-8"},
+            "hdmf_number":       {"maxlength": "14", "placeholder": "1212-4260-4211"},
+            "philhealth_number": {"maxlength": "14", "placeholder": "05-250048317-2"},
+            "phone":             {"maxlength": "11", "placeholder": "09XXXXXXXXX"},
+            "emergency_contact": {"maxlength": "11", "placeholder": "09XXXXXXXXX"},
+        }
+        for fname, attrs in _id_field_attrs.items():
+            if fname in self.fields:
+                self.fields[fname].widget.attrs.update(attrs)
         if instance := kwargs.get("instance"):
             # ----
             # django forms not showing value inside the date, time html element.
@@ -334,6 +345,58 @@ class EmployeeForm(ModelForm):
             logger.exception(e)
             prefix = get_initial_prefix(None)["get_initial_prefix"]
         return prefix
+
+    def _validate_gov_id(self, value, pattern, label, placeholder):
+        import re
+        if value and not re.fullmatch(pattern, value):
+            raise forms.ValidationError(
+                f"Enter a valid {label} (e.g. {placeholder})."
+            )
+        return value
+
+    def clean_tin_number(self):
+        return self._validate_gov_id(
+            self.cleaned_data.get("tin_number"),
+            r"\d{3}-\d{3}-\d{3}-\d{4}", "TIN Number", "739-614-693-0000"
+        )
+
+    def clean_sss_number(self):
+        return self._validate_gov_id(
+            self.cleaned_data.get("sss_number"),
+            r"\d{2}-\d{7}-\d", "SSS Number", "01-2878550-8"
+        )
+
+    def clean_hdmf_number(self):
+        return self._validate_gov_id(
+            self.cleaned_data.get("hdmf_number"),
+            r"\d{4}-\d{4}-\d{4}", "Pag-IBIG Number", "1212-4260-4211"
+        )
+
+    def clean_philhealth_number(self):
+        return self._validate_gov_id(
+            self.cleaned_data.get("philhealth_number"),
+            r"\d{2}-\d{9}-\d", "PhilHealth Number", "05-250048317-2"
+        )
+
+    def clean_phone(self):
+        value = self.cleaned_data.get("phone")
+        if value and not value.isdigit():
+            raise forms.ValidationError("Phone number must contain digits only.")
+        if value and len(value) != 11:
+            raise forms.ValidationError("Phone number must be exactly 11 digits.")
+        if value and not value.startswith("0"):
+            raise forms.ValidationError("Phone number must start with 0.")
+        return value
+
+    def clean_emergency_contact(self):
+        value = self.cleaned_data.get("emergency_contact")
+        if value and not value.isdigit():
+            raise forms.ValidationError("Emergency contact must contain digits only.")
+        if value and len(value) != 11:
+            raise forms.ValidationError("Emergency contact must be exactly 11 digits.")
+        if value and not value.startswith("0"):
+            raise forms.ValidationError("Emergency contact must start with 0.")
+        return value
 
     def clean_employee_no(self):
         """
@@ -922,7 +985,7 @@ class EmployeePortalPersonalForm(ModelForm):
             "employee_middle_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "employee_last_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "employee_extension": forms.TextInput(attrs={"class": "oh-input w-100", "placeholder": "e.g. Jr., Sr., III"}),
-            "phone": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "11", "minlength": "11"}),
+            "phone": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "11", "minlength": "11", "placeholder": "09XXXXXXXXX"}),
             "dob": forms.DateInput(attrs={"class": "oh-input w-100", "type": "date"}),
             "gender": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
             "address": forms.Textarea(attrs={"class": "oh-input w-100", "rows": 3}),
@@ -934,13 +997,13 @@ class EmployeePortalPersonalForm(ModelForm):
             "experience": forms.NumberInput(attrs={"class": "oh-input w-100"}),
             "marital_status": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
             "children": forms.NumberInput(attrs={"class": "oh-input w-100"}),
-            "emergency_contact": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "11", "minlength": "11"}),
+            "emergency_contact": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "11", "minlength": "11", "placeholder": "09XXXXXXXXX"}),
             "emergency_contact_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "emergency_contact_relation": forms.TextInput(attrs={"class": "oh-input w-100"}),
-            "tin_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "16", "minlength": "16"}),
-            "sss_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "12", "minlength": "12"}),
-            "hdmf_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "14", "minlength": "14"}),
-            "philhealth_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "14", "minlength": "14"}),
+            "tin_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "16", "minlength": "16", "placeholder": "739-614-693-0000"}),
+            "sss_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "12", "minlength": "12", "placeholder": "01-2878550-8"}),
+            "hdmf_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "14", "minlength": "14", "placeholder": "1212-4260-4211"}),
+            "philhealth_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "14", "minlength": "14", "placeholder": "05-250048317-2"}),
         }
 
     def clean_phone(self):

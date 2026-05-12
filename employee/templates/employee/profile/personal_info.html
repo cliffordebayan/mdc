@@ -165,6 +165,52 @@
         </div>
     </div>
 
+    <script>
+        (function () {
+            function applySegmentMask(inputId, segments) {
+                var maxDigits = segments.reduce(function (a, b) { return a + b; }, 0);
+                var input = document.getElementById(inputId);
+                if (!input) return;
+
+                input.addEventListener('input', function () {
+                    var digits = this.value.replace(/\D/g, '').slice(0, maxDigits);
+                    var formatted = '';
+                    var idx = 0;
+                    for (var i = 0; i < segments.length; i++) {
+                        if (idx >= digits.length) break;
+                        if (i > 0) formatted += '-';
+                        formatted += digits.slice(idx, idx + segments[i]);
+                        idx += segments[i];
+                    }
+                    this.value = formatted;
+                });
+
+                input.addEventListener('keypress', function (e) {
+                    if (!/\d/.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault();
+                });
+            }
+
+            function applyDigitsOnly(inputId, maxLen) {
+                var input = document.getElementById(inputId);
+                if (!input) return;
+                input.setAttribute('maxlength', maxLen);
+                input.addEventListener('input', function () {
+                    this.value = this.value.replace(/\D/g, '').slice(0, maxLen);
+                });
+                input.addEventListener('keypress', function (e) {
+                    if (!/\d/.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault();
+                });
+            }
+
+            applySegmentMask('id_tin_number',        [3, 3, 3, 4]);
+            applySegmentMask('id_sss_number',        [2, 7, 1]);
+            applySegmentMask('id_hdmf_number',       [4, 4, 4]);
+            applySegmentMask('id_philhealth_number', [2, 9, 1]);
+            applyDigitsOnly('id_phone',              11);
+            applyDigitsOnly('id_emergency_contact',  11);
+        })();
+    </script>
+
     <div class="oh-modal" id="uploadPhotoModal" role="dialog" aria-labelledby="uploadPhotoModal" aria-hidden="true">
         <div class="oh-modal__dialog">
             <div class="oh-modal__dialog-header">
