@@ -502,6 +502,24 @@ def employee_lookup(request):
                         active_activity.clock_in_date, active_activity.clock_in
                     ).isoformat()
 
+            geo_data = None
+            branch_name = ""
+            try:
+                from geofencing.models import GeoFencing
+                work_info = getattr(emp, "employee_work_info", None)
+                branch = work_info.branch_id if work_info else None
+                if branch:
+                    branch_name = branch.branch or ""
+                    geo = GeoFencing.objects.filter(branch_id=branch, start=True).first()
+                    if geo and not geo.excluded_employees.filter(pk=emp.pk).exists():
+                        geo_data = {
+                            "geo_center_lat": geo.latitude,
+                            "geo_center_lng": geo.longitude,
+                            "geo_radius_meters": geo.radius_in_meters,
+                        }
+            except Exception:
+                pass
+
             results.append({
                 "id": emp.id,
                 "employee_no": emp.employee_no or "",
@@ -509,6 +527,8 @@ def employee_lookup(request):
                 "avatar": emp.get_avatar(),
                 "is_clocked_in": is_clocked_in,
                 "clock_in_datetime": clock_in_datetime,
+                "geo_fence": geo_data,
+                "branch": branch_name,
             })
 
         return JsonResponse({"success": True, "results": results})

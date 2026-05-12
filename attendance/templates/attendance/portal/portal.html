@@ -436,13 +436,13 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 20px 30px;
-            gap: 14px;
-            overflow: hidden;
+            padding: 12px 28px;
+            gap: 8px;
+            overflow-y: auto;
         }
 
         .clock-company-logo {
-            max-height: 50px;
+            max-height: 36px;
             object-fit: contain;
         }
 
@@ -454,7 +454,7 @@
         }
 
         .clock-live-time {
-            font-size: 40px;
+            font-size: 32px;
             font-weight: 700;
             color: #222;
             letter-spacing: -1px;
@@ -471,13 +471,14 @@
             position: relative;
             background: #fff;
             border: 1px solid #e0e0e0;
-            padding: 16px;
+            padding: 11px;
             width: 100%;
             max-width: 320px;
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 10px;
             overflow: hidden;
+            flex-shrink: 0;
         }
 
         .clock-employee-card::before {
@@ -502,8 +503,8 @@
         }
 
         .clock-employee-card img {
-            width: 68px;
-            height: 68px;
+            width: 52px;
+            height: 52px;
             margin: 0;
             border-radius: 50%;
             object-fit: cover;
@@ -523,7 +524,7 @@
 
         .clock-employee-card h4 {
             margin: 0;
-            font-size: 16px;
+            font-size: 14px;
             color: #222;
             font-weight: 700;
             line-height: 1.25;
@@ -658,7 +659,7 @@
         .clock-action-buttons {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 6px;
             width: 100%;
             max-width: 320px;
         }
@@ -668,7 +669,18 @@
             max-width: 320px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        #clock-preview-map {
+            width: 100%;
+            max-width: 320px;
+            height: 140px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            overflow: hidden;
+            flex-shrink: 0;
         }
 
         .clock-action-buttons button {
@@ -1022,6 +1034,14 @@
                 gap: 10px;
             }
 
+            #clock-preview-map {
+                max-width: 100%;
+                height: 150px;
+                border-radius: 6px;
+                margin: 0 10px;
+                width: calc(100% - 20px);
+            }
+
             .clock-action-buttons {
                 max-width: 100%;
                 gap: 10px;
@@ -1241,6 +1261,7 @@
                                     <div class="emp-details">
                                         <h4 id="employee-name"></h4>
                                         <p id="employee-badge"></p>
+                                        <p id="employee-branch" style="display:none; color:#555; font-size:11px; font-weight:500;"></p>
                                     </div>
                                 </div>
                                 <div class="clock-employee-meta">
@@ -1251,6 +1272,9 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- Live location map preview -->
+                            <div id="clock-preview-map" style="display:none;"></div>
 
                             <div class="clock-bottom-panel">
                                 <!-- Location status -->
@@ -1342,6 +1366,8 @@
         let pinInput = '';
         const PIN_LENGTH = 6;
         let geofenceMap = null;
+        let clockPreviewMap = null;
+        let employeeDataById = {};
 
         // Server time offset: difference between server clock and client clock
         // This is re-synced from the server every 30 seconds so employees
@@ -1438,6 +1464,7 @@
                         $('#retry-location-btn').hide();
                         $('#location-status').removeClass('warning').addClass('success');
                         enableClockButtons();
+                        initClockPreviewMap();
 
                         // Get address immediately and display it
                         geocodingPromise = reverseGeocode(latitude, longitude).then(function (address) {
@@ -1572,6 +1599,7 @@
             $('#geofence-retry-btn').on('click', function () {
                 $('#geofence-error-overlay').css('display', 'none');
                 if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
+                initClockPreviewMap();
             });
 
             $('#geofence-reset-btn').on('click', function () {
@@ -1630,6 +1658,9 @@
                 })
                 .then(data => {
                     if (data.success && data.results.length > 0) {
+                        employeeDataById = {};
+                        data.results.forEach(function (e) { employeeDataById[e.id] = e; });
+
                         if (data.results.length === 1) {
                             const emp = data.results[0];
                             selectEmployee(emp.id, emp.name, emp.employee_no, emp.avatar, emp.is_clocked_in, emp.clock_in_datetime);
@@ -1678,13 +1709,16 @@
 
         // Select employee
         function selectEmployee(empId, empName, empBadge, empAvatar, isClockedIn, clockInDatetime) {
+            const cached = employeeDataById[empId] || {};
             selectedEmployee = {
                 id: empId,
                 name: empName,
                 badge: empBadge,
                 avatar: empAvatar,
                 is_clocked_in: isClockedIn,
-                clock_in_datetime: clockInDatetime || null
+                clock_in_datetime: clockInDatetime || null,
+                geo_fence: cached.geo_fence || null,
+                branch: cached.branch || "",
             };
 
             clearInterval(searchLiveHoursInterval);
@@ -1813,6 +1847,11 @@
             $('#employee-name').text(selectedEmployee.name);
             $('#employee-badge').text(selectedEmployee.badge ? `#${selectedEmployee.badge}` : '');
             $('#employee-avatar').attr('src', selectedEmployee.avatar);
+            if (selectedEmployee.branch) {
+                $('#employee-branch').text(selectedEmployee.branch).show();
+            } else {
+                $('#employee-branch').hide().text('');
+            }
 
             clearInterval(liveWorkHoursInterval);
             liveWorkHoursInterval = null;
@@ -1837,6 +1876,8 @@
                 $('#clock-live-work-hours').hide();
             }
 
+            if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
+            $('#clock-preview-map').hide();
             showStep('clock');
             initializeLocationCapture();
             capturedAddress = null;
@@ -2169,8 +2210,67 @@
             }
         }
 
+        // Show live location map in the clock step before clock-in/out is attempted
+        function initClockPreviewMap() {
+            if (!latitude || !longitude) return;
+
+            const $map = $('#clock-preview-map');
+            $map.show();
+
+            if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
+
+            setTimeout(function () {
+                clockPreviewMap = L.map('clock-preview-map', { zoomControl: false, attributionControl: false });
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(clockPreviewMap);
+
+                const userPos = [latitude, longitude];
+                const geo = selectedEmployee && selectedEmployee.geo_fence;
+
+                let isInside = true;
+                if (geo) {
+                    const R = 6371000;
+                    const p1 = latitude * Math.PI / 180, p2 = geo.geo_center_lat * Math.PI / 180;
+                    const dp = (geo.geo_center_lat - latitude) * Math.PI / 180;
+                    const dl = (geo.geo_center_lng - longitude) * Math.PI / 180;
+                    const a = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+                    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                    isInside = dist <= geo.geo_radius_meters;
+                }
+
+                const userColor = isInside ? '#28a745' : '#dc3545';
+
+                let bounds = null;
+                if (geo) {
+                    const center = [geo.geo_center_lat, geo.geo_center_lng];
+                    L.circle(center, {
+                        radius: geo.geo_radius_meters,
+                        color: '#28a745', fillColor: '#28a745', fillOpacity: 0.15, weight: 2
+                    }).addTo(clockPreviewMap);
+                    L.marker(center, { icon: L.divIcon({
+                        html: '<div style="width:12px;height:12px;border-radius:50%;background:#28a745;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);"></div>',
+                        className: '', iconSize: [12,12], iconAnchor: [6,6]
+                    })}).addTo(clockPreviewMap).bindPopup('<b>{% trans "Required Location" %}</b>');
+                    bounds = L.latLngBounds([center, userPos]).pad(0.3);
+                }
+
+                L.marker(userPos, { icon: L.divIcon({
+                    html: `<div style="width:14px;height:14px;border-radius:50%;background:${userColor};border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);"></div>`,
+                    className: '', iconSize: [14,14], iconAnchor: [7,7]
+                })}).addTo(clockPreviewMap).bindPopup('<b>{% trans "Your Location" %}</b>').openPopup();
+
+                if (bounds) {
+                    clockPreviewMap.fitBounds(bounds);
+                } else {
+                    clockPreviewMap.setView(userPos, 16);
+                }
+            }, 150);
+        }
+
         // Show geo fence violation overlay immediately on the clock step
         function showGeofenceError(data) {
+            if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
+            $('#clock-preview-map').hide();
+
             $('#geofence-error-text').text(data.message || '{% trans "You are outside the allowed location." %}');
             $('#geofence-error-distance').text(
                 '{% trans "You must be within" %} ' + data.geo_radius_meters + 'm {% trans "of the required location." %}'
@@ -2272,7 +2372,11 @@
 
         // Reset form
         function resetForm() {
+            if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
+            $('#clock-preview-map').hide();
+            $('#employee-branch').hide().text('');
             selectedEmployee = null;
+            employeeDataById = {};
             capturedAddress = null;
             cameraReady = false;
             pinInput = '';
