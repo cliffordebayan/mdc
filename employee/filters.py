@@ -234,6 +234,7 @@ class EmployeeReGroup:
         ("employee_work_info__job_role_id", "Job Role"),
         ("employee_work_info__reporting_manager_id", "Reporting Manager"),
         ("employee_work_info__company_id", "Company"),
+        ("employee_work_info__branch_id", "Branch"),
     ]
 
 

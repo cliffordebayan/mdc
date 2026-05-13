@@ -21,6 +21,7 @@ from attendance.models import (
     strtime_seconds,
 )
 from base.filters import FilterSet
+from base.models import Branch
 from employee.filters import EmployeeFilter
 from employee.models import Employee
 from horilla.filters import filter_by_name
@@ -97,6 +98,11 @@ class AttendanceOverTimeFilter(FilterSet):
         field_name="employee_id__employee_work_info__department_id__department",
         lookup_expr="icontains",
     )
+    employee_id__employee_work_info__branch_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=Branch.objects.all(),
+        field_name="employee_id__employee_work_info__branch_id",
+        widget=forms.SelectMultiple(),
+    )
 
     class Meta:
         """
@@ -118,6 +124,7 @@ class AttendanceOverTimeFilter(FilterSet):
             "employee_id__employee_work_info__reporting_manager_id",
             "employee_id__employee_work_info__shift_id",
             "employee_id__employee_work_info__work_type_id",
+            "employee_id__employee_work_info__branch_id",
         ]
 
     def __init__(self, data=None, queryset=None, *, request=None, prefix=None):
@@ -205,6 +212,11 @@ class LateComeEarlyOutFilter(FilterSet):
     week = django_filters.CharFilter(
         field_name="attendance_id__attendance_date", lookup_expr="week"
     )
+    employee_id__employee_work_info__branch_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=Branch.objects.all(),
+        field_name="employee_id__employee_work_info__branch_id",
+        widget=forms.SelectMultiple(),
+    )
 
     class Meta:
         """
@@ -223,6 +235,7 @@ class LateComeEarlyOutFilter(FilterSet):
             "employee_id__employee_work_info__job_position_id",
             "employee_id__employee_work_info__location",
             "employee_id__employee_work_info__reporting_manager_id",
+            "employee_id__employee_work_info__branch_id",
             "attendance_id__shift_id",
             "attendance_id__work_type_id",
             "attendance_date__gte",
@@ -296,6 +309,12 @@ class AttendanceActivityFilter(FilterSet):
         field_name="clock_out_date", widget=forms.DateInput(attrs={"type": "date"})
     )
 
+    employee_id__employee_work_info__branch_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=Branch.objects.all(),
+        field_name="employee_id__employee_work_info__branch_id",
+        widget=forms.SelectMultiple(),
+    )
+
     class Meta:
         """
         Meta class to add additional options
@@ -321,6 +340,7 @@ class AttendanceActivityFilter(FilterSet):
             "employee_id__employee_work_info__job_position_id",
             "employee_id__employee_work_info__location",
             "employee_id__employee_work_info__reporting_manager_id",
+            "employee_id__employee_work_info__branch_id",
         ]
         model = AttendanceActivity
 
@@ -415,6 +435,11 @@ class AttendanceFilters(FilterSet):
         field_name="employee_id__employee_work_info__department_id__department",
         lookup_expr="icontains",
     )
+    employee_id__employee_work_info__branch_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=Branch.objects.all(),
+        field_name="employee_id__employee_work_info__branch_id",
+        widget=forms.SelectMultiple(),
+    )
 
     def filter_pending_hour(self, queryset, name, value):
         """
@@ -453,6 +478,7 @@ class AttendanceFilters(FilterSet):
             "employee_id__employee_work_info__job_position_id",
             "employee_id__employee_work_info__location",
             "employee_id__employee_work_info__reporting_manager_id",
+            "employee_id__employee_work_info__branch_id",
             "attendance_day",
             "attendance_date",
             "work_type_id",
@@ -560,6 +586,7 @@ class LateComeEarlyOutReGroup:
             "Employment Type",
         ),
         ("attendance_id__employee_id__employee_work_info__company_id", "Company"),
+        ("attendance_id__employee_id__employee_work_info__branch_id", "Branch"),
     ]
 
 
@@ -582,6 +609,7 @@ class AttendanceReGroup:
         ("employee_id__employee_work_info__job_position_id", "Job Position"),
         ("employee_id__employee_work_info__employee_type_id", "Employment Type"),
         ("employee_id__employee_work_info__company_id", "Company"),
+        ("employee_id__employee_work_info__branch_id", "Branch"),
     ]
 
 
@@ -603,6 +631,7 @@ class AttendanceOvertimeReGroup:
         ("employee_id__employee_work_info__job_position_id", "Job Position"),
         ("employee_id__employee_work_info__employee_type_id", "Employment Type"),
         ("employee_id__employee_work_info__company_id", "Company"),
+        ("employee_id__employee_work_info__branch_id", "Branch"),
     ]
 
 
@@ -626,6 +655,7 @@ class AttendanceActivityReGroup:
         ("employee_id__employee_work_info__job_position_id", "Job Position"),
         ("employee_id__employee_work_info__employee_type_id", "Employment Type"),
         ("employee_id__employee_work_info__company_id", "Company"),
+        ("employee_id__employee_work_info__branch_id", "Branch"),
     ]
 
 
@@ -649,6 +679,7 @@ class AttendanceRequestReGroup:
         ("employee_id__employee_work_info__job_position_id", "Job Position"),
         ("employee_id__employee_work_info__employee_type_id", "Employment Type"),
         ("employee_id__employee_work_info__company_id", "Company"),
+        ("employee_id__employee_work_info__branch_id", "Branch"),
     ]
 
 
