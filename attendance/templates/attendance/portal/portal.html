@@ -2237,7 +2237,7 @@
                     isInside = dist <= geo.geo_radius_meters;
                 }
 
-                const userColor = isInside ? '#28a745' : '#dc3545';
+                const userColor = isInside ? '#007bff' : '#007bff';
 
                 let bounds = null;
                 if (geo) {
@@ -2299,7 +2299,7 @@
                 })}).addTo(geofenceMap).bindPopup('<b>{% trans "Required Location" %}</b>');
 
                 L.marker(userPos, { icon: L.divIcon({
-                    html: '<div style="width:14px;height:14px;border-radius:50%;background:#dc3545;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
+                    html: '<div style="width:14px;height:14px;border-radius:50%;background:#007bff;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
                     className: '', iconSize: [14, 14], iconAnchor: [7, 7]
                 })}).addTo(geofenceMap).bindPopup('<b>{% trans "Your Location" %}</b>').openPopup();
 
