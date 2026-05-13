@@ -91,6 +91,7 @@ from employee.forms import (
     EmployeeInsuranceForm,
     EmployeeNoteForm,
     EmployeePortalPersonalForm,
+    EmployeePortalPINForm,
     EmployeeTagForm,
     EmployeeWorkInformationForm,
     EmployeeWorkInformationUpdateForm,
@@ -4685,10 +4686,6 @@ def employee_portal_set_password(request, token):
     if portal is None or portal.used:
         return render(request, "404.html")
 
-    step_redirect = _employee_portal_step_redirect(portal)
-    if step_redirect is not None:
-        return step_redirect
-
     employee = portal.employee_id
     user = employee.employee_user_id
     form = SetPasswordForm(user)
@@ -4720,16 +4717,34 @@ def employee_portal_profile(request, token):
     if portal is None or portal.used:
         return render(request, "404.html")
 
-    if portal.count >= 2:
-        return _employee_portal_step_redirect(portal)
+    if portal.count < 1:
+        return redirect("employee-portal-set-password", token)
 
     employee = portal.employee_id
 
+    if portal.count < 2 and employee.employee_profile:
+        portal.count = 2
+        portal.save()
+
     if request.method == "POST":
         profile = request.FILES.get("profile")
+        captured = request.POST.get("captured_photo", "")
+
         if profile is not None:
             employee.employee_profile = profile
             employee.save()
+            portal.count = 2
+            portal.save()
+            messages.success(request, _("Profile picture updated successfully."))
+            return redirect("employee-portal-personal", token)
+
+        elif captured and captured.startswith("data:image/"):
+            import base64, uuid
+            from django.core.files.base import ContentFile
+            header, b64data = captured.split(",", 1)
+            image_data = base64.b64decode(b64data)
+            filename = f"capture_{uuid.uuid4().hex}.jpg"
+            employee.employee_profile.save(filename, ContentFile(image_data), save=True)
             portal.count = 2
             portal.save()
             messages.success(request, _("Profile picture updated successfully."))
@@ -4750,35 +4765,56 @@ def employee_portal_profile(request, token):
     )
 
 
+def employee_portal_remove_photo(request, token):
+    """Remove the employee's profile photo from the portal."""
+    portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
+    if portal is None or portal.used:
+        return render(request, "404.html")
+
+    if request.method == "POST":
+        employee = portal.employee_id
+        if employee.employee_profile:
+            employee.employee_profile.delete(save=False)
+            employee.employee_profile = None
+            employee.save()
+        if portal.count >= 2:
+            portal.count = 1
+            portal.save()
+
+    return redirect("employee-portal-profile", token)
+
+
 def employee_portal_personal(request, token):
     """Step 3 — Employee fills in personal details."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
     if portal is None or portal.used:
         return render(request, "404.html")
 
-    if portal.count >= 3:
-        return _employee_portal_step_redirect(portal)
+    if portal.count < 2:
+        return redirect("employee-portal-profile", token)
 
     employee = portal.employee_id
+    work_info, _created = EmployeeWorkInformation.objects.get_or_create(employee_id=employee)
     form = EmployeePortalPersonalForm(instance=employee)
+    pin_form = EmployeePortalPINForm(instance=work_info)
 
     if request.method == "POST":
         form = EmployeePortalPersonalForm(request.POST, instance=employee)
-        if form.is_valid():
+        pin_form = EmployeePortalPINForm(request.POST, instance=work_info)
+        if form.is_valid() and pin_form.is_valid():
             form.save()
+            pin_form.save()
             portal.count = 3
             portal.save()
             messages.success(request, _("Personal details saved successfully."))
             return redirect("employee-portal-bank", token)
 
-    company = None
-    if hasattr(employee, "employee_work_info") and employee.employee_work_info:
-        company = employee.employee_work_info.company_id
+    company = work_info.company_id
 
     return render(
         request,
         "employee/portal/personal_details.html",
-        {"form": form, "employee": employee, "company": company, "token": token},
+        {"form": form, "pin_form": pin_form, "employee": employee, "company": company, "token": token},
     )
 
 

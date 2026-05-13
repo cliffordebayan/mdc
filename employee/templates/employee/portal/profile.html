@@ -7,9 +7,14 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% trans "Employee Profile Portal" %}</title>
+  {% if company and company.icon %}
+  <link rel="icon" href="{{ company.icon.url }}">
+  <link rel="apple-touch-icon" href="{{ company.icon.url }}">
+  {% else %}
   <link rel="apple-touch-icon" sizes="180x180" href="{% static 'favicons/apple-touch-icon.png' %}">
   <link rel="icon" type="image/png" sizes="32x32" href="{% static 'favicons/favicon-32x32.png' %}">
   <link rel="icon" type="image/png" sizes="16x16" href="{% static 'favicons/favicon-16x16.png' %}">
+  {% endif %}
   <link rel="stylesheet" href="{% static 'build/css/style.min.css' %}" />
 </head>
 <body>
@@ -62,11 +67,27 @@
           <h3 class="oh-onboarding-card__title oh-onboarding-card__title--h1 text-center">{{ employee.get_full_name }}</h3>
           <span class="oh-onboarding-card__subtitle mb-3 text-center">({{ employee.email }})</span>
 
+          {% if employee.employee_profile %}
           <a href="{% url 'employee-portal-personal' token %}"
-            class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100 mb-4"
+            class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100 mb-2"
             role="button">
             {% trans "Next Step" %}
             <ion-icon class="ms-2" name="arrow-forward-outline"></ion-icon>
+          </a>
+          {% else %}
+          <button type="button" disabled
+            class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100 mb-2"
+            style="opacity:0.5;cursor:not-allowed;">
+            {% trans "Next Step" %}
+            <ion-icon class="ms-2" name="arrow-forward-outline"></ion-icon>
+          </button>
+          <p class="text-center text-muted small mb-2">{% trans "Please upload a profile photo to continue." %}</p>
+          {% endif %}
+          <a href="{% url 'employee-portal-set-password' token %}"
+            class="oh-btn oh-btn--light oh-btn--shadow w-100 mb-4"
+            role="button">
+            <ion-icon class="me-2" name="arrow-back-outline"></ion-icon>
+            {% trans "Back" %}
           </a>
         </div>
       </div>
@@ -75,23 +96,76 @@
       <div class="oh-modal" id="uploadPhotoModal" role="dialog" aria-labelledby="uploadPhotoModal" aria-hidden="true">
         <div class="oh-modal__dialog">
           <div class="oh-modal__dialog-header">
-            <span class="oh-modal__dialog-title">{% trans "Upload Photo" %}</span>
-            <button class="oh-modal__close" aria-label="Close">
+            <span class="oh-modal__dialog-title">{% trans "Profile Photo" %}</span>
+            <button class="oh-modal__close" aria-label="Close" id="photoModalClose">
               <ion-icon name="close-outline"></ion-icon>
             </button>
           </div>
-          <form action="" method="post" enctype="multipart/form-data">
+          <!-- Tab buttons -->
+          <div class="d-flex border-bottom mb-3" style="gap:0;">
+            <button type="button" id="tabUpload"
+              class="oh-btn oh-btn--light flex-fill"
+              style="border-radius:0;border-bottom:2px solid var(--oh-secondary,#6c63ff);">
+              <ion-icon name="cloud-upload-outline" class="me-1"></ion-icon> {% trans "Upload" %}
+            </button>
+            <button type="button" id="tabCamera"
+              class="oh-btn oh-btn--light flex-fill"
+              style="border-radius:0;border-bottom:2px solid transparent;">
+              <ion-icon name="camera-outline" class="me-1"></ion-icon> {% trans "Camera" %}
+            </button>
+          </div>
+          <form action="" method="post" enctype="multipart/form-data" id="photoForm">
             {% csrf_token %}
+            <input type="hidden" name="captured_photo" id="capturedPhotoData" />
             <div class="oh-modal__dialog-body">
-              <div class="oh-profile-section__image-container">
+
+              <!-- Upload panel -->
+              <div id="panelUpload" class="oh-profile-section__image-container">
                 <div class="oh-profile-section__modal-avatar">
                   <img src="{{ employee.get_avatar }}" class="oh-profile-section__modal-image oh-upload-photo" alt="{% trans 'User Photo' %}" />
                 </div>
-                <input type="file" class="oh-input oh-input--file oh-input--file-sm mt-4 oh-upload-input" data-target=".oh-upload-photo" name="profile" />
-                <button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">{% trans "Update Image" %}</button>
+                <input type="file" accept="image/*"
+                  class="oh-input oh-input--file oh-input--file-sm mt-4 oh-upload-input"
+                  data-target=".oh-upload-photo" name="profile" id="fileInput" />
+                <button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow mt-2 w-100">{% trans "Upload Photo" %}</button>
               </div>
+
+              <!-- Camera panel -->
+              <div id="panelCamera" class="oh-profile-section__image-container" style="display:none;">
+                <video id="cameraStream" autoplay playsinline
+                  style="width:100%;max-height:280px;border-radius:8px;object-fit:cover;background:#000;transform:scaleX(-1);"></video>
+                <canvas id="cameraCanvas" style="display:none;"></canvas>
+                <img id="cameraPreview" style="display:none;width:100%;max-height:280px;border-radius:8px;object-fit:cover;" alt="{% trans 'Captured photo' %}" />
+                <div id="cameraError" class="oh-alert oh-alert--danger mt-2" style="display:none;">
+                  {% trans "Camera not available. Please allow camera access or use Upload instead." %}
+                </div>
+                <div class="d-flex mt-3" style="gap:8px;">
+                  <button type="button" id="btnCapture"
+                    class="oh-btn oh-btn--secondary oh-btn--shadow flex-fill" style="display:none;">
+                    <ion-icon name="camera-outline" class="me-1"></ion-icon> {% trans "Capture" %}
+                  </button>
+                  <button type="button" id="btnRetake"
+                    class="oh-btn oh-btn--light flex-fill" style="display:none;">
+                    <ion-icon name="refresh-outline" class="me-1"></ion-icon> {% trans "Retake" %}
+                  </button>
+                  <button type="button" id="btnUseCaptured"
+                    class="oh-btn oh-btn--secondary flex-fill" style="display:none;">
+                    <ion-icon name="checkmark-outline" class="me-1"></ion-icon> {% trans "Use Photo" %}
+                  </button>
+                </div>
+              </div>
+
             </div>
           </form>
+          {% if employee.employee_profile %}
+          <form method="post" action="{% url 'employee-portal-remove-photo' token %}" class="w-100 px-3 pb-3">
+            {% csrf_token %}
+            <button type="submit" class="oh-btn oh-btn--light-danger oh-btn--shadow w-100">
+              <ion-icon class="me-1" name="trash-outline"></ion-icon>
+              {% trans "Remove Photo" %}
+            </button>
+          </form>
+          {% endif %}
         </div>
       </div>
 
@@ -101,5 +175,110 @@
   <script src="{% static 'build/js/web.frontend.min.js' %}"></script>
   <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
   <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+  <script>
+    (function () {
+      var tabUpload     = document.getElementById('tabUpload');
+      var tabCamera     = document.getElementById('tabCamera');
+      var panelUpload   = document.getElementById('panelUpload');
+      var panelCamera   = document.getElementById('panelCamera');
+      var video         = document.getElementById('cameraStream');
+      var canvas        = document.getElementById('cameraCanvas');
+      var preview       = document.getElementById('cameraPreview');
+      var btnCapture    = document.getElementById('btnCapture');
+      var btnRetake     = document.getElementById('btnRetake');
+      var btnUseCaptured= document.getElementById('btnUseCaptured');
+      var cameraError   = document.getElementById('cameraError');
+      var capturedData  = document.getElementById('capturedPhotoData');
+      var fileInput     = document.getElementById('fileInput');
+      var modalClose    = document.getElementById('photoModalClose');
+      var stream        = null;
+
+      function stopCamera() {
+        if (stream) {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          stream = null;
+        }
+      }
+
+      function showTab(tab) {
+        if (tab === 'upload') {
+          panelUpload.style.display = '';
+          panelCamera.style.display = 'none';
+          tabUpload.style.borderBottom = '2px solid var(--oh-secondary,#6c63ff)';
+          tabCamera.style.borderBottom = '2px solid transparent';
+          stopCamera();
+        } else {
+          panelUpload.style.display = 'none';
+          panelCamera.style.display = '';
+          tabUpload.style.borderBottom = '2px solid transparent';
+          tabCamera.style.borderBottom = '2px solid var(--oh-secondary,#6c63ff)';
+          startCamera();
+        }
+      }
+
+      function startCamera() {
+        cameraError.style.display = 'none';
+        preview.style.display = 'none';
+        btnRetake.style.display = 'none';
+        btnUseCaptured.style.display = 'none';
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          cameraError.style.display = '';
+          return;
+        }
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+          .then(function (s) {
+            stream = s;
+            video.srcObject = s;
+            video.style.display = '';
+            btnCapture.style.display = '';
+          })
+          .catch(function () {
+            cameraError.style.display = '';
+            video.style.display = 'none';
+            btnCapture.style.display = 'none';
+          });
+      }
+
+      tabUpload.addEventListener('click', function () { showTab('upload'); });
+      tabCamera.addEventListener('click', function () { showTab('camera'); });
+
+      btnCapture.addEventListener('click', function () {
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        var ctx = canvas.getContext('2d');
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0);
+        var dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        preview.src = dataUrl;
+        preview.style.display = '';
+        video.style.display = 'none';
+        btnCapture.style.display = 'none';
+        btnRetake.style.display = '';
+        btnUseCaptured.style.display = '';
+        stopCamera();
+      });
+
+      btnRetake.addEventListener('click', function () {
+        preview.style.display = 'none';
+        btnRetake.style.display = 'none';
+        btnUseCaptured.style.display = 'none';
+        capturedData.value = '';
+        startCamera();
+      });
+
+      btnUseCaptured.addEventListener('click', function () {
+        capturedData.value = preview.src;
+        /* also clear the file input so only captured data is sent */
+        fileInput.value = '';
+        document.getElementById('photoForm').submit();
+      });
+
+      /* stop camera when modal is closed */
+      if (modalClose) {
+        modalClose.addEventListener('click', function () { stopCamera(); });
+      }
+    })();
+  </script>
 </body>
 </html>

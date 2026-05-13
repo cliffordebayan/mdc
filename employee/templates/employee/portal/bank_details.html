@@ -7,9 +7,14 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% trans "Employee Profile Portal" %}</title>
+  {% if company and company.icon %}
+  <link rel="icon" href="{{ company.icon.url }}">
+  <link rel="apple-touch-icon" href="{{ company.icon.url }}">
+  {% else %}
   <link rel="apple-touch-icon" sizes="180x180" href="{% static 'favicons/apple-touch-icon.png' %}">
   <link rel="icon" type="image/png" sizes="32x32" href="{% static 'favicons/favicon-32x32.png' %}">
   <link rel="icon" type="image/png" sizes="16x16" href="{% static 'favicons/favicon-16x16.png' %}">
+  {% endif %}
   <link rel="stylesheet" href="{% static 'build/css/style.min.css' %}" />
 </head>
 <body>
@@ -64,9 +69,15 @@
             <h2 class="oh-onboarding-card__section-title">{% trans "Bank Details" %}</h2>
             {{ form.as_p }}
           </div>
-          <button class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100 mb-4" role="button">
+          <button class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100 mb-2" role="button">
             {% trans "Finish" %}
           </button>
+          <a href="{% url 'employee-portal-personal' token %}"
+            class="oh-btn oh-btn--light oh-btn--shadow w-100 mb-4"
+            role="button">
+            <ion-icon class="me-2" name="arrow-back-outline"></ion-icon>
+            {% trans "Back" %}
+          </a>
         </form>
       </div>
     </main>

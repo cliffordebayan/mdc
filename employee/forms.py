@@ -1007,6 +1007,35 @@ class EmployeePortalPersonalForm(ModelForm):
             "philhealth_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "14", "minlength": "14", "placeholder": "05-250048317-2"}),
         }
 
+    REQUIRED_FIELDS = [
+        "employee_first_name",
+        "employee_last_name",
+        "dob",
+        "gender",
+        "address",
+        "country",
+        "state",
+        "city",
+        "zip",
+        "marital_status",
+        "children",
+        "emergency_contact",
+        "emergency_contact_name",
+        "emergency_contact_relation",
+        "tin_number",
+        "sss_number",
+        "hdmf_number",
+        "philhealth_number",
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name in self.REQUIRED_FIELDS:
+            if field_name in self.fields:
+                self.fields[field_name].required = True
+        if not self.instance.pk or not self.instance.country:
+            self.initial.setdefault("country", "Philippines")
+
     def clean_phone(self):
         value = self.cleaned_data.get("phone")
         if value and not value.isdigit():
@@ -1058,3 +1087,32 @@ class EmployeePortalPersonalForm(ModelForm):
             "philhealth_number", self.cleaned_data.get("philhealth_number"),
             r"\d{2}-\d{9}-\d", 14, "PhilHealth Number"
         )
+
+
+class EmployeePortalPINForm(ModelForm):
+    """PIN form used in the employee self-service portal."""
+
+    class Meta:
+        model = EmployeeWorkInformation
+        fields = ["pin"]
+        widgets = {
+            "pin": forms.TextInput(
+                attrs={
+                    "class": "oh-input w-100",
+                    "maxlength": "6",
+                    "minlength": "6",
+                    "placeholder": "123456",
+                    "pattern": r"\d{6}",
+                    "inputmode": "numeric",
+                }
+            ),
+        }
+
+    def clean_pin(self):
+        value = self.cleaned_data.get("pin")
+        if value:
+            if not value.isdigit():
+                raise forms.ValidationError("PIN must contain digits only.")
+            if len(value) != 6:
+                raise forms.ValidationError("PIN must be exactly 6 digits.")
+        return value

@@ -482,6 +482,11 @@ urlpatterns = [
         name="employee-portal-profile",
     ),
     path(
+        "employee-portal/remove-photo/<str:token>/",
+        views.employee_portal_remove_photo,
+        name="employee-portal-remove-photo",
+    ),
+    path(
         "employee-portal/personal/<str:token>/",
         views.employee_portal_personal,
         name="employee-portal-personal",
