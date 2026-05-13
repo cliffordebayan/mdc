@@ -2818,6 +2818,7 @@ def work_info_import_file(request):
         "Is Active",
         "Work Email",
         "Work Phone",
+        "PIN",
         *bank_names,
         *[col for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")],
     ]
@@ -2867,6 +2868,7 @@ def work_info_import_file(request):
         "Is Active": "true",
         "Work Email": "",
         "Work Phone": "",
+        "PIN": "",
         **{bank: "" for bank in bank_names},
         **{col: "" for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")},
     }

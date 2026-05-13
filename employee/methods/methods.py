@@ -1060,6 +1060,7 @@ def bulk_create_work_info_import(success_lists):
 
         basic_salary = to_int_or_default(convert_nan("Salary", work_info))
         salary_hour = to_int_or_default(convert_nan("Salary Hour", work_info))
+        pin_val = convert_nan("PIN", work_info) or None
 
         if employee_work_info is None:
             # Create a new instance
@@ -1089,6 +1090,7 @@ def bulk_create_work_info_import(success_lists):
                 basic_salary=basic_salary,
                 salary_hour=salary_hour,
                 experience=experience_val,
+                pin=pin_val,
             )
             new_work_info_list.append(employee_work_info)
         else:
@@ -1117,6 +1119,8 @@ def bulk_create_work_info_import(success_lists):
             employee_work_info.basic_salary = basic_salary
             employee_work_info.salary_hour = salary_hour
             employee_work_info.experience = experience_val
+            if pin_val:
+                employee_work_info.pin = pin_val
             update_work_info_list.append(employee_work_info)
     if new_work_info_list:
         EmployeeWorkInformation.objects.bulk_create(
@@ -1146,6 +1150,7 @@ def bulk_create_work_info_import(success_lists):
                 "basic_salary",
                 "salary_hour",
                 "experience",
+                "pin",
             ],
             batch_size=None if is_postgres else 999,
         )

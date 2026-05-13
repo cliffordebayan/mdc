@@ -700,6 +700,7 @@ excel_columns = [
     # Work contact
     ("employee_work_info__email", trans("Work Email")),
     ("employee_work_info__mobile", trans("Work Phone")),
+    ("employee_work_info__pin", trans("PIN")),
     # Skills
     ("experience", trans("Experience")),
     ("qualification", trans("Qualification")),
