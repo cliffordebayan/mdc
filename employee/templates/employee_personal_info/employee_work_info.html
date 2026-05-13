@@ -6,13 +6,39 @@
         <div class="card-body pl-5 pr-5 pb-5 pt-5">
           <h3 class="mb-4">{{form.instance.employee_first_name}}'s {% trans "Work Info" %}</h3>
           <div class="row">
-                <div class="col-md-6 ">
-                {{work_form.job_position_id.errors}}
-                <div class="form-outline mb-4">{{work_form.job_position_id}}</div>
+                <div class="col-md-6 mb-4">
+                    {{work_form.employee_status.errors}}
+                    {{work_form.employee_status}}
+                </div>
+                <div class="col-md-6 mb-2">
+                    <div class="form-outline mb-4">
+                    {{work_form.employee_type_id.errors}}
+                    {{work_form.employee_type_id}}
+                    </div>
+                </div>
+                <div class="col-md-6 mb-4">
+                    {{work_form.company_id.errors}}
+                    {{work_form.company_id}}
+                </div>
+                <div class="col-md-6 mb-4">
+                    {{work_form.branch_id.errors}}
+                    {{work_form.branch_id}}
                 </div>
                 <div class="col-md-6 mb-2">
                 {{work_form.department_id.errors}}
                 <div class="form-outline mb-4">{{work_form.department_id}}</div>
+                </div>
+                <div class="col-md-6 mb-4">
+                    {{work_form.business_unit_id.errors}}
+                    {{work_form.business_unit_id}}
+                </div>
+                <div class="col-md-6 mb-4">
+                    {{work_form.cost_center_id.errors}}
+                    {{work_form.cost_center_id}}
+                </div>
+                <div class="col-md-6 ">
+                {{work_form.job_position_id.errors}}
+                <div class="form-outline mb-4">{{work_form.job_position_id}}</div>
                 </div>
                 <div class="col-md-6 mb-2">
                 {{work_form.shift_id.errors}}
@@ -24,12 +50,6 @@
                 </div>
                 <div class="col-md-6 mb-2">
                     <div class="form-outline mb-4">
-                    {{work_form.employee_type_id.errors}}
-                    {{work_form.employee_type_id}}
-                    </div>
-                </div>
-                <div class="col-md-6 mb-2">
-                    <div class="form-outline mb-4">
                     {{work_form.job_role_id.errors}}
                     {{work_form.job_role_id}}
                     </div>
@@ -37,10 +57,6 @@
                 <div class="col-md-6 mb-4">
                     {{work_form.reporting_manager_id.errors}}
                     {{work_form.reporting_manager_id}}
-                </div>
-                <div class="col-md-6 mb-4">
-                    {{work_form.company_id.errors}}
-                    {{work_form.company_id}}
                 </div>
                 <div class="col-md-6 mb-4">
                     {{work_form.location.errors}}
@@ -73,22 +89,6 @@
                 <div class="col-md-6 mb-4">
                     {{work_form.tags.errors}}
                     {{work_form.tags}}
-                </div>
-                <div class="col-md-6 mb-4">
-                    {{work_form.branch_id.errors}}
-                    {{work_form.branch_id}}
-                </div>
-                <div class="col-md-6 mb-4">
-                    {{work_form.cost_center_id.errors}}
-                    {{work_form.cost_center_id}}
-                </div>
-                <div class="col-md-6 mb-4">
-                    {{work_form.business_unit_id.errors}}
-                    {{work_form.business_unit_id}}
-                </div>
-                <div class="col-md-6 mb-4">
-                    {{work_form.employee_status.errors}}
-                    {{work_form.employee_status}}
                 </div>
                 <div class="col-md-6 mb-4">
                     {{work_form.pin.errors}}

@@ -217,6 +217,7 @@ class EmployeeFilter(HorillaFilterSet):
             | Q(employee_last_name__icontains=value)
             | Q(employee_no__icontains=value)
             | Q(email__icontains=value)
+            | Q(employee_work_info__branch_id__branch__icontains=value)
         )
 
 

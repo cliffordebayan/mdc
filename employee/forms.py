@@ -513,6 +513,11 @@ class EmployeeWorkInformationForm(ModelForm):
             if isinstance(field.widget, forms.Select) and not field.required:
                 field.widget.option_template_name = "horilla_widgets/select_option.html"
 
+        self.order_fields([
+            "employee_status", "employee_type_id", "company_id", "branch_id",
+            "department_id", "business_unit_id", "cost_center_id",
+        ])
+
     def clean(self):
         cleaned_data = super().clean()
         if "employee_id" in self.errors:
@@ -553,6 +558,10 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
         super().__init__(*args, **kwargs)
         if not self.instance.pk and not self.data.get("pin"):
             self.initial["pin"] = f"{random.randint(0, 999999):06d}"
+        self.order_fields([
+            "employee_status", "employee_type_id", "company_id", "branch_id",
+            "department_id", "business_unit_id", "cost_center_id",
+        ])
 
     def as_p(self, *args, **kwargs):
         context = {"form": self}

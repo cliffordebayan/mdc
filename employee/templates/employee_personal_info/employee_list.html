@@ -105,10 +105,8 @@
         >
           {% trans "Employee" %}
         </div>
-        {% if perms.employee.view_employee %}
-        <div class="oh-sticky-table__th" data-cell-index="1" data-cell-title='{% trans "Email" %}'>{% trans "Email" %}</div>
-        <div class="oh-sticky-table__th" data-cell-index="2" data-cell-title='{% trans "Phone" %}'>{% trans "Phone" %}</div>
-        {% endif %}
+        <div class="oh-sticky-table__th" data-cell-index="1" data-cell-title='{% trans "Employee Status" %}'>{% trans "Employee Status" %}</div>
+        <div class="oh-sticky-table__th" data-cell-index="2" data-cell-title='{% trans "Employee Type" %}'>{% trans "Employee Type" %}</div>
         <div
           class="oh-sticky-table__th {% if request.sort_option.order == '-employee_no' %}arrow-up {% elif request.sort_option.order == 'employee_no' %}arrow-down {% else %}arrow-up-down {% endif %}" data-cell-index="3" data-cell-title='{% trans "Employee No" %}'
           hx-target="#view-container"
@@ -116,27 +114,36 @@
         >
           {% trans "Employee No" %}
         </div>
-        <div class="oh-sticky-table__th" data-cell-index="4" data-cell-title='{% trans "Job Position" %}'>{% trans "Job Position" %}</div>
-        <div class="oh-sticky-table__th" data-cell-index="5" data-cell-title='{% trans "Department" %}'>{% trans "Department" %}</div>
-        <div class="oh-sticky-table__th" data-cell-index="6" data-cell-title='{% trans "Shift" %}'>{% trans "Shift" %}</div>
-        <div class="oh-sticky-table__th" data-cell-index="7" data-cell-title='{% trans "Work Type" %}'>{% trans "Work Type" %}</div>
-        <div class="oh-sticky-table__th" data-cell-index="8" data-cell-title='{% trans "Job Role" %}'>{% trans "Job Role" %}</div>
+        {% if perms.employee.view_employee %}
+        <div class="oh-sticky-table__th" data-cell-index="4" data-cell-title='{% trans "Email" %}'>{% trans "Email" %}</div>
+        {% endif %}
+        <div class="oh-sticky-table__th" data-cell-index="5" data-cell-title='{% trans "Work Email" %}'>{% trans "Work Email" %}</div>
+        {% if perms.employee.view_employee %}
+        <div class="oh-sticky-table__th" data-cell-index="6" data-cell-title='{% trans "Phone" %}'>{% trans "Phone" %}</div>
+        {% endif %}
+        <div class="oh-sticky-table__th" data-cell-index="7" data-cell-title='{% trans "Branch" %}'>{% trans "Branch" %}</div>
+        <div class="oh-sticky-table__th" data-cell-index="8" data-cell-title='{% trans "Department" %}'>{% trans "Department" %}</div>
+        <div class="oh-sticky-table__th" data-cell-index="9" data-cell-title='{% trans "Business Unit" %}'>{% trans "Business Unit" %}</div>
+        <div class="oh-sticky-table__th" data-cell-index="10" data-cell-title='{% trans "Cost Center" %}'>{% trans "Cost Center" %}</div>
+        <div class="oh-sticky-table__th" data-cell-index="11" data-cell-title='{% trans "Job Position" %}'>{% trans "Job Position" %}</div>
+        <div class="oh-sticky-table__th" data-cell-index="12" data-cell-title='{% trans "Job Role" %}'>{% trans "Job Role" %}</div>
+        <div class="oh-sticky-table__th" data-cell-index="13" data-cell-title='{% trans "Shift" %}'>{% trans "Shift" %}</div>
         <div
-          class="oh-sticky-table__th {% if request.sort_option.order == '-employee_work_info__reporting_manager_id' %}arrow-up {% elif request.sort_option.order == 'employee_work_info__reporting_manager_id' %}arrow-down {% else %}arrow-up-down {% endif %}" data-cell-index="9" data-cell-title='{% trans "Reporting Manager" %}'
+          class="oh-sticky-table__th {% if request.sort_option.order == '-employee_work_info__reporting_manager_id' %}arrow-up {% elif request.sort_option.order == 'employee_work_info__reporting_manager_id' %}arrow-down {% else %}arrow-up-down {% endif %}" data-cell-index="14" data-cell-title='{% trans "Reporting Manager" %}'
           hx-target="#view-container"
           hx-get="{% url 'employee-filter-view' %}?{{pd}}&orderby=employee_work_info__reporting_manager_id"
         >
           {% trans "Reporting Manager" %}
         </div>
-        <div class="oh-sticky-table__th" data-cell-index="10" data-cell-title='{% trans "Company" %}'>{% trans "Company" %}</div>
-        <div class="oh-sticky-table__th" data-cell-index="11" data-cell-title='{% trans "Work Email" %}'>{% trans "Work Email" %}</div>
+        <div class="oh-sticky-table__th" data-cell-index="15" data-cell-title='{% trans "Work Type" %}'>{% trans "Work Type" %}</div>
         <div
-          class="oh-sticky-table__th {% if request.sort_option.order == '-employee_work_info__date_joining' %}arrow-up {% elif request.sort_option.order == 'employee_work_info__date_joining' %}arrow-down {% else %}arrow-up-down {% endif %}" data-cell-index="12" data-cell-title='{% trans "Date of Joining" %}'
+          class="oh-sticky-table__th {% if request.sort_option.order == '-employee_work_info__date_joining' %}arrow-up {% elif request.sort_option.order == 'employee_work_info__date_joining' %}arrow-down {% else %}arrow-up-down {% endif %}" data-cell-index="16" data-cell-title='{% trans "Date of Joining" %}'
           hx-target="#view-container"
           hx-get="{% url 'employee-filter-view' %}?{{pd}}&orderby=employee_work_info__date_joining"
         >
           {% trans "Date of Joining" %}
         </div>
+        <div class="oh-sticky-table__th" data-cell-index="17" data-cell-title='{% trans "Contract End" %}'>{% trans "Contract End" %}</div>
         <div class="oh-sticky-table__th oh-sticky-table__right" style="width:313px">{% trans "Actions" %}</div>
       </div>
     </div>
@@ -167,79 +174,111 @@
             </div>
           </div>
         </a>
-        {% if perms.employee.view_employee %}
         <a data-cell-index="1"
           href="{% url 'employee-view-individual' emp.id %}"
           style="color: inherit; text-decoration: none"
           class="oh-sticky-table__td"
-          >{{emp.email}}</a
+          >{{emp.employee_work_info.employee_status}}</a
         >
         <a data-cell-index="2"
           href="{% url 'employee-view-individual' emp.id %}"
           style="color: inherit; text-decoration: none"
           class="oh-sticky-table__td"
-          >{{emp.phone}}</a
+          >{{emp.employee_work_info.employee_type_id}}</a
         >
-        {% endif %}
         <a data-cell-index="3"
           href="{% url 'employee-view-individual' emp.id %}"
           style="color: inherit; text-decoration: none"
           class="oh-sticky-table__td"
           >{{emp.employee_no}}</a
         >
+        {% if perms.employee.view_employee %}
         <a data-cell-index="4"
           href="{% url 'employee-view-individual' emp.id %}"
           style="color: inherit; text-decoration: none"
           class="oh-sticky-table__td"
-          >{{emp.employee_work_info.job_position_id}}</a
+          >{{emp.email}}</a
         >
+        {% endif %}
         <a data-cell-index="5"
-          href="{% url 'employee-view-individual' emp.id %}"
-          style="color: inherit; text-decoration: none"
-          class="oh-sticky-table__td"
-          >{{emp.employee_work_info.department_id}}</a
-        >
-        <a data-cell-index="6"
-          href="{% url 'employee-view-individual' emp.id %}"
-          style="color: inherit; text-decoration: none"
-          class="oh-sticky-table__td"
-          >{{emp.employee_work_info.shift_id}}</a
-        >
-        <a data-cell-index="7"
-          href="{% url 'employee-view-individual' emp.id %}"
-          style="color: inherit; text-decoration: none"
-          class="oh-sticky-table__td"
-          >{{emp.employee_work_info.work_type_id}}</a
-        >
-        <a data-cell-index="8"
-          href="{% url 'employee-view-individual' emp.id %}"
-          style="color: inherit; text-decoration: none"
-          class="oh-sticky-table__td"
-          >{{emp.employee_work_info.job_role_id}}</a
-        >
-        <a data-cell-index="9"
-          href="{% url 'employee-view-individual' emp.id %}"
-          style="color: inherit; text-decoration: none"
-          class="oh-sticky-table__td"
-          >{{emp.employee_work_info.reporting_manager_id}}</a
-        >
-        <a data-cell-index="10"
-          href="{% url 'employee-view-individual' emp.id %}"
-          style="color: inherit; text-decoration: none"
-          class="oh-sticky-table__td"
-          >{{emp.employee_work_info.company_id}}</a
-        >
-        <a data-cell-index="11"
           href="{% url 'employee-view-individual' emp.id %}"
           style="color: inherit; text-decoration: none"
           class="oh-sticky-table__td"
           >{{emp.employee_work_info.email}}</a
         >
+        {% if perms.employee.view_employee %}
+        <a data-cell-index="6"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.phone}}</a
+        >
+        {% endif %}
+        <a data-cell-index="7"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.employee_work_info.branch_id}}</a
+        >
+        <a data-cell-index="8"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.employee_work_info.department_id}}</a
+        >
+        <a data-cell-index="9"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.employee_work_info.business_unit_id}}</a
+        >
+        <a data-cell-index="10"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.employee_work_info.cost_center_id}}</a
+        >
+        <a data-cell-index="11"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.employee_work_info.job_position_id}}</a
+        >
         <a data-cell-index="12"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.employee_work_info.job_role_id}}</a
+        >
+        <a data-cell-index="13"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.employee_work_info.shift_id}}</a
+        >
+        <a data-cell-index="14"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.employee_work_info.reporting_manager_id}}</a
+        >
+        <a data-cell-index="15"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td"
+          >{{emp.employee_work_info.work_type_id}}</a
+        >
+        <a data-cell-index="16"
           href="{% url 'employee-view-individual' emp.id %}"
           style="color: inherit; text-decoration: none"
           class="oh-sticky-table__td dateformat_changer"
           >{{emp.employee_work_info.date_joining}}</a
+        >
+        <a data-cell-index="17"
+          href="{% url 'employee-view-individual' emp.id %}"
+          style="color: inherit; text-decoration: none"
+          class="oh-sticky-table__td dateformat_changer"
+          >{{emp.employee_work_info.contract_end_date}}</a
         >
         <div
           style="color: inherit; text-decoration: none"
