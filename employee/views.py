@@ -4484,6 +4484,199 @@ def send_employee_portal_link(request, obj_id):
     return HorillaRedirect(request)
 
 
+@login_required
+@permission_required(["employee.add_employee"])
+def send_bulk_portal_link(request):
+    """Send the self-service onboarding portal link to multiple selected employees."""
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    ids = json.loads(request.POST.get("ids", "[]"))
+    success_count = 0
+    error_count = 0
+
+    for emp_id in ids:
+        employee = Employee.objects.filter(id=emp_id).first()
+        if not employee:
+            continue
+
+        token = secrets.token_hex(15)
+        portal, created = EmployeeOnboardingPortal.objects.get_or_create(
+            employee_id=employee,
+            defaults={"token": token},
+        )
+        if not created:
+            portal.token = token
+            portal.used = False
+            portal.count = 0
+            portal.save()
+
+        protocol = "https" if request.is_secure() else "http"
+        host = request.get_host()
+        portal_url = f"{protocol}://{host}/employee/employee-portal/set-password/{token}"
+
+        send_to = (
+            getattr(getattr(employee, "employee_work_info", None), "email", None)
+            or employee.email
+        )
+        if not send_to:
+            error_count += 1
+            continue
+
+        html_message = render_to_string(
+            "employee/portal/email_template.html",
+            {
+                "employee": employee,
+                "portal_url": portal_url,
+                "host": host,
+                "protocol": protocol,
+            },
+            request=request,
+        )
+        email_msg = EmailMessage(
+            subject=_("Complete Your Employee Profile"),
+            body=html_message,
+            to=[send_to],
+        )
+        email_msg.content_subtype = "html"
+        try:
+            email_msg.send()
+            success_count += 1
+        except Exception as e:
+            logger.error(e)
+            error_count += 1
+
+    if success_count:
+        messages.success(
+            request,
+            _("Portal link sent to %(count)s employee(s).") % {"count": success_count},
+        )
+    if error_count:
+        messages.warning(
+            request,
+            _("Failed to send portal link to %(count)s employee(s).") % {"count": error_count},
+        )
+    return HttpResponse(status=200)
+
+
+@login_required
+@permission_required(["employee.add_employee"])
+def send_bulk_password_reset(request):
+    """Send a password reset link to multiple selected employees."""
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    from base.backends import ConfiguredEmailBackend
+    from django.contrib.auth.forms import PasswordResetForm
+
+    ids = json.loads(request.POST.get("ids", "[]"))
+    success_count = 0
+    error_count = 0
+
+    email_backend = ConfiguredEmailBackend()
+    from_email = getattr(email_backend, "dynamic_from_email_with_display_name", None)
+
+    for emp_id in ids:
+        employee = Employee.objects.filter(id=emp_id).first()
+        if not employee:
+            continue
+        user = getattr(employee, "employee_user_id", None)
+        if not user:
+            error_count += 1
+            continue
+
+        form = PasswordResetForm({"email": user.username})
+        if form.is_valid():
+            opts = {
+                "use_https": request.is_secure(),
+                "request": request,
+            }
+            if from_email:
+                opts["from_email"] = from_email
+            try:
+                form.save(**opts)
+                success_count += 1
+            except Exception as e:
+                logger.error(e)
+                error_count += 1
+        else:
+            error_count += 1
+
+    if success_count:
+        messages.success(
+            request,
+            _("Password reset link sent to %(count)s employee(s).") % {"count": success_count},
+        )
+    if error_count:
+        messages.warning(
+            request,
+            _("Failed to send password reset to %(count)s employee(s).") % {"count": error_count},
+        )
+    return HttpResponse(status=200)
+
+
+@login_required
+@permission_required(["employee.add_employee"])
+def send_bulk_pin_to_email(request):
+    """Send the attendance PIN to multiple selected employees."""
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    ids = json.loads(request.POST.get("ids", "[]"))
+    success_count = 0
+    error_count = 0
+
+    portal_url = request.build_absolute_uri(reverse("public-portal"))
+
+    for emp_id in ids:
+        employee = Employee.objects.filter(id=emp_id).first()
+        if not employee:
+            continue
+
+        work_info = getattr(employee, "employee_work_info", None)
+        pin = getattr(work_info, "pin", None) if work_info else None
+        if not pin:
+            error_count += 1
+            continue
+
+        send_to_mail = (
+            work_info.email
+            if work_info and work_info.email
+            else employee.email
+        )
+        if not send_to_mail:
+            error_count += 1
+            continue
+
+        subject = _("MDC ATTENDANCE PIN")
+        body = f"""
+        <p>Hello {employee.get_full_name()},</p>
+        <p>Your 6-digit PIN is: <strong>{pin}</strong></p>
+        <p>Attendance Portal: <a href="{portal_url}">{portal_url}</a></p>
+        <p>Please keep this PIN confidential.</p>
+        """
+        email = EmailMessage(subject=str(subject), body=body, to=[send_to_mail])
+        email.content_subtype = "html"
+        try:
+            email.send()
+            success_count += 1
+        except Exception as e:
+            logger.error(e)
+            error_count += 1
+
+    if success_count:
+        messages.success(
+            request,
+            _("PIN sent to %(count)s employee(s).") % {"count": success_count},
+        )
+    if error_count:
+        messages.warning(
+            request,
+            _("Failed to send PIN to %(count)s employee(s).") % {"count": error_count},
+        )
+    return HttpResponse(status=200)
+
+
 def employee_portal_set_password(request, token):
     """Step 1 — Employee sets their own password via the portal link."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()

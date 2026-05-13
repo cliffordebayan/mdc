@@ -135,10 +135,16 @@ function addingIds() {
     if (selectedCount === 0) {
         $("#unselectAllEmployees").css("display", "none");
         $("#exportEmployees").css("display", "none");
+        $("#sendBulkPortalLink").css("display", "none");
+        $("#sendBulkPasswordReset").css("display", "none");
+        $("#sendBulkPinEmail").css("display", "none");
         $("#selectedShow").css("display", "none");
     } else {
         $("#unselectAllEmployees").css("display", "inline-flex");
         $("#exportEmployees").css("display", "inline-flex");
+        $("#sendBulkPortalLink").css("display", "inline-flex");
+        $("#sendBulkPasswordReset").css("display", "inline-flex");
+        $("#sendBulkPinEmail").css("display", "inline-flex");
         $("#selectedShow").css("display", "inline-flex");
         $("#selectedShow").text(selectedCount + " - " + message);
     }
@@ -164,11 +170,17 @@ function tickCheckboxes() {
     if (selectedCount > 0) {
         $("#unselectAllEmployees").css("display", "inline-flex");
         $("#exportEmployees").css("display", "inline-flex");
+        $("#sendBulkPortalLink").css("display", "inline-flex");
+        $("#sendBulkPasswordReset").css("display", "inline-flex");
+        $("#sendBulkPinEmail").css("display", "inline-flex");
         $("#selectedShow").css("display", "inline-flex");
         $("#selectedShow").text(selectedCount + " -" + message);
     } else {
         $("#unselectAllEmployees").css("display", "none");
         $("#exportEmployees").css("display", "none");
+        $("#sendBulkPortalLink").css("display", "none");
+        $("#sendBulkPasswordReset").css("display", "none");
+        $("#sendBulkPinEmail").css("display", "none");
         $("#selectedShow").css("display", "none");
     }
 }
@@ -529,4 +541,106 @@ $("#deleteEmployees").click(function (e) {
 $("#select-all-fields").change(function () {
     const isChecked = $(this).prop("checked");
     $('[name="selected_fields"]').prop("checked", isChecked);
+});
+
+$("#sendBulkPortalLink").click(function (e) {
+    e.preventDefault();
+    var ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
+    if (ids.length === 0) {
+        Swal.fire({ text: "No employees selected.", icon: "warning", confirmButtonText: "Close" });
+    } else {
+        Swal.fire({
+            text: "Send Profile Portal Link to " + ids.length + " employee(s)?",
+            icon: "info",
+            showCancelButton: true,
+            confirmButtonColor: "#008000",
+            cancelButtonColor: "#d33",
+            confirmButtonText: "Confirm",
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
+                $.ajax({
+                    type: "POST",
+                    url: "/employee/employee-bulk-portal-link",
+                    data: {
+                        csrfmiddlewaretoken: getCookie("csrftoken"),
+                        ids: JSON.stringify(ids),
+                    },
+                    success: function (response, textStatus, jqXHR) {
+                        if (jqXHR.status === 200) {
+                            location.reload();
+                        }
+                    },
+                });
+            }
+        });
+    }
+});
+
+$("#sendBulkPasswordReset").click(function (e) {
+    e.preventDefault();
+    var ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
+    if (ids.length === 0) {
+        Swal.fire({ text: "No employees selected.", icon: "warning", confirmButtonText: "Close" });
+    } else {
+        Swal.fire({
+            text: "Send Password Reset Link to " + ids.length + " employee(s)?",
+            icon: "info",
+            showCancelButton: true,
+            confirmButtonColor: "#008000",
+            cancelButtonColor: "#d33",
+            confirmButtonText: "Confirm",
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
+                $.ajax({
+                    type: "POST",
+                    url: "/employee/employee-bulk-password-reset",
+                    data: {
+                        csrfmiddlewaretoken: getCookie("csrftoken"),
+                        ids: JSON.stringify(ids),
+                    },
+                    success: function (response, textStatus, jqXHR) {
+                        if (jqXHR.status === 200) {
+                            location.reload();
+                        }
+                    },
+                });
+            }
+        });
+    }
+});
+
+$("#sendBulkPinEmail").click(function (e) {
+    e.preventDefault();
+    var ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
+    if (ids.length === 0) {
+        Swal.fire({ text: "No employees selected.", icon: "warning", confirmButtonText: "Close" });
+    } else {
+        Swal.fire({
+            text: "Send PIN to Email for " + ids.length + " employee(s)?",
+            icon: "info",
+            showCancelButton: true,
+            confirmButtonColor: "#008000",
+            cancelButtonColor: "#d33",
+            confirmButtonText: "Confirm",
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
+                $.ajax({
+                    type: "POST",
+                    url: "/employee/employee-bulk-pin-email",
+                    data: {
+                        csrfmiddlewaretoken: getCookie("csrftoken"),
+                        ids: JSON.stringify(ids),
+                    },
+                    success: function (response, textStatus, jqXHR) {
+                        if (jqXHR.status === 200) {
+                            location.reload();
+                        }
+                    },
+                });
+            }
+        });
+    }
 });

@@ -46,6 +46,29 @@
 >
   {% trans "Export Employees" %}
 </div>
+{% if perms.employee.add_employee %}
+<div
+  class="oh-checkpoint-badge text-primary mb-2"
+  id="sendBulkPortalLink"
+  style="cursor: pointer;display: none;"
+>
+  {% trans "Send Profile Portal Link" %}
+</div>
+<div
+  class="oh-checkpoint-badge text-warning mb-2"
+  id="sendBulkPasswordReset"
+  style="cursor: pointer;display: none;"
+>
+  {% trans "Send Password Reset Link" %}
+</div>
+<div
+  class="oh-checkpoint-badge mb-2"
+  id="sendBulkPinEmail"
+  style="cursor: pointer;display: none;background-color:#6c757d;color:#fff;"
+>
+  {% trans "Send PIN to Email" %}
+</div>
+{% endif %}
 {% endif %}
 <div class="oh-checkpoint-badge text-danger mb-2" id="selectedShow"></div>
 {% if data %}
