@@ -123,6 +123,7 @@ class EmployeeFilter(HorillaFilterSet):
             "department",
             "employee_work_info__work_type_id",
             "employee_work_info__employee_type_id",
+            "employee_work_info__employee_status",
             "employee_work_info__job_role_id",
             "employee_work_info__reporting_manager_id",
             "employee_work_info__company_id",
@@ -236,6 +237,8 @@ class EmployeeReGroup:
         ("employee_work_info__reporting_manager_id", "Reporting Manager"),
         ("employee_work_info__company_id", "Company"),
         ("employee_work_info__branch_id", "Branch"),
+        ("employee_work_info__employee_type_id", "Employee Type"),
+        ("employee_work_info__employee_status", "Employee Status"),
     ]
 
 

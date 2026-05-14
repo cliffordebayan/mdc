@@ -59,7 +59,10 @@
                         <label class="oh-label" for="{{f.form.employee_work_info__tags.id_for_label}}">{% trans "Employee tag" %}</label>
                         {{f.form.employee_work_info__tags}}
                     </div>
-
+                    <div class="oh-input-group">
+                        <label class="oh-label" for="{{f.form.employee_work_info__employee_type_id.id_for_label}}">{% trans "Employee Type" %}</label>
+                        {{f.form.employee_work_info__employee_type_id}}
+                    </div>
                 </div>
                 <div class="col-sm-12 col-md-12 col-lg-6">
                     <div class="oh-input-group">
@@ -82,6 +85,10 @@
                     <div class="oh-input-group">
                         <label class="oh-label" for="{{f.form.working_today.id_for_label}}">{% trans "Currently Working" %}</label>
                         {{f.form.working_today}}
+                    </div>
+                    <div class="oh-input-group">
+                        <label class="oh-label" for="{{f.form.employee_work_info__employee_status.id_for_label}}">{% trans "Employee Status" %}</label>
+                        {{f.form.employee_work_info__employee_status}}
                     </div>
                 </div>
             </div>

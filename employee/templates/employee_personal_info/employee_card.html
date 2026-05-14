@@ -70,16 +70,21 @@
             <span class="oh-kanban-card__subtitle" {% if emp.get_email|length >= 35 %}title = "{{emp.get_email}}" {% endif %}>{{emp.get_email|truncatechars:35}}</span><br>
             <span class="oh-kanban-card__subtitle">{{emp.employee_work_info.job_position_id}}</span><br>
             <span class="oh-kanban-card__subtitle">{{emp.employee_work_info.branch_id|default:"-"}}</span><br>
-            {% if emp.employee_work_info.employee_status %}
-            <span class="oh-kanban-card__subtitle">
+            <span class="oh-kanban-card__subtitle d-flex align-items-center flex-wrap gap-1">
+              {% if emp.employee_work_info.employee_status %}
               <span class="oh-badge oh-badge--small
                 {% if emp.employee_work_info.employee_status == 'active' %}oh-badge--info
                 {% elif emp.employee_work_info.employee_status == 'terminated' or emp.employee_work_info.employee_status == 'awol' %}oh-badge--danger
                 {% else %}oh-badge--secondary{% endif %}">
                 {{ emp.employee_work_info.get_employee_status_display }}
               </span>
+              {% endif %}
+              {% if emp.employee_work_info.employee_type_id %}
+              <span class="oh-badge oh-badge--small" style="background-color: transparent; color: hsl(0,0%,50%); border: 1px solid hsl(0,0%,80%);">
+                {{ emp.employee_work_info.employee_type_id }}
+              </span>
+              {% endif %}
             </span>
-            {% endif %}
           </div>
 
           {% if perms.employee.change_employee or perms.employee.delete_employee or request.user|check_manager:emp %}
