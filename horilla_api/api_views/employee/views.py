@@ -199,7 +199,7 @@ class EmployeeListAPIView(APIView):
 
         # Start with a base queryset with only required fields
         employees_queryset = Employee.objects.only(
-            "id", "employee_first_name", "employee_last_name"
+            "id", "employee_first_name", "employee_last_name", "employee_no", "is_active"
         )
 
         # Permission-based filtering

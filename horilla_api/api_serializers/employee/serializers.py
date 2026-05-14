@@ -37,6 +37,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
         model = Employee
         fields = [
             "id",
+            "employee_no",
             "employee_first_name",
             "employee_last_name",
             "email",
@@ -44,6 +45,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             "employee_work_info_id",
             "employee_profile",
             "employee_bank_details_id",
+            "is_active",
         ]
 
 
