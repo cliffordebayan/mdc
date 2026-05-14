@@ -209,7 +209,7 @@ class EmployeeListAPIView(APIView):
             subordinate_qs = user.employee_get.get_subordinate_employees()
             if subordinate_qs.exists():
                 employees_queryset = subordinate_qs.only(
-                    "id", "employee_first_name", "employee_last_name"
+                    "id", "employee_first_name", "employee_last_name", "employee_no", "is_active", "email"
                 )
             else:
                 employees_queryset = employees_queryset.filter(id=user.employee_get.id)
@@ -340,7 +340,15 @@ class EmployeeWorkInformationAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, pk):
+    def get(self, request, pk=None):
+        if pk is None:
+            if not request.user.has_perm("employee.view_employeeworkinformation"):
+                return Response({"message": "No permission"}, status=400)
+            queryset = EmployeeWorkInformation.objects.all()
+            paginator = PageNumberPagination()
+            page = paginator.paginate_queryset(queryset, request)
+            serializer = EmployeeWorkInformationSerializer(page, many=True)
+            return paginator.get_paginated_response(serializer.data)
         work_info = EmployeeWorkInformation.objects.get(pk=pk)
         if (
             request.user.employee_get
