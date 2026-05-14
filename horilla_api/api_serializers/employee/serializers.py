@@ -21,13 +21,21 @@ class ActiontypeSerializer(serializers.ModelSerializer):
 
 
 class EmployeeListSerializer(serializers.ModelSerializer):
-    job_position_name = serializers.CharField(
-        source="employee_work_info.job_position_id.job_position", read_only=True
-    )
-    employee_work_info_id = serializers.CharField(
-        source="employee_work_info.id", read_only=True
-    )
+    job_position_name = serializers.SerializerMethodField()
+    employee_work_info_id = serializers.SerializerMethodField()
     employee_bank_details_id = serializers.SerializerMethodField()
+
+    def get_job_position_name(self, obj):
+        try:
+            return obj.employee_work_info.job_position_id.job_position
+        except Exception:
+            return None
+
+    def get_employee_work_info_id(self, obj):
+        try:
+            return obj.employee_work_info.id
+        except Exception:
+            return None
 
     def get_employee_bank_details_id(self, obj):
         bank = obj.get_primary_bank()
