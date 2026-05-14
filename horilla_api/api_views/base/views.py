@@ -15,6 +15,7 @@ from base.filters import (
     WorkTypeRequestFilter,
 )
 from base.models import (
+    Branch,
     Company,
     Department,
     EmployeeShift,
@@ -46,6 +47,7 @@ from ...api_decorators.base.decorators import (
 )
 from ...api_methods.base.methods import groupby_queryset, permission_based_queryset
 from ...api_serializers.base.serializers import (
+    BranchSerializer,
     CompanySerializer,
     DepartmentSerializer,
     EmployeeShiftScheduleSerializer,
@@ -289,6 +291,25 @@ class CompanyView(APIView):
             return Response({"error": "Company not found "}, status=400)
         response, status_code = object_delete(Company, pk)
         return Response(response, status=status_code)
+
+
+class BranchView(APIView):
+    serializer_class = BranchSerializer
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(permission_required("base.view_branch"), name="dispatch")
+    def get(self, request, pk=None):
+        if pk:
+            branch = object_check(Branch, pk)
+            if branch is None:
+                return Response({"error": "Branch not found"}, status=404)
+            serializer = self.serializer_class(branch)
+            return Response(serializer.data, status=200)
+        branches = Branch.objects.all()
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(branches, request)
+        serializer = self.serializer_class(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
 
 class WorkTypeView(APIView):

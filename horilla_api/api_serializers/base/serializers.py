@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from base.models import (
+    Branch,
     Company,
     Department,
     EmployeeShift,
@@ -20,6 +21,12 @@ from base.models import (
     WorkTypeRequest,
 )
 from horilla import horilla_middlewares
+
+
+class BranchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Branch
+        fields = "__all__"
 
 
 class CompanySerializer(serializers.ModelSerializer):

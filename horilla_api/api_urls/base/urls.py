@@ -19,6 +19,12 @@ urlpatterns = [
         views.JobRoleView.as_view(),
         name="api-job_roles_details_with_pk",
     ),
+    path("branches/", views.BranchView.as_view(), name="api-branches_detail"),
+    path(
+        "branches/<int:pk>/",
+        views.BranchView.as_view(),
+        name="api-branches_detail_with_pk",
+    ),
     path("companies/", views.CompanyView.as_view(), name="api-companies_detail"),
     path(
         "companies/<int:pk>/",
