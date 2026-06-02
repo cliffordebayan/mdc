@@ -1,0 +1,121 @@
+{% load i18n %} {% load static %} {% load basefilters %}
+{% if requests %}
+<div class="oh-card mt-3 px-3">
+	{% for req in requests %}
+	<div id="emp-doc-req-{{ req.id }}">
+		<div class="oh-user_permission-list_item accordion exclude-accordion-style"
+			hx-get="{% url 'employee-doc-request-view-file' req.id %}"
+			hx-target="#empDocViewFile">
+			<div class="oh-user_permission-list_profile {% if req.status == 'fulfilled' %}row-status--yellow{% elif req.status == 'rejected' %}row-status--red{% else %}row-status--blue{% endif %}">
+				<div class="oh-feedback-card__name-container ms-1">
+					<span class="oh-card__title oh-card__title--sm fw-bold">
+						{{ req.employee_id.get_full_name }} &mdash; {{ req.title }}
+					</span>
+					{% if req.description %}
+					<span class="oh-text--light">{{ req.description|truncatechars:80 }}</span>
+					{% endif %}
+					<span class="oh-text--light">{% trans "Submitted" %}: {{ req.created_at|date:"Y-m-d" }}</span>
+				</div>
+				<span class="oh-badge oh-badge--small ms-2 {% if req.status == 'fulfilled' %}oh-badge--success{% elif req.status == 'rejected' %}oh-badge--danger{% else %}oh-badge--info{% endif %}">
+					{{ req.get_status_display }}
+				</span>
+			</div>
+			<div class="oh-btn-group">
+				{% if perms.horilla_documents.change_employeedocumentrequest or request.user|is_reportingmanager %}
+					{% if req.status == 'pending' %}
+						<a class="oh-btn oh-btn--success w-100"
+							hx-get="{% url 'employee-document-request-fulfill' req.id %}"
+							hx-target="#fulfillModalTarget"
+							data-toggle="oh-modal-toggle"
+							data-target="#fulfillModal"
+							onclick="event.stopPropagation()"
+							title="{% trans 'Fulfill' %}">
+							<ion-icon name="checkmark-outline"></ion-icon>
+						</a>
+						<a class="oh-btn oh-btn--danger w-100"
+							hx-get="{% url 'employee-document-request-reject' req.id %}"
+							hx-target="#rejectEmpDocModalTarget"
+							data-toggle="oh-modal-toggle"
+							data-target="#rejectEmpDocModal"
+							onclick="event.stopPropagation()"
+							title="{% trans 'Reject' %}">
+							<ion-icon name="close-circle-outline"></ion-icon>
+						</a>
+					{% else %}
+						<a class="oh-btn oh-btn--success w-100 oh-btn--disabled" title="{% trans 'Fulfill' %}">
+							<ion-icon name="checkmark-outline"></ion-icon>
+						</a>
+						<a class="oh-btn oh-btn--danger w-100 oh-btn--disabled" title="{% trans 'Reject' %}">
+							<ion-icon name="close-circle-outline"></ion-icon>
+						</a>
+					{% endif %}
+				{% endif %}
+				{% if req.status == 'fulfilled' and req.fulfilled_document %}
+				<a href="{{ req.fulfilled_document.url }}"
+					class="oh-btn oh-btn--info"
+					download
+					title="{% trans 'Download' %}"
+					onclick="event.stopPropagation()">
+					<ion-icon name="download-outline"></ion-icon>
+				</a>
+				{% endif %}
+				{% if req.status == 'pending' or perms.horilla_documents.delete_employeedocumentrequest %}
+				<form
+					hx-confirm="{% trans 'Are you sure you want to delete this request?' %}"
+					hx-post="{% url 'employee-document-request-delete' req.id %}"
+					hx-target="#emp-doc-req-{{ req.id }}"
+					hx-swap="outerHTML"
+					onclick="event.stopPropagation()">
+					{% csrf_token %}
+					<button type="submit" class="oh-btn oh-btn--secondary" title="{% trans 'Delete' %}">
+						<ion-icon name="trash-outline"></ion-icon>
+					</button>
+				</form>
+				{% endif %}
+			</div>
+		</div>
+	</div>
+	{% endfor %}
+</div>
+<div class="oh-pagination">
+	<span class="oh-pagination__page">
+		{% trans "Page" %} {{ requests.number }} {% trans "of" %} {{ requests.paginator.num_pages }}.
+	</span>
+	<nav class="oh-pagination__nav">
+		<ul class="oh-pagination__items">
+			{% if requests.has_previous %}
+			<li class="oh-pagination__item oh-pagination__item--wide">
+				<a hx-target="#emp-doc-req-view-container"
+					hx-get="{% url 'employee-document-request-filter' %}?{{ pd }}&page=1"
+					class="oh-pagination__link">{% trans "First" %}</a>
+			</li>
+			<li class="oh-pagination__item oh-pagination__item--wide">
+				<a hx-target="#emp-doc-req-view-container"
+					hx-get="{% url 'employee-document-request-filter' %}?{{ pd }}&page={{ requests.previous_page_number }}"
+					class="oh-pagination__link">{% trans "Previous" %}</a>
+			</li>
+			{% endif %}
+			{% if requests.has_next %}
+			<li class="oh-pagination__item oh-pagination__item--wide">
+				<a hx-target="#emp-doc-req-view-container"
+					hx-get="{% url 'employee-document-request-filter' %}?{{ pd }}&page={{ requests.next_page_number }}"
+					class="oh-pagination__link">{% trans "Next" %}</a>
+			</li>
+			<li class="oh-pagination__item oh-pagination__item--wide">
+				<a hx-target="#emp-doc-req-view-container"
+					hx-get="{% url 'employee-document-request-filter' %}?{{ pd }}&page={{ requests.paginator.num_pages }}"
+					class="oh-pagination__link">{% trans "Last" %}</a>
+			</li>
+			{% endif %}
+		</ul>
+	</nav>
+</div>
+{% else %}
+<div class="d-flex justify-content-center align-items-center" style="height: 40vh;">
+	<div class="text-center">
+		<img class="oh-404__image mb-3" style="width: 150px; height: 150px;"
+			src="{% static 'images/ui/no_documents.png' %}" alt="No records">
+		<h5 class="oh-404__subtitle">{% trans "No employee document requests found." %}</h5>
+	</div>
+</div>
+{% endif %}

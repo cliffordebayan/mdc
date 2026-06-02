@@ -168,3 +168,56 @@ class Document(HorillaModel):
         without_documents = total_requests.filter(document="").count()
         count = total_requests.count() - without_documents
         return count
+
+
+EMP_DOC_REQUEST_STATUS = [
+    ("pending", _("Pending")),
+    ("fulfilled", _("Fulfilled")),
+    ("rejected", _("Rejected")),
+]
+
+
+class EmployeeDocumentRequest(HorillaModel):
+    employee_id = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="employee_document_requests",
+        verbose_name=_("Employee"),
+    )
+    title = models.CharField(max_length=200, verbose_name=_("Title"))
+    description = models.TextField(
+        blank=True, null=True, max_length=500, verbose_name=_("Description")
+    )
+    status = models.CharField(
+        choices=EMP_DOC_REQUEST_STATUS,
+        max_length=10,
+        default="pending",
+        verbose_name=_("Status"),
+    )
+    reject_reason = models.TextField(
+        blank=True, null=True, max_length=255, verbose_name=_("Reject Reason")
+    )
+    attachment = models.FileField(
+        upload_to=upload_path,
+        null=True,
+        blank=True,
+        verbose_name=_("Attachment"),
+    )
+    issue_date = models.DateField(null=True, blank=True, verbose_name=_("Issue Date"))
+    expiry_date = models.DateField(null=True, blank=True, verbose_name=_("End Date"))
+    fulfilled_document = models.FileField(
+        upload_to=upload_path,
+        null=True,
+        blank=True,
+        verbose_name=_("Fulfilled Document"),
+    )
+    objects = HorillaCompanyManager(
+        related_company_field="employee_id__employee_work_info__company_id"
+    )
+
+    class Meta:
+        verbose_name = _("Employee Document Request")
+        verbose_name_plural = _("Employee Document Requests")
+
+    def __str__(self):
+        return f"{self.employee_id} - {self.title}"

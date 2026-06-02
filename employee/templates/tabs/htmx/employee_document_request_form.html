@@ -1,0 +1,9 @@
+{% load i18n %}
+<form id="emp-doc-request-form"
+	hx-post="{% url 'employee-document-request-create' %}"
+	hx-target="#empDocRequestModalTarget"
+	hx-encoding="multipart/form-data">
+	{% csrf_token %}
+	{{ form.errors }}
+	{{ form.as_p }}
+</form>

@@ -373,6 +373,41 @@ urlpatterns = [
         views.document_delete,
         name="document-delete",
     ),
+    path(
+        "employee-document-request-view/",
+        views.employee_document_request_view,
+        name="employee-document-request-view",
+    ),
+    path(
+        "employee-document-request-filter/",
+        views.employee_document_request_filter_view,
+        name="employee-document-request-filter",
+    ),
+    path(
+        "employee-document-request-create/",
+        views.employee_document_request_create,
+        name="employee-document-request-create",
+    ),
+    path(
+        "employee-document-request-fulfill/<int:id>/",
+        views.employee_document_request_fulfill,
+        name="employee-document-request-fulfill",
+    ),
+    path(
+        "employee-document-request-reject/<int:id>/",
+        views.employee_document_request_reject,
+        name="employee-document-request-reject",
+    ),
+    path(
+        "employee-document-request-delete/<int:id>/",
+        views.employee_document_request_delete,
+        name="employee-document-request-delete",
+    ),
+    path(
+        "employee-doc-request-view-file/<int:id>/",
+        views.employee_document_request_view_file,
+        name="employee-doc-request-view-file",
+    ),
     path("organisation-chart/", views.organisation_chart, name="organisation-chart"),
     path("delete-policies", policies.delete_policies, name="delete-policies"),
     path(

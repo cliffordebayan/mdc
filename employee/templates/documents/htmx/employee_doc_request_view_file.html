@@ -1,0 +1,66 @@
+{% load i18n %} {% load horillafilters %} {% load static %} {% load basefilters %}
+<div class="d-flex justify-content-end">
+	<div class="oh-btn-group mb-4">
+		{% if perms.horilla_documents.change_employeedocumentrequest or request.user|is_reportingmanager %}
+			{% if req.status == 'pending' %}
+				<a class="oh-btn oh-btn--success w-100"
+					hx-get="{% url 'employee-document-request-fulfill' req.id %}"
+					hx-target="#fulfillModalTarget"
+					data-toggle="oh-modal-toggle"
+					data-target="#fulfillModal"
+					onclick="event.stopPropagation()"
+					title="{% trans 'Fulfill' %}">
+					<ion-icon name="checkmark-outline"></ion-icon>
+				</a>
+				<a class="oh-btn oh-btn--danger w-100"
+					hx-get="{% url 'employee-document-request-reject' req.id %}"
+					hx-target="#rejectEmpDocModalTarget"
+					data-toggle="oh-modal-toggle"
+					data-target="#rejectEmpDocModal"
+					onclick="event.stopPropagation()"
+					title="{% trans 'Reject' %}">
+					<ion-icon name="close-circle-outline"></ion-icon>
+				</a>
+			{% else %}
+				<a class="oh-btn oh-btn--success w-100 oh-btn--disabled" title="{% trans 'Fulfill' %}">
+					<ion-icon name="checkmark-outline"></ion-icon>
+				</a>
+				<a class="oh-btn oh-btn--danger w-100 oh-btn--disabled" title="{% trans 'Reject' %}">
+					<ion-icon name="close-circle-outline"></ion-icon>
+				</a>
+			{% endif %}
+		{% endif %}
+		{% if req.fulfilled_document %}
+			<a href="{{ req.fulfilled_document.url }}" class="oh-btn oh-btn--info w-100"
+				download title="{% trans 'Download Fulfilled Document' %}">
+				<ion-icon name="download-outline"></ion-icon>
+			</a>
+		{% elif req.attachment %}
+			<a href="{{ req.attachment.url }}" class="oh-btn oh-btn--info w-100"
+				download title="{% trans 'Download Attachment' %}">
+				<ion-icon name="download-outline"></ion-icon>
+			</a>
+		{% endif %}
+	</div>
+</div>
+
+{% if file_content %}
+	<div class="modal-body {% if req.status == 'rejected' %}border border-danger border-3{% endif %}">
+		{% if file_extension == 'pdf' or file_extension == 'txt' or file_extension == 'docx' or file_extension == 'xlsx' %}
+			<embed src="data:{{ content_type }};base64,{{ file_content|base64_encode }}"
+				type="{{ content_type }}" width="100%" height="500px" />
+		{% elif file_extension == 'jpg' or file_extension == 'jpeg' or file_extension == 'png' or file_extension == 'webp' %}
+			<div class="container">
+				<img src="data:{{ content_type }};base64,{{ file_content|base64_encode }}"
+					alt="File Preview" class="img-fluid"
+					style="display: block; width: 100%; height: 500px; object-fit: contain;" />
+			</div>
+		{% else %}
+			<p>{% trans "File format not supported for preview." %}</p>
+		{% endif %}
+	</div>
+	{% if req.status == 'rejected' and req.reject_reason %}
+		<h2 class="oh-label mt-3"><b>{% trans "Reject Reason:" %}</b></h2>
+		<p class="ms-4">{{ req.reject_reason }}</p>
+	{% endif %}
+{% endif %}

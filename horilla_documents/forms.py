@@ -6,7 +6,7 @@ from base.forms import ModelForm
 from base.methods import reload_queryset
 from employee.filters import EmployeeFilter
 from employee.models import Employee
-from horilla_documents.models import Document, DocumentRequest
+from horilla_documents.models import Document, DocumentRequest, EmployeeDocumentRequest
 from horilla_widgets.widgets.horilla_multi_select_field import HorillaMultiSelectField
 from horilla_widgets.widgets.select_widgets import HorillaMultiSelectWidget
 
@@ -105,4 +105,36 @@ class DocumentRejectForm(ModelForm):
 
     class Meta:
         model = Document
+        fields = ["reject_reason"]
+
+
+class EmployeeDocumentRequestForm(ModelForm):
+    verbose_name = _("Employee Document Request")
+
+    def as_p(self):
+        context = {"form": self}
+        return render_to_string("common_form.html", context)
+
+    class Meta:
+        model = EmployeeDocumentRequest
+        fields = ["title", "description", "attachment", "issue_date", "expiry_date"]
+        widgets = {
+            "issue_date": forms.DateInput(
+                attrs={"type": "date", "class": "oh-input w-100"}
+            ),
+            "expiry_date": forms.DateInput(
+                attrs={"type": "date", "class": "oh-input w-100"}
+            ),
+        }
+
+
+class EmployeeDocumentFulfillForm(ModelForm):
+    class Meta:
+        model = EmployeeDocumentRequest
+        fields = ["fulfilled_document"]
+
+
+class EmployeeDocumentRejectForm(ModelForm):
+    class Meta:
+        model = EmployeeDocumentRequest
         fields = ["reject_reason"]

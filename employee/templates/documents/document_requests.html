@@ -35,9 +35,112 @@
 <div class="oh-checkpoint-badge mb-2" id="selectedDocuments" data-ids="[]" data-clicked="" style="display: none">
 	{% trans "Selected Documents" %}
 </div>
-<div id="view-container" class="oh-wrapper">
-	{% include 'documents/requests.html' %}
+
+<div class="oh-wrapper">
+<div class="oh-tabs mt-3">
+	<ul class="oh-tabs__tablist">
+		<li class="oh-tabs__tab oh-tabs__tab--active" data-target="#doc_req_tab_1">
+			<div>{% trans "Document Requests" %}</div>
+		</li>
+		{% if perms.horilla_documents.view_employeedocumentrequest or request.user|is_reportingmanager %}
+		<li class="oh-tabs__tab" data-target="#doc_req_tab_2">
+			<div>{% trans "Employee Requests" %}</div>
+		</li>
+		{% endif %}
+	</ul>
+	<div class="oh-tabs__contents">
+		<div class="oh-tabs__content oh-tabs__content--active" id="doc_req_tab_1">
+			<div id="view-container">
+				{% include 'documents/requests.html' %}
+			</div>
+		</div>
+		{% if perms.horilla_documents.view_employeedocumentrequest or request.user|is_reportingmanager %}
+		<div class="oh-tabs__content" id="doc_req_tab_2">
+			<form id="empDocFilterForm"
+				hx-get="{% url 'employee-document-request-filter' %}"
+				hx-target="#emp-doc-req-view-container"
+				hx-trigger="submit"
+				class="d-flex align-items-center justify-content-end gap-2 px-3 pt-3"
+				onsubmit="event.preventDefault()">
+				<input
+					type="text"
+					class="oh-input"
+					placeholder="{% trans 'Search...' %}"
+					name="search"
+					oninput="htmx.trigger('#empDocFilterForm', 'submit')"
+					style="max-width: 250px;">
+				<select
+					name="status"
+					class="oh-input"
+					onchange="htmx.trigger('#empDocFilterForm', 'submit')"
+					style="max-width: 180px;">
+					<option value="">{% trans "All Status" %}</option>
+					<option value="pending">{% trans "Pending" %}</option>
+					<option value="fulfilled">{% trans "Fulfilled" %}</option>
+					<option value="rejected">{% trans "Rejected" %}</option>
+				</select>
+			</form>
+			<div id="emp-doc-req-view-container">
+				{% include 'documents/htmx/employee_document_requests_list.html' %}
+			</div>
+		</div>
+		{% endif %}
+	</div>
+</div>
 </div>
 
+<div class="oh-modal" id="empDocViewFileModal" role="dialog" aria-hidden="true">
+	<div class="oh-modal__dialog custom-dialog">
+		<div class="oh-modal__dialog-header">
+			<span class="oh-modal__dialog-title">{% trans "View File" %}</span>
+			<button class="oh-modal__close" aria-label="Close">
+				<ion-icon name="close-outline"></ion-icon>
+			</button>
+		</div>
+		<div class="oh-modal__dialog-body" id="empDocViewFile"></div>
+	</div>
+</div>
+
+<div class="oh-modal" id="fulfillModal" role="dialog" aria-hidden="true">
+	<div class="oh-modal__dialog">
+		<div class="oh-modal__dialog-header">
+			<span class="oh-modal__dialog-title">{% trans "Fulfill Request" %}</span>
+			<button class="oh-modal__close" aria-label="Close">
+				<ion-icon name="close-outline"></ion-icon>
+			</button>
+		</div>
+		<div class="oh-modal__dialog-body" id="fulfillModalTarget"></div>
+	</div>
+</div>
+
+<div class="oh-modal" id="rejectEmpDocModal" role="dialog" aria-hidden="true">
+	<div class="oh-modal__dialog">
+		<div class="oh-modal__dialog-header">
+			<span class="oh-modal__dialog-title">{% trans "Reject Request" %}</span>
+			<button class="oh-modal__close--custom" aria-label="Close"
+				onclick="event.stopPropagation();event.preventDefault();$('#rejectEmpDocModal').toggleClass('oh-modal--show');">
+				<ion-icon name="close-outline"></ion-icon>
+			</button>
+		</div>
+		<div class="oh-modal__dialog-body" id="rejectEmpDocModalTarget"></div>
+	</div>
+</div>
+
+<script>
+	$(document).ready(function () {
+		$(".oh-tabs__tab[data-target]").click(function (e) {
+			e.preventDefault();
+			var newActiveTab = $(this).attr("data-target");
+			$(".oh-tabs__content--active").toggleClass("oh-tabs__content--active");
+			$(".oh-tabs__tab--active").toggleClass("oh-tabs__tab--active");
+			$(`[data-target="${newActiveTab}"]`).toggleClass("oh-tabs__tab--active");
+			$(newActiveTab).toggleClass("oh-tabs__content--active");
+		});
+	});
+
+	document.body.addEventListener("openEmpDocModal", function () {
+		$("#empDocViewFileModal").addClass("oh-modal--show");
+	});
+</script>
 
 {% endblock content %}

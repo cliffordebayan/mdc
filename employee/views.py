@@ -149,8 +149,11 @@ from horilla_documents.forms import (
     DocumentRejectForm,
     DocumentRequestForm,
     DocumentUpdateForm,
+    EmployeeDocumentFulfillForm,
+    EmployeeDocumentRejectForm,
+    EmployeeDocumentRequestForm,
 )
-from horilla_documents.models import Document, DocumentRequest
+from horilla_documents.models import Document, DocumentRequest, EmployeeDocumentRequest
 from notifications.signals import notify
 
 
@@ -521,7 +524,6 @@ def shift_tab(request, emp_id):
 
 
 @login_required
-@manager_can_enter("horilla_documents.view_documentrequest")
 def document_request_view(request):
     """
     This function is used to view and filter document requests of employees.
@@ -552,19 +554,35 @@ def document_request_view(request):
     )
     data_dict = parse_qs(previous_data)
     get_key_instances(Document, data_dict)
+
+    try:
+        emp_requests_qs = EmployeeDocumentRequest.objects.all().order_by("-created_at")
+        emp_requests_qs = filtersubordinates(
+            request=request,
+            perm="horilla_documents.view_employeedocumentrequest",
+            queryset=emp_requests_qs,
+        )
+        emp_page = request.GET.get("emp_page", 1)
+        emp_requests_qs = HorillaPaginator(emp_requests_qs, get_pagination()).page(
+            emp_page if str(emp_page).isdigit() else 1
+        )
+    except Exception as exc:
+        logger.error("employee document requests fetch failed: %s", exc)
+        emp_requests_qs = []
+
     context = {
         "document_requests": document_requests,
         "documents": documents,
         "f": filter_class,
         "pd": previous_data,
         "filter_dict": data_dict,
+        "requests": emp_requests_qs,
     }
     return render(request, "documents/document_requests.html", context=context)
 
 
 @login_required
 @hx_request_required
-@manager_can_enter("horilla_documents.view_documentrequest")
 def document_filter_view(request):
     """
     This method is used to filter employee.
@@ -690,12 +708,18 @@ def document_tab(request, emp_id):
     """
 
     form = DocumentUpdateForm(request.POST, request.FILES)
-    documents = Document.objects.filter(employee_id=emp_id)
+    documents = Document.objects.filter(employee_id=emp_id, document_request_id__isnull=True)
+    admin_doc_requests = Document.objects.filter(employee_id=emp_id, document_request_id__isnull=False)
+    employee_doc_requests = EmployeeDocumentRequest.objects.filter(employee_id=emp_id)
+    admin_doc_requests_pending = admin_doc_requests.filter(status="requested").count()
 
     context = {
         "documents": documents,
+        "admin_doc_requests": admin_doc_requests,
+        "admin_doc_requests_pending": admin_doc_requests_pending,
         "form": form,
         "emp_id": emp_id,
+        "employee_doc_requests": employee_doc_requests,
     }
     return render(request, "tabs/document_tab.html", context=context)
 
@@ -1101,6 +1125,212 @@ def document_bulk_reject(request):
     return render(
         request, "documents/document_reject_reason.html", {"ids": ids, "form": form}
     )
+
+
+@login_required
+def employee_document_request_view(request):
+    previous_data = request.GET.urlencode()
+    requests_qs = EmployeeDocumentRequest.objects.all().order_by("-created_at")
+    requests_qs = filtersubordinates(
+        request=request,
+        perm="horilla_documents.view_employeedocumentrequest",
+        queryset=requests_qs,
+    )
+    page = request.GET.get("page", 1)
+    requests_qs = HorillaPaginator(requests_qs, get_pagination()).page(
+        page if str(page).isdigit() else 1
+    )
+    data_dict = parse_qs(previous_data)
+    context = {
+        "requests": requests_qs,
+        "pd": previous_data,
+        "filter_dict": data_dict,
+    }
+    return render(
+        request, "documents/employee_document_requests.html", context=context
+    )
+
+
+@login_required
+@hx_request_required
+def employee_document_request_filter_view(request):
+    previous_data = request.GET.urlencode()
+    requests_qs = EmployeeDocumentRequest.objects.all().order_by("-created_at")
+    requests_qs = filtersubordinates(
+        request=request,
+        perm="horilla_documents.view_employeedocumentrequest",
+        queryset=requests_qs,
+    )
+    if request.GET.get("search"):
+        requests_qs = requests_qs.filter(
+            title__icontains=request.GET.get("search")
+        )
+    if request.GET.get("status"):
+        requests_qs = requests_qs.filter(status=request.GET.get("status"))
+    page = request.GET.get("page", 1)
+    requests_qs = HorillaPaginator(requests_qs, get_pagination()).page(
+        page if str(page).isdigit() else 1
+    )
+    data_dict = parse_qs(previous_data)
+    context = {
+        "requests": requests_qs,
+        "pd": previous_data,
+        "filter_dict": data_dict,
+    }
+    return render(
+        request,
+        "documents/htmx/employee_document_requests_list.html",
+        context=context,
+    )
+
+
+@login_required
+@hx_request_required
+def employee_document_request_create(request):
+    employee = request.user.employee_get
+    form = EmployeeDocumentRequestForm()
+    if request.method == "POST":
+        form = EmployeeDocumentRequestForm(request.POST, request.FILES)
+        if form.is_valid():
+            instance = form.save(commit=False)
+            instance.employee_id = employee
+            instance.save()
+            messages.success(request, _("Document request submitted successfully."))
+            admins = User.objects.filter(is_superuser=True)
+            notify.send(
+                employee,
+                recipient=list(admins),
+                verb=f"{employee} submitted a document request: {instance.title}",
+                redirect=reverse("employee-document-request-view"),
+                icon="chatbox-ellipses",
+            )
+            return HorillaRedirect(request)
+    context = {"form": form}
+    return render(
+        request, "tabs/htmx/employee_document_request_form.html", context=context
+    )
+
+
+@login_required
+@hx_request_required
+@manager_can_enter("horilla_documents.change_employeedocumentrequest")
+def employee_document_request_fulfill(request, id):
+    doc_request = get_object_or_404(EmployeeDocumentRequest, id=id)
+    form = EmployeeDocumentFulfillForm(instance=doc_request)
+    if request.method == "POST":
+        form = EmployeeDocumentFulfillForm(
+            request.POST, request.FILES, instance=doc_request
+        )
+        if form.is_valid():
+            instance = form.save(commit=False)
+            instance.status = "fulfilled"
+            instance.reject_reason = None
+            instance.save()
+            messages.success(request, _("Document request fulfilled successfully."))
+            notify.send(
+                request.user.employee_get,
+                recipient=doc_request.employee_id.employee_user_id,
+                verb=f"Your document request '{doc_request.title}' has been fulfilled.",
+                redirect=reverse("employee-profile"),
+                icon="chatbox-ellipses",
+            )
+            return HorillaRedirect(request)
+    context = {"form": form, "doc_request": doc_request}
+    return render(
+        request,
+        "documents/htmx/employee_document_fulfill_form.html",
+        context=context,
+    )
+
+
+@login_required
+@hx_request_required
+@manager_can_enter("horilla_documents.change_employeedocumentrequest")
+def employee_document_request_reject(request, id):
+    doc_request = get_object_or_404(EmployeeDocumentRequest, id=id)
+    form = EmployeeDocumentRejectForm(instance=doc_request)
+    if request.method == "POST":
+        form = EmployeeDocumentRejectForm(request.POST, instance=doc_request)
+        if form.is_valid():
+            instance = form.save(commit=False)
+            instance.status = "rejected"
+            instance.save()
+            messages.success(request, _("Document request rejected."))
+            notify.send(
+                request.user.employee_get,
+                recipient=doc_request.employee_id.employee_user_id,
+                verb=f"Your document request '{doc_request.title}' was rejected.",
+                redirect=reverse("employee-profile"),
+                icon="alert-circle",
+            )
+            return HorillaRedirect(request)
+    context = {"form": form, "doc_request": doc_request}
+    return render(
+        request,
+        "documents/htmx/employee_document_reject_form.html",
+        context=context,
+    )
+
+
+@login_required
+@hx_request_required
+def employee_document_request_delete(request, id):
+    doc_request = get_object_or_404(EmployeeDocumentRequest, id=id)
+    employee = request.user.employee_get
+    if doc_request.employee_id != employee and not request.user.has_perm(
+        "horilla_documents.delete_employeedocumentrequest"
+    ):
+        messages.error(
+            request, _("You do not have permission to delete this request.")
+        )
+        return HorillaRedirect(request)
+    if doc_request.status != "pending" and not request.user.has_perm(
+        "horilla_documents.delete_employeedocumentrequest"
+    ):
+        messages.error(request, _("Only pending requests can be deleted."))
+        return HorillaRedirect(request)
+    doc_request.delete()
+    messages.success(request, _("Document request deleted successfully."))
+    return HttpResponse(
+        f'<span id="emp-doc-req-{id}" hx-swap-oob="true"></span>'
+        "<script>reloadMessage();</script>"
+    )
+
+
+@login_required
+@hx_request_required
+def employee_document_request_view_file(request, id):
+    doc_request = get_object_or_404(EmployeeDocumentRequest, id=id)
+    employee = request.user.employee_get
+    if doc_request.employee_id != employee and not request.user.has_perm(
+        "horilla_documents.view_employeedocumentrequest"
+    ):
+        return HorillaRedirect(
+            request, message=_("You do not have permission to view this file.")
+        )
+
+    file_obj = doc_request.fulfilled_document or doc_request.attachment
+    if not file_obj:
+        return HttpResponse("")
+
+    file_path = file_obj.path
+    file_extension = os.path.splitext(file_path)[1][1:].lower()
+    content_type = get_content_type(file_extension)
+    try:
+        with open(file_path, "rb") as f:
+            file_content = f.read()
+    except Exception:
+        return HttpResponse("")
+
+    context = {
+        "req": doc_request,
+        "file_content": file_content,
+        "file_extension": file_extension,
+        "content_type": content_type,
+    }
+    response = render(request, "documents/htmx/employee_doc_request_view_file.html", context)
+    response["HX-Trigger"] = "openEmpDocModal"
+    return response
 
 
 @login_required

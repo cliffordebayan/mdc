@@ -6,18 +6,17 @@
 			href="{% url 'document-request-view' %}"
 			class="oh-main__titlebar-title fw-bold mb-0 text-dark"
 			style="text-decoration: none"
-			>{% trans "Document Requests" %}
-			<a
-				class="oh-main__titlebar-search-toggle"
-				role="button"
-				aria-label="Toggle Search"
-				@click="searchShow = !searchShow"
-			>
-				<ion-icon
-					name="search-outline"
-					class="oh-main__titlebar-serach-icon"
-				></ion-icon>
-			</a>
+			>{% trans "Document Requests" %}</a>
+		<a
+			class="oh-main__titlebar-search-toggle"
+			role="button"
+			aria-label="Toggle Search"
+			@click="searchShow = !searchShow"
+		>
+			<ion-icon
+				name="search-outline"
+				class="oh-main__titlebar-serach-icon"
+			></ion-icon>
 		</a>
 	</div>
 	<div class="oh-main__titlebar oh-main__titlebar--right">

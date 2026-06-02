@@ -1,0 +1,25 @@
+{% load i18n %}
+<p class="mb-1"><strong>{{ doc_request.employee_id.get_full_name }}</strong> &mdash; {{ doc_request.title }}</p>
+{% if doc_request.description %}
+<p class="oh-text--light mb-3">{{ doc_request.description }}</p>
+{% endif %}
+<form id="fulfill-form"
+	hx-post="{% url 'employee-document-request-fulfill' doc_request.id %}"
+	hx-target="#fulfillModalTarget"
+	hx-encoding="multipart/form-data"
+	class="oh-profile-section">
+	{% csrf_token %}
+	{{ form.non_field_errors }}
+	<div class="oh-input-group mb-3">
+		<label class="oh-label" for="{{ form.fulfilled_document.id_for_label }}">
+			{{ form.fulfilled_document.label }}
+		</label>
+		{{ form.fulfilled_document }}
+		{{ form.fulfilled_document.errors }}
+	</div>
+	<div class="oh-modal__dialog-footer p-0 mt-3">
+		<button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">
+			{% trans "Fulfill" %}
+		</button>
+	</div>
+</form>

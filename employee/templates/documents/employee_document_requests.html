@@ -1,0 +1,83 @@
+{% extends "index.html" %}
+{% load static %} {% load i18n %}
+{% block content %}
+<section class="oh-wrapper oh-main__topbar" x-data="{searchShow: false}">
+	<div class="oh-main__titlebar oh-main__titlebar--left">
+		<a
+			href="{% url 'document-request-view' %}"
+			class="oh-text--light me-2"
+			style="text-decoration: none"
+		>{% trans "Document Requests" %}</a>
+		<span class="oh-text--light me-2">/</span>
+		<span class="oh-main__titlebar-title fw-bold mb-0 text-dark">{% trans "Employee Requests" %}</span>
+	</div>
+	<div class="oh-main__titlebar oh-main__titlebar--right">
+		<form
+			hx-get="{% url 'employee-document-request-filter' %}"
+			hx-target="#emp-doc-req-view-container"
+			hx-swap="innerHTML"
+			id="empDocFilterForm"
+			class="d-flex align-items-center"
+			onsubmit="event.preventDefault()">
+			<div class="oh-input-group oh-input__search-group" :class="searchShow ? 'oh-input__search-group--show' : ''">
+				<ion-icon name="search-outline" class="oh-input-group__icon oh-input-group__icon--left"></ion-icon>
+				<input
+					type="text"
+					class="oh-input oh-input__icon"
+					placeholder="{% trans 'Search' %}"
+					name="search"
+					onkeyup="$(this).closest('form').find('.empDocFilterBtn').click()"
+				/>
+			</div>
+			<select name="status" class="oh-input ms-2" onchange="$(this).closest('form').find('.empDocFilterBtn').click()">
+				<option value="">{% trans "All Status" %}</option>
+				<option value="pending">{% trans "Pending" %}</option>
+				<option value="fulfilled">{% trans "Fulfilled" %}</option>
+				<option value="rejected">{% trans "Rejected" %}</option>
+			</select>
+			<button class="oh-btn ms-2 empDocFilterBtn d-none" onclick="event.preventDefault()">{% trans "Filter" %}</button>
+		</form>
+	</div>
+</section>
+
+<div id="emp-doc-req-view-container" class="oh-wrapper">
+	{% include 'documents/htmx/employee_document_requests_list.html' %}
+</div>
+
+<div class="oh-modal" id="empDocViewFileModal" role="dialog" aria-hidden="true">
+	<div class="oh-modal__dialog" style="max-width: 1000px; max-height: 800px;">
+		<div class="oh-modal__dialog-header">
+			<span class="oh-modal__dialog-title">{% trans "View File" %}</span>
+			<button class="oh-modal__close" aria-label="Close">
+				<ion-icon name="close-outline"></ion-icon>
+			</button>
+		</div>
+		<div class="oh-modal__dialog-body" id="empDocViewFile"></div>
+	</div>
+</div>
+
+<div class="oh-modal" id="fulfillModal" role="dialog" aria-hidden="true">
+	<div class="oh-modal__dialog">
+		<div class="oh-modal__dialog-header">
+			<span class="oh-modal__dialog-title">{% trans "Fulfill Request" %}</span>
+			<button class="oh-modal__close" aria-label="Close">
+				<ion-icon name="close-outline"></ion-icon>
+			</button>
+		</div>
+		<div class="oh-modal__dialog-body" id="fulfillModalTarget"></div>
+	</div>
+</div>
+
+<div class="oh-modal" id="rejectEmpDocModal" role="dialog" aria-hidden="true">
+	<div class="oh-modal__dialog">
+		<div class="oh-modal__dialog-header">
+			<span class="oh-modal__dialog-title">{% trans "Reject Request" %}</span>
+			<button class="oh-modal__close--custom" aria-label="Close"
+				onclick="event.stopPropagation();event.preventDefault();$('#rejectEmpDocModal').toggleClass('oh-modal--show');">
+				<ion-icon name="close-outline"></ion-icon>
+			</button>
+		</div>
+		<div class="oh-modal__dialog-body" id="rejectEmpDocModalTarget"></div>
+	</div>
+</div>
+{% endblock content %}

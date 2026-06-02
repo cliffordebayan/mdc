@@ -1,0 +1,20 @@
+{% load i18n %}
+<p class="mb-1"><strong>{{ doc_request.employee_id.get_full_name }}</strong> &mdash; {{ doc_request.title }}</p>
+<form id="emp-doc-reject-form"
+	hx-post="{% url 'employee-document-request-reject' doc_request.id %}"
+	hx-target="#rejectEmpDocModalTarget"
+	hx-encoding="multipart/form-data"
+	class="oh-profile-section pt-3">
+	{% csrf_token %}
+	{{ form.non_field_errors }}
+	<div class="oh-input-group mb-3">
+		<label class="oh-label" for="{{ form.reject_reason.id_for_label }}">{% trans "Reason" %}</label>
+		{{ form.reject_reason }}
+		{{ form.reject_reason.errors }}
+	</div>
+	<div class="oh-modal__dialog-footer p-0 mt-3">
+		<button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">
+			{% trans "Save" %}
+		</button>
+	</div>
+</form>
