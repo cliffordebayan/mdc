@@ -1035,6 +1035,7 @@
             }
 
             #clock-preview-map {
+                display: none !important;
                 max-width: 100%;
                 height: 150px;
                 border-radius: 6px;
@@ -1368,6 +1369,10 @@
         let geofenceMap = null;
         let clockPreviewMap = null;
         let employeeDataById = {};
+
+        function isMobilePortalView() {
+            return window.matchMedia && window.matchMedia('(max-width: 600px)').matches;
+        }
 
         // Server time offset: difference between server clock and client clock
         // This is re-synced from the server every 30 seconds so employees
@@ -2215,9 +2220,14 @@
             if (!latitude || !longitude) return;
 
             const $map = $('#clock-preview-map');
-            $map.show();
-
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
+
+            if (isMobilePortalView()) {
+                $map.hide();
+                return;
+            }
+
+            $map.show();
 
             setTimeout(function () {
                 clockPreviewMap = L.map('clock-preview-map', { zoomControl: false, attributionControl: false });
