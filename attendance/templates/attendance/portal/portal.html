@@ -2752,6 +2752,7 @@
                 clockPreviewMap = L.map('clock-preview-map', { zoomControl: false, attributionControl: false });
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(clockPreviewMap);
 
+                const isMobileMap = isMobilePortalView();
                 const userPos = hasUserLocation ? [latitude, longitude] : null;
                 let bounds = null;
 
@@ -2776,10 +2777,19 @@
                 }
 
                 if (bounds) {
-                    clockPreviewMap.fitBounds(bounds);
+                    if (isMobileMap) {
+                        clockPreviewMap.fitBounds(bounds, { padding: [18, 18], maxZoom: 16 });
+                    } else {
+                        clockPreviewMap.fitBounds(bounds);
+                    }
                 } else if (hasUserLocation) {
                     clockPreviewMap.setView(userPos, 16);
                 }
+                setTimeout(function () {
+                    if (clockPreviewMap) {
+                        clockPreviewMap.invalidateSize();
+                    }
+                }, 50);
             }, 150);
         }
 
