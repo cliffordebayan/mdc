@@ -729,7 +729,8 @@
             background: transparent;
             color: #666;
             border: 1px solid #ddd !important;
-            font-size: 13px !important;
+            font-size: 16px !important;
+            font-weight: 700;
             padding: 8px !important;
         }
 
@@ -1183,6 +1184,10 @@
                 margin-right: 0 !important;
                 font-size: 22px;
             }
+
+            #step-clock #back-btn .back-btn-text {
+                display: none;
+            }
         }
 
         /* Very small phones */
@@ -1245,7 +1250,7 @@
                 height: 42px !important;
                 min-height: 42px;
                 max-width: 42px !important;
-                font-size: 17px !important;
+                font-size: 16px !important;
             }
         }
 
@@ -1430,6 +1435,7 @@
                                 <!-- Back -->
                                 <button type="button" class="btn-back" id="back-btn" style="width:100%; max-width:320px;">
                                     <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                    <span class="back-btn-text">{% trans "Back" %}</span>
                                 </button>
                             </div>
                         </div>
