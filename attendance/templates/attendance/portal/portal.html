@@ -542,6 +542,14 @@
             letter-spacing: 0.02em;
         }
 
+        .mobile-clock-card-details {
+            display: none;
+        }
+
+        .mobile-employee-meta {
+            display: none;
+        }
+
         .clock-employee-meta {
             border-top: 1px dashed #e5e7eb;
             margin-top: 10px;
@@ -877,25 +885,25 @@
                 font-size: 18px;
             }
 
-            /* On mobile: fixed outer clips; inner wrapper is the single scroll */
+            /* On mobile, the live camera becomes the full-screen backdrop. */
             .clock-fullscreen {
                 display: block;
                 overflow: hidden;
+                background: #000;
             }
 
             .clock-scroll-inner {
-                display: flex;
-                flex-direction: column;
+                display: block;
                 position: absolute;
                 inset: 0;
-                overflow-y: scroll;
-                -webkit-overflow-scrolling: touch;
+                overflow: hidden;
             }
 
             .clock-camera-panel {
-                flex: 0 0 45vh;
-                height: 45vh;
-                max-height: none;
+                position: absolute;
+                inset: 0;
+                height: 100%;
+                width: 100%;
                 overflow: hidden;
             }
 
@@ -917,7 +925,7 @@
             }
 
             .location-overlay {
-                bottom: 60px;
+                bottom: 180px;
                 left: 8px;
                 right: 8px;
                 padding: 6px 8px;
@@ -927,192 +935,300 @@
             }
 
             .clock-info-panel {
-                flex: 0 0 auto;
-                padding: 14px 12px 24px;
-                gap: 10px;
-                justify-content: flex-start;
-                background: #f8f9fa;
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 5;
+                display: grid;
+                grid-template-columns: 108px minmax(0, 1fr);
+                grid-template-areas:
+                    "map employee"
+                    "bottom bottom";
+                align-items: start;
+                gap: 0;
+                padding: 0 12px max(12px, env(safe-area-inset-bottom));
+                background: transparent;
                 overflow: visible;
                 min-height: unset;
             }
 
-            .clock-company-logo {
-                max-height: 32px;
-            }
-
+            .clock-company-logo,
             .clock-company-name {
-                font-size: 18px;
-                text-align: center;
-                line-height: 1.2;
-                font-weight: 700;
+                display: none;
             }
 
-            .clock-live-time {
-                font-size: 40px;
-                line-height: 1.05;
-                margin-top: 2px;
-            }
-
+            .clock-live-block,
+            .clock-live-time,
             .clock-live-date {
-                font-size: 15px;
-                margin-top: 4px;
-                color: #4b5563;
+                display: none;
             }
 
             .clock-employee-card {
-                max-width: 100%;
-                padding: 14px;
-                border-radius: 16px;
-                gap: 12px;
+                grid-area: employee;
+                max-width: none;
+                min-height: 132px;
                 height: auto;
-                min-height: 118px;
+                padding: 10px 11px;
+                border: 1px solid rgba(255, 255, 255, 0.28);
+                border-radius: 0;
+                background: #000;
+                color: #fff;
+                gap: 6px;
                 flex-shrink: 0;
+                overflow: visible;
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+            }
+
+            .clock-employee-card::before {
+                display: none;
             }
 
             .clock-employee-head {
-                gap: 10px;
+                align-items: flex-start;
+                gap: 9px;
+                min-height: 48px;
             }
 
             .clock-employee-card img {
-                width: 60px;
-                height: 60px;
-                border-radius: 50%;
+                width: 46px;
+                height: 46px;
+                border-radius: 0;
                 margin: 0;
+                border: 2px solid #ff3b30;
             }
 
             .clock-employee-card h4 {
-                font-size: 18px;
-                line-height: 1.2;
+                color: #fff;
+                font-size: 13px;
+                line-height: 1.12;
+                font-weight: 600;
+                -webkit-line-clamp: 1;
             }
 
             .clock-employee-card p {
-                font-size: 14px;
+                color: #fff;
+                font-size: 10px;
+                line-height: 1.15;
+                font-weight: 400;
+            }
+
+            .clock-employee-card #employee-badge,
+            .clock-employee-card #employee-branch {
+                display: none !important;
+            }
+
+            .mobile-employee-meta {
+                display: block;
+                color: #d7d7d7 !important;
+                font-size: 10px !important;
+                line-height: 1.15;
+                white-space: normal;
+            }
+
+            .mobile-clock-card-details {
+                display: block;
+                color: #fff;
+                font-size: 10px;
+                line-height: 1.18;
+                overflow: visible;
+            }
+
+            .mobile-clock-label {
+                display: none;
+            }
+
+            #mobile-location-text {
+                display: block;
+                color: #fff;
+                font-weight: 400;
+                overflow: visible;
+                overflow-wrap: anywhere;
+                word-break: normal;
+            }
+
+            #mobile-location-coordinates {
+                display: block;
+                margin-top: 2px;
+                color: #fff;
+                font-size: 12px;
+                line-height: 1.15;
+                font-weight: 500;
+                overflow-wrap: anywhere;
+            }
+
+            #mobile-live-stamp {
+                display: block;
+                margin-top: 2px;
+                color: #fff;
+                font-size: 12px;
+                line-height: 1.15;
+                font-weight: 500;
             }
 
             #clock-live-work-hours {
-                font-size: 14px !important;
+                display: none !important;
             }
 
-            #clock-work-hours-value {
-                font-size: 19px;
+            .clock-employee-meta {
+                display: none !important;
             }
 
             #employee-info.clock-employee-card.is-clocked-in {
-                min-height: 166px;
+                min-height: 132px;
             }
 
             .clock-location-status {
-                max-width: 100%;
-                font-size: 16px;
-                padding: 12px;
-                border-radius: 0;
-                flex-direction: row;
-                gap: 10px;
-                justify-content: flex-start;
-                word-wrap: break-word;
-                overflow-wrap: break-word;
-                line-height: 1.35;
-            }
-
-            .clock-location-icon {
-                width: 32px;
-                height: 32px;
-            }
-
-            .clock-location-icon ion-icon {
-                font-size: 18px;
+                display: none;
             }
 
             .clock-bottom-panel {
-                max-width: 100%;
-                margin-top: auto;
-                background: #ffffff;
-                border: 1px solid #ced7e3;
+                grid-area: bottom;
+                max-width: none;
+                width: 100%;
+                margin: 10px 0 0;
+                background: transparent;
+                border: 0;
                 border-radius: 0;
-                padding: 10px;
-                box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
-                gap: 10px;
+                padding: 0;
+                box-shadow: none;
+                gap: 0;
             }
 
             #clock-preview-map {
-                display: none !important;
-                max-width: 100%;
-                height: 150px;
-                border-radius: 6px;
-                margin: 0 10px;
-                width: calc(100% - 20px);
+                grid-area: map;
+                display: block;
+                width: 108px;
+                max-width: none;
+                height: 132px;
+                margin: 0;
+                border: 1px solid rgba(255, 255, 255, 0.28);
+                border-radius: 0;
+                background: #d3f7dd;
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+            }
+
+            #clock-preview-map.is-placeholder {
+                position: relative;
+                background:
+                    linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0 12%, transparent 12% 34%, rgba(255, 255, 255, 0.16) 34% 46%, transparent 46%),
+                    #d3f7dd;
+            }
+
+            #clock-preview-map.is-placeholder::before {
+                content: "";
+                position: absolute;
+                inset: 28px;
+                border: 2px solid rgba(40, 167, 69, 0.75);
+                border-radius: 999px;
+                background: rgba(40, 167, 69, 0.15);
+            }
+
+            #clock-preview-map.is-placeholder::after {
+                content: "";
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                width: 14px;
+                height: 14px;
+                border-radius: 999px;
+                background: #dc3545;
+                border: 2px solid #fff;
+                transform: translate(-50%, -50%);
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.28);
             }
 
             .clock-action-buttons {
                 max-width: 100%;
-                gap: 10px;
+                gap: 0;
             }
 
             .clock-action-buttons button {
-                min-height: 64px;
-                padding: 14px 18px;
+                min-height: 56px;
+                padding: 13px 18px;
                 font-size: 22px;
-                border-radius: 14px;
+                border-radius: 8px;
                 font-weight: 800;
+                width: 100%;
+                box-shadow: none;
             }
 
             .clock-action-buttons button ion-icon {
                 font-size: 24px;
             }
 
-            .btn-back {
-                max-width: 100% !important;
-                min-height: 52px;
-                border-radius: 12px;
-                font-size: 20px !important;
-                font-weight: 600;
-                padding: 10px 14px !important;
+            #step-clock #back-btn {
+                position: fixed;
+                top: max(12px, env(safe-area-inset-top));
+                left: 12px;
+                z-index: 7;
+                width: 42px !important;
+                height: 42px !important;
+                min-height: 42px;
+                max-width: 42px !important;
+                aspect-ratio: 1 / 1;
+                border-radius: 999px;
+                border: 0 !important;
+                background: #fff;
+                color: #111827;
+                font-size: 0 !important;
+                padding: 0 !important;
+                box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            #step-clock #back-btn ion-icon {
+                margin-right: 0 !important;
+                font-size: 22px;
             }
         }
 
         /* Very small phones */
         @media (max-width: 400px) {
             .clock-camera-panel {
-                flex: 0 0 40vh;
-                height: 40vh;
-            }
-
-            .clock-live-time {
-                font-size: 36px;
+                height: 100%;
             }
 
             .clock-info-panel {
-                padding: 12px 10px 14px;
-                gap: 6px;
+                grid-template-columns: 100px minmax(0, 1fr);
+                padding: 0 8px max(8px, env(safe-area-inset-bottom));
             }
 
-            .clock-company-name {
-                font-size: 17px;
+            #clock-preview-map {
+                width: 100px;
+                height: 126px;
             }
 
-            .clock-live-date {
-                font-size: 14px;
+            .clock-employee-card {
+                min-height: 126px;
+                padding: 8px;
             }
 
             .clock-employee-card h4 {
-                font-size: 17px;
+                font-size: 12px;
             }
 
             .clock-employee-card p {
-                font-size: 13px;
+                font-size: 9px;
             }
 
-            .clock-location-status {
-                font-size: 15px;
+            .clock-employee-card img {
+                width: 42px;
+                height: 42px;
             }
 
-            #location-text {
-                font-size: 11px;
+            #mobile-location-text {
+                font-size: 9px;
             }
 
-            .clock-location-icon {
-                width: 28px;
-                height: 28px;
+            #mobile-location-coordinates {
+                font-size: 12px;
+            }
+
+            #employee-info.clock-employee-card.is-clocked-in {
+                min-height: 126px;
             }
 
             .clock-action-buttons button {
@@ -1124,8 +1240,11 @@
                 font-size: 22px;
             }
 
-            .btn-back {
-                min-height: 48px;
+            #step-clock #back-btn {
+                width: 42px !important;
+                height: 42px !important;
+                min-height: 42px;
+                max-width: 42px !important;
                 font-size: 17px !important;
             }
         }
@@ -1263,7 +1382,13 @@
                                         <h4 id="employee-name"></h4>
                                         <p id="employee-badge"></p>
                                         <p id="employee-branch" style="display:none; color:#555; font-size:11px; font-weight:500;"></p>
+                                        <p id="mobile-employee-meta" class="mobile-employee-meta"></p>
                                     </div>
+                                </div>
+                                <div class="mobile-clock-card-details">
+                                    <span id="mobile-location-text">{% trans "Getting location..." %}</span>
+                                    <span id="mobile-location-coordinates"></span>
+                                    <span id="mobile-live-stamp"></span>
                                 </div>
                                 <div class="clock-employee-meta">
                                     <div id="employee-status"></div>
@@ -1305,7 +1430,6 @@
                                 <!-- Back -->
                                 <button type="button" class="btn-back" id="back-btn" style="width:100%; max-width:320px;">
                                     <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
-                                    {% trans "Back" %}
                                 </button>
                             </div>
                         </div>
@@ -1369,9 +1493,19 @@
         let geofenceMap = null;
         let clockPreviewMap = null;
         let employeeDataById = {};
+        const EMPLOYEE_LOCATION_MARKER_COLOR = '#dc3545';
 
         function isMobilePortalView() {
             return window.matchMedia && window.matchMedia('(max-width: 600px)').matches;
+        }
+
+        function employeeLocationMarkerHtml(size = 18) {
+            const dotSize = Math.max(5, Math.round(size * 0.34));
+            return `
+                <div style="width:${size}px;height:${size}px;background:${EMPLOYEE_LOCATION_MARKER_COLOR};border:2px solid #fff;border-radius:50% 50% 50% 0;box-shadow:0 2px 5px rgba(0,0,0,.45);transform:rotate(-45deg);position:relative;">
+                    <span style="position:absolute;width:${dotSize}px;height:${dotSize}px;border-radius:50%;background:#fff;left:50%;top:50%;transform:translate(-50%,-50%);"></span>
+                </div>
+            `;
         }
 
         // Server time offset: difference between server clock and client clock
@@ -1441,15 +1575,31 @@
                 const now = new Date(Date.now() + serverTimeOffset);
                 $('#live-clock').text(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: SERVER_TZ }));
                 $('#live-date').text(now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: SERVER_TZ }));
+                const mobileDate = now.toLocaleDateString([], { year: '2-digit', month: '2-digit', day: '2-digit', timeZone: SERVER_TZ });
+                const mobileTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: SERVER_TZ });
+                $('#mobile-live-stamp').text(`${mobileDate} - ${mobileTime}`);
             }
             tick();
             setInterval(tick, 1000);
         }
 
+        function setPortalLocationText(text) {
+            $('#location-text').text(text);
+            $('#mobile-location-text').text(text);
+        }
+
+        function setPortalCoordinatesText(lat, lng) {
+            const hasCoordinates = lat !== null && lat !== undefined && lng !== null && lng !== undefined;
+            $('#mobile-location-coordinates').text(
+                hasCoordinates ? `Lat: ${Number(lat).toFixed(6)}, Long: ${Number(lng).toFixed(6)}` : ''
+            );
+        }
+
         // Get device location
         function initializeLocationCapture() {
             if (navigator.geolocation) {
-                $('#location-text').text('{% trans "Getting location..." %}');
+                setPortalLocationText('{% trans "Getting location..." %}');
+                setPortalCoordinatesText(null, null);
 
                 const options = {
                     enableHighAccuracy: true,
@@ -1462,9 +1612,10 @@
                         latitude = position.coords.latitude;
                         longitude = position.coords.longitude;
                         locationAccuracy = Math.round(position.coords.accuracy);
+                        setPortalCoordinatesText(latitude, longitude);
 
                         // Show loading while getting address
-                        $('#location-text').text('{% trans "Getting address..." %}');
+                        setPortalLocationText('{% trans "Getting address..." %}');
                         $('#location-coordinates').text('');
                         $('#retry-location-btn').hide();
                         $('#location-status').removeClass('warning').addClass('success');
@@ -1474,7 +1625,7 @@
                         // Get address immediately and display it
                         geocodingPromise = reverseGeocode(latitude, longitude).then(function (address) {
                             capturedAddress = address;
-                            $('#location-text').text(address);
+                            setPortalLocationText(address);
                             console.info(`Location address: ${address}`);
                             return address;
                         });
@@ -1498,7 +1649,8 @@
 
                         latitude = null;
                         longitude = null;
-                        $('#location-text').text(errorMsg);
+                        setPortalLocationText(errorMsg);
+                        setPortalCoordinatesText(null, null);
                         $('#location-coordinates').text('');
                         $('#retry-location-btn').show();
                         $('#location-status').removeClass('success').addClass('warning');
@@ -1511,7 +1663,8 @@
             } else {
                 latitude = null;
                 longitude = null;
-                $('#location-text').text('{% trans "Geolocation not supported by this browser." %}');
+                setPortalLocationText('{% trans "Geolocation not supported by this browser." %}');
+                setPortalCoordinatesText(null, null);
                 $('#location-coordinates').text('');
                 $('#location-status').removeClass('success').addClass('warning');
                 disableClockButtons();
@@ -1594,7 +1747,8 @@
 
             // Retry location button
             $('#retry-location-btn').on('click', function () {
-                $('#location-text').text('{% trans "Getting location..." %}');
+                setPortalLocationText('{% trans "Getting location..." %}');
+                setPortalCoordinatesText(null, null);
                 $('#location-coordinates').text('');
                 $('#retry-location-btn').hide();
                 initializeLocationCapture();
@@ -1852,6 +2006,14 @@
             $('#employee-name').text(selectedEmployee.name);
             $('#employee-badge').text(selectedEmployee.badge ? `#${selectedEmployee.badge}` : '');
             $('#employee-avatar').attr('src', selectedEmployee.avatar);
+            const mobileMetaParts = [];
+            if (selectedEmployee.badge) {
+                mobileMetaParts.push(`#${selectedEmployee.badge}`);
+            }
+            if (selectedEmployee.branch) {
+                mobileMetaParts.push(selectedEmployee.branch);
+            }
+            $('#mobile-employee-meta').text(mobileMetaParts.join(' | '));
             if (selectedEmployee.branch) {
                 $('#employee-branch').text(selectedEmployee.branch).show();
             } else {
@@ -1882,8 +2044,13 @@
             }
 
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
-            $('#clock-preview-map').hide();
+            if (!isMobilePortalView()) {
+                $('#clock-preview-map').removeClass('is-placeholder').hide();
+            }
             showStep('clock');
+            if (isMobilePortalView()) {
+                initClockPreviewMap({ allowPlaceholder: true });
+            }
             initializeLocationCapture();
             capturedAddress = null;
             geocodingPromise = null;
@@ -1976,7 +2143,7 @@
             }
 
             const addressToStamp = capturedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-            stampLocationOnCanvas(canvas, context, addressToStamp);
+            await stampEmployeeCardOnCanvas(canvas, context, addressToStamp);
 
             return new Promise(function (resolve, reject) {
                 canvas.toBlob(function (blob) {
@@ -2002,8 +2169,267 @@
                 .catch(() => `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
         }
 
-        // Burn location + timestamp text onto the canvas
-        function stampLocationOnCanvas(canvas, ctx, address) {
+        function loadCanvasImage(src) {
+            return new Promise(function (resolve) {
+                if (!src) {
+                    resolve(null);
+                    return;
+                }
+
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = function () { resolve(img); };
+                img.onerror = function () { resolve(null); };
+                img.src = src;
+            });
+        }
+
+        function drawCanvasEmployeeLocationMarker(ctx, x, y, size) {
+            const radius = Math.max(5, size * 0.42);
+            const centerY = y - size * 0.6;
+
+            ctx.save();
+            ctx.fillStyle = EMPLOYEE_LOCATION_MARKER_COLOR;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = Math.max(2, Math.round(size * 0.14));
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.bezierCurveTo(x - radius * 1.15, centerY + radius * 0.45, x - radius, centerY - radius, x, centerY - radius);
+            ctx.bezierCurveTo(x + radius, centerY - radius, x + radius * 1.15, centerY + radius * 0.45, x, y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(x, centerY - radius * 0.1, Math.max(2.5, size * 0.14), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function drawSavedSelfieMap(ctx, x, y, w, h) {
+            const geo = selectedEmployee && selectedEmployee.geo_fence;
+            const geoCenterLat = geo ? Number(geo.geo_center_lat) : null;
+            const geoCenterLng = geo ? Number(geo.geo_center_lng) : null;
+            const geoRadius = geo ? Number(geo.geo_radius_meters) : null;
+            const hasGeo = !!geo && Number.isFinite(geoCenterLat) && Number.isFinite(geoCenterLng) && Number.isFinite(geoRadius);
+            const hasUserLocation = latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined;
+
+            ctx.save();
+            ctx.fillStyle = '#d3f7dd';
+            ctx.fillRect(x, y, w, h);
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+            ctx.lineWidth = Math.max(2, Math.round(w * 0.025));
+            ctx.beginPath();
+            ctx.moveTo(x + w * 0.05, y + h * 0.22);
+            ctx.bezierCurveTo(x + w * 0.35, y + h * 0.05, x + w * 0.62, y + h * 0.42, x + w * 0.95, y + h * 0.25);
+            ctx.moveTo(x + w * 0.12, y + h * 0.82);
+            ctx.bezierCurveTo(x + w * 0.32, y + h * 0.58, x + w * 0.62, y + h * 0.88, x + w * 0.88, y + h * 0.62);
+            ctx.stroke();
+
+            ctx.strokeStyle = 'rgba(176, 226, 190, 0.9)';
+            ctx.lineWidth = Math.max(1, Math.round(w * 0.012));
+            ctx.beginPath();
+            ctx.moveTo(x + w * 0.22, y);
+            ctx.lineTo(x + w * 0.58, y + h);
+            ctx.moveTo(x, y + h * 0.5);
+            ctx.lineTo(x + w, y + h * 0.36);
+            ctx.stroke();
+
+            let requiredX = x + w * 0.5;
+            let requiredY = y + h * 0.5;
+            let userX = x + w * 0.5;
+            let userY = y + h * 0.5;
+            let circleR = Math.min(w, h) * 0.32;
+
+            if (hasGeo && hasUserLocation) {
+                const metersPerDegLat = 111320;
+                const metersPerDegLng = Math.max(1, 111320 * Math.cos(geoCenterLat * Math.PI / 180));
+                const dxMeters = (Number(longitude) - geoCenterLng) * metersPerDegLng;
+                const dyMeters = (Number(latitude) - geoCenterLat) * metersPerDegLat;
+                const maxMeters = Math.max(geoRadius * 1.35, Math.abs(dxMeters), Math.abs(dyMeters), 1);
+                const scale = (Math.min(w, h) * 0.36) / maxMeters;
+                circleR = Math.max(Math.min(w, h) * 0.12, geoRadius * scale);
+                userX = requiredX + dxMeters * scale;
+                userY = requiredY - dyMeters * scale;
+                userX = Math.min(x + w - 10, Math.max(x + 10, userX));
+                userY = Math.min(y + h - 10, Math.max(y + 10, userY));
+            }
+
+            if (hasGeo) {
+                ctx.fillStyle = 'rgba(40, 167, 69, 0.16)';
+                ctx.strokeStyle = '#28a745';
+                ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
+                ctx.beginPath();
+                ctx.arc(requiredX, requiredY, circleR, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            } else {
+                ctx.fillStyle = 'rgba(40, 167, 69, 0.15)';
+                ctx.strokeStyle = 'rgba(40, 167, 69, 0.75)';
+                ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
+                ctx.beginPath();
+                ctx.arc(requiredX, requiredY, circleR, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            if (hasGeo) {
+                ctx.fillStyle = '#28a745';
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
+                ctx.beginPath();
+                ctx.arc(requiredX, requiredY, Math.max(5, w * 0.055), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            if (hasUserLocation) {
+                drawCanvasEmployeeLocationMarker(ctx, userX, userY, Math.max(16, w * 0.18));
+            }
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+            ctx.lineWidth = Math.max(1, Math.round(w * 0.012));
+            ctx.strokeRect(x, y, w, h);
+            ctx.restore();
+        }
+
+        function lonToTileX(lon, zoom) {
+            return ((Number(lon) + 180) / 360) * Math.pow(2, zoom);
+        }
+
+        function latToTileY(lat, zoom) {
+            const latRad = Number(lat) * Math.PI / 180;
+            return ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * Math.pow(2, zoom);
+        }
+
+        async function loadMapTile(url) {
+            return new Promise(function (resolve) {
+                const img = new Image();
+                let settled = false;
+                const finish = function (tile) {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    clearTimeout(timeoutId);
+                    resolve(tile);
+                };
+                const timeoutId = setTimeout(function () { finish(null); }, 3500);
+                img.crossOrigin = 'anonymous';
+                img.onload = function () { finish(img); };
+                img.onerror = function () { finish(null); };
+                img.src = url;
+            });
+        }
+
+        async function drawSavedSelfieMapTiles(ctx, x, y, w, h) {
+            const hasUserLocation = latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined;
+            if (!hasUserLocation) {
+                return false;
+            }
+
+            const tileSize = 256;
+            const zoom = 16;
+            const centerTileX = lonToTileX(longitude, zoom);
+            const centerTileY = latToTileY(latitude, zoom);
+            const startPixelX = centerTileX * tileSize - w / 2;
+            const startPixelY = centerTileY * tileSize - h / 2;
+            const startTileX = Math.floor(startPixelX / tileSize);
+            const startTileY = Math.floor(startPixelY / tileSize);
+            const endTileX = Math.floor((startPixelX + w) / tileSize);
+            const endTileY = Math.floor((startPixelY + h) / tileSize);
+            const maxTile = Math.pow(2, zoom);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.clip();
+            ctx.fillStyle = '#d3f7dd';
+            ctx.fillRect(x, y, w, h);
+
+            let loadedAnyTile = false;
+            for (let ty = startTileY; ty <= endTileY; ty++) {
+                if (ty < 0 || ty >= maxTile) {
+                    continue;
+                }
+                for (let tx = startTileX; tx <= endTileX; tx++) {
+                    const wrappedX = ((tx % maxTile) + maxTile) % maxTile;
+                    const tileUrl = `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${ty}.png`;
+                    const tile = await loadMapTile(tileUrl);
+                    if (!tile) {
+                        ctx.restore();
+                        return false;
+                    }
+                    const drawX = x + tx * tileSize - startPixelX;
+                    const drawY = y + ty * tileSize - startPixelY;
+                    ctx.drawImage(tile, drawX, drawY, tileSize, tileSize);
+                    loadedAnyTile = true;
+                }
+            }
+
+            ctx.restore();
+            if (!loadedAnyTile) {
+                return false;
+            }
+
+            drawSavedSelfieMapMarkers(ctx, x, y, w, h, startPixelX, startPixelY, zoom);
+            return true;
+        }
+
+        function drawSavedSelfieMapMarkers(ctx, x, y, w, h, startPixelX, startPixelY, zoom) {
+            const geo = selectedEmployee && selectedEmployee.geo_fence;
+            const geoCenterLat = geo ? Number(geo.geo_center_lat) : null;
+            const geoCenterLng = geo ? Number(geo.geo_center_lng) : null;
+            const geoRadius = geo ? Number(geo.geo_radius_meters) : null;
+            const hasGeo = !!geo && Number.isFinite(geoCenterLat) && Number.isFinite(geoCenterLng) && Number.isFinite(geoRadius);
+            const tileSize = 256;
+
+            function projectPoint(lat, lon) {
+                return {
+                    x: x + lonToTileX(lon, zoom) * tileSize - startPixelX,
+                    y: y + latToTileY(lat, zoom) * tileSize - startPixelY,
+                };
+            }
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.clip();
+
+            if (hasGeo) {
+                const center = projectPoint(geoCenterLat, geoCenterLng);
+                const metersPerPixel = 156543.03392 * Math.cos(geoCenterLat * Math.PI / 180) / Math.pow(2, zoom);
+                const radiusPx = Math.max(4, geoRadius / Math.max(1, metersPerPixel));
+                ctx.fillStyle = 'rgba(40, 167, 69, 0.16)';
+                ctx.strokeStyle = '#28a745';
+                ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
+                ctx.beginPath();
+                ctx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#28a745';
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
+                ctx.beginPath();
+                ctx.arc(center.x, center.y, Math.max(5, w * 0.055), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            const user = projectPoint(latitude, longitude);
+            drawCanvasEmployeeLocationMarker(ctx, user.x, user.y, Math.max(16, w * 0.18));
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+            ctx.lineWidth = Math.max(1, Math.round(w * 0.012));
+            ctx.strokeRect(x, y, w, h);
+            ctx.restore();
+        }
+
+        // Burn employee card + location + timestamp onto the saved selfie canvas.
+        async function stampEmployeeCardOnCanvas(canvas, ctx, address) {
             const now = new Date(Date.now() + serverTimeOffset);
             const timestamp = now.toLocaleString([], {
                 year: 'numeric', month: 'short', day: '2-digit',
@@ -2011,16 +2437,34 @@
                 timeZone: SERVER_TZ
             });
 
-            const coordLine = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-            const padding = 10;
-            const fontSize = Math.max(14, Math.round(canvas.width / 40));
-            const lineH = fontSize + 6;
-            const maxWidth = canvas.width - padding * 2;
+            const coordLine = `Lat: ${latitude.toFixed(6)}, Long: ${longitude.toFixed(6)}`;
+            const employeeName = selectedEmployee && selectedEmployee.name ? selectedEmployee.name : '';
+            const metaParts = [];
+            if (selectedEmployee && selectedEmployee.badge) {
+                metaParts.push(`#${selectedEmployee.badge}`);
+            }
+            if (selectedEmployee && selectedEmployee.branch) {
+                metaParts.push(selectedEmployee.branch);
+            }
+            const employeeMeta = metaParts.join(' | ');
 
-            ctx.font = `${fontSize}px Arial, sans-serif`;
+            const outerPadding = Math.max(10, Math.round(canvas.width * 0.022));
+            const cardPadding = Math.max(8, Math.round(canvas.width * 0.018));
+            const overlayW = canvas.width - (outerPadding * 2);
+            const mapW = Math.max(54, Math.round(canvas.width * 0.16));
+            const employeeW = overlayW - mapW;
+            const avatarSize = Math.max(28, Math.round(canvas.width * 0.068));
+            const lineGap = Math.max(3, Math.round(canvas.width * 0.005));
+            const contentGap = Math.max(5, Math.round(canvas.width * 0.008));
+            const titleFont = Math.max(12, Math.round(canvas.width * 0.024));
+            const metaFont = Math.max(10, Math.round(canvas.width * 0.019));
+            const bodyFont = Math.max(10, Math.round(canvas.width * 0.018));
+            const employeeTextXOffset = cardPadding + avatarSize + contentGap;
+            const textW = employeeW - employeeTextXOffset - cardPadding;
+
             ctx.textBaseline = 'top';
 
-            function splitLongToken(token) {
+            function splitLongToken(token, maxWidth) {
                 const chunks = [];
                 let currentChunk = '';
 
@@ -2041,10 +2485,10 @@
                 return chunks;
             }
 
-            function wrapLine(lineText) {
+            function wrapLine(lineText, maxWidth) {
                 const cleanText = (lineText || '').toString().trim();
                 if (!cleanText) {
-                    return [''];
+                    return [];
                 }
 
                 const words = cleanText.split(/\s+/);
@@ -2061,7 +2505,7 @@
                             wrapped.push(currentLine);
                             currentLine = '';
                         }
-                        splitLongToken(word).forEach(function (chunk) {
+                        splitLongToken(word, maxWidth).forEach(function (chunk) {
                             wrapped.push(chunk);
                         });
                         return;
@@ -2082,28 +2526,94 @@
                     wrapped.push(currentLine);
                 }
 
-                return wrapped.length ? wrapped : [''];
+                return wrapped;
             }
 
-            const addressRows = wrapLine(address);
-            const coordRows = wrapLine(coordLine);
-            const timestampRows = wrapLine(timestamp);
-            const allRows = [...addressRows, ...coordRows, ...timestampRows];
+            function rowsHeight(rows, fontSize) {
+                return rows.length * (fontSize + lineGap);
+            }
 
-            const boxH = lineH * allRows.length + padding * 2;
-            const boxY = Math.max(0, canvas.height - boxH);
+            ctx.font = `600 ${titleFont}px Arial, sans-serif`;
+            const nameRows = wrapLine(employeeName, textW).slice(0, 2);
+            ctx.font = `500 ${metaFont}px Arial, sans-serif`;
+            const metaRows = wrapLine(employeeMeta, textW).slice(0, 2);
+            ctx.font = `500 ${bodyFont}px Arial, sans-serif`;
+            const bodyMaxW = employeeW - (cardPadding * 2);
+            const bodyRows = [
+                ...wrapLine(address, bodyMaxW).slice(0, 3),
+                ...wrapLine(coordLine, bodyMaxW),
+                ...wrapLine(timestamp, bodyMaxW),
+            ];
 
-            // Semi-transparent dark banner at the bottom
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
-            ctx.fillRect(0, boxY, canvas.width, boxH);
+            const headerTextH = rowsHeight(nameRows, titleFont) + rowsHeight(metaRows, metaFont);
+            const profileH = Math.max(avatarSize, headerTextH);
+            const employeeH = cardPadding * 2 + profileH + contentGap + rowsHeight(bodyRows, bodyFont);
+            const mapH = employeeH;
+            const overlayH = employeeH;
+            const overlayY = Math.max(0, canvas.height - overlayH - outerPadding);
+            const mapX = outerPadding;
+            const mapY = overlayY;
+            const employeeX = mapX + mapW;
+            const employeeY = overlayY;
 
+            ctx.save();
+            const renderedTiles = await drawSavedSelfieMapTiles(ctx, mapX, mapY, mapW, mapH);
+            if (!renderedTiles) {
+                drawSavedSelfieMap(ctx, mapX, mapY, mapW, mapH);
+            }
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+            ctx.fillRect(employeeX, employeeY, employeeW, employeeH);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+            ctx.lineWidth = Math.max(1, Math.round(canvas.width * 0.002));
+            ctx.strokeRect(employeeX, employeeY, employeeW, employeeH);
+
+            const avatar = await loadCanvasImage(selectedEmployee && selectedEmployee.avatar);
+            const avatarX = employeeX + cardPadding;
+            const avatarY = employeeY + cardPadding;
+            ctx.fillStyle = '#222';
+            ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize);
+            if (avatar) {
+                try {
+                    ctx.drawImage(avatar, avatarX, avatarY, avatarSize, avatarSize);
+                } catch (e) {
+                    // Keep fallback square if avatar drawing is blocked by the browser.
+                }
+            }
+            ctx.strokeStyle = '#ff3b30';
+            ctx.lineWidth = Math.max(2, Math.round(canvas.width * 0.004));
+            ctx.strokeRect(avatarX, avatarY, avatarSize, avatarSize);
+
+            const textX = employeeX + employeeTextXOffset;
+            let y = employeeY + cardPadding;
             ctx.fillStyle = '#ffffff';
-
-            let y = boxY + padding;
-            allRows.forEach(function (row) {
-                ctx.fillText(row, padding, y);
-                y += lineH;
+            ctx.font = `600 ${titleFont}px Arial, sans-serif`;
+            nameRows.forEach(function (row) {
+                ctx.fillText(row, textX, y);
+                y += titleFont + lineGap;
             });
+
+            ctx.fillStyle = '#d7d7d7';
+            ctx.font = `500 ${metaFont}px Arial, sans-serif`;
+            metaRows.forEach(function (row) {
+                ctx.fillText(row, textX, y);
+                y += metaFont + lineGap;
+            });
+
+            y = employeeY + cardPadding + profileH + contentGap;
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `500 ${bodyFont}px Arial, sans-serif`;
+            bodyRows.forEach(function (row) {
+                ctx.fillText(row, employeeX + cardPadding, y);
+                y += bodyFont + lineGap;
+            });
+
+            ctx.restore();
+        }
+
+        // Backward-compatible wrapper for legacy callers.
+        async function stampLocationOnCanvas(canvas, ctx, address) {
+            await stampEmployeeCardOnCanvas(canvas, ctx, address);
         }
 
         // Update location overlay on photo
@@ -2215,62 +2725,59 @@
             }
         }
 
-        // Show live location map in the clock step before clock-in/out is attempted
-        function initClockPreviewMap() {
-            if (!latitude || !longitude) return;
-
+        // Show live location/geofence map in the clock step before clock-in/out is attempted.
+        function initClockPreviewMap(options = {}) {
             const $map = $('#clock-preview-map');
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
 
-            if (isMobilePortalView()) {
-                $map.hide();
+            const geo = selectedEmployee && selectedEmployee.geo_fence;
+            const geoCenterLat = geo ? Number(geo.geo_center_lat) : null;
+            const geoCenterLng = geo ? Number(geo.geo_center_lng) : null;
+            const geoRadius = geo ? Number(geo.geo_radius_meters) : null;
+            const hasGeo = !!geo && Number.isFinite(geoCenterLat) && Number.isFinite(geoCenterLng) && Number.isFinite(geoRadius);
+            const hasUserLocation = latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined;
+
+            if (!hasGeo && !hasUserLocation) {
+                if (options.allowPlaceholder || isMobilePortalView()) {
+                    $map.addClass('is-placeholder').show();
+                } else {
+                    $map.removeClass('is-placeholder').hide();
+                }
                 return;
             }
 
-            $map.show();
+            $map.removeClass('is-placeholder').show();
 
             setTimeout(function () {
                 clockPreviewMap = L.map('clock-preview-map', { zoomControl: false, attributionControl: false });
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(clockPreviewMap);
 
-                const userPos = [latitude, longitude];
-                const geo = selectedEmployee && selectedEmployee.geo_fence;
-
-                let isInside = true;
-                if (geo) {
-                    const R = 6371000;
-                    const p1 = latitude * Math.PI / 180, p2 = geo.geo_center_lat * Math.PI / 180;
-                    const dp = (geo.geo_center_lat - latitude) * Math.PI / 180;
-                    const dl = (geo.geo_center_lng - longitude) * Math.PI / 180;
-                    const a = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
-                    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                    isInside = dist <= geo.geo_radius_meters;
-                }
-
-                const userColor = isInside ? '#007bff' : '#007bff';
-
+                const userPos = hasUserLocation ? [latitude, longitude] : null;
                 let bounds = null;
-                if (geo) {
-                    const center = [geo.geo_center_lat, geo.geo_center_lng];
-                    L.circle(center, {
-                        radius: geo.geo_radius_meters,
+
+                if (hasGeo) {
+                    const center = [geoCenterLat, geoCenterLng];
+                    const circle = L.circle(center, {
+                        radius: geoRadius,
                         color: '#28a745', fillColor: '#28a745', fillOpacity: 0.15, weight: 2
                     }).addTo(clockPreviewMap);
                     L.marker(center, { icon: L.divIcon({
                         html: '<div style="width:12px;height:12px;border-radius:50%;background:#28a745;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);"></div>',
                         className: '', iconSize: [12,12], iconAnchor: [6,6]
                     })}).addTo(clockPreviewMap).bindPopup('<b>{% trans "Required Location" %}</b>');
-                    bounds = L.latLngBounds([center, userPos]).pad(0.3);
+                    bounds = hasUserLocation ? L.latLngBounds([center, userPos]).pad(0.3) : circle.getBounds().pad(0.15);
                 }
 
-                L.marker(userPos, { icon: L.divIcon({
-                    html: `<div style="width:14px;height:14px;border-radius:50%;background:${userColor};border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);"></div>`,
-                    className: '', iconSize: [14,14], iconAnchor: [7,7]
-                })}).addTo(clockPreviewMap).bindPopup('<b>{% trans "Your Location" %}</b>').openPopup();
+                if (hasUserLocation) {
+                    L.marker(userPos, { icon: L.divIcon({
+                        html: employeeLocationMarkerHtml(18),
+                        className: '', iconSize: [18, 18], iconAnchor: [9, 18]
+                    })}).addTo(clockPreviewMap).bindPopup('<b>{% trans "Your Location" %}</b>').openPopup();
+                }
 
                 if (bounds) {
                     clockPreviewMap.fitBounds(bounds);
-                } else {
+                } else if (hasUserLocation) {
                     clockPreviewMap.setView(userPos, 16);
                 }
             }, 150);
@@ -2279,7 +2786,7 @@
         // Show geo fence violation overlay immediately on the clock step
         function showGeofenceError(data) {
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
-            $('#clock-preview-map').hide();
+            $('#clock-preview-map').removeClass('is-placeholder').hide();
 
             $('#geofence-error-text').text(data.message || '{% trans "You are outside the allowed location." %}');
             $('#geofence-error-distance').text(
@@ -2309,8 +2816,8 @@
                 })}).addTo(geofenceMap).bindPopup('<b>{% trans "Required Location" %}</b>');
 
                 L.marker(userPos, { icon: L.divIcon({
-                    html: '<div style="width:14px;height:14px;border-radius:50%;background:#007bff;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.4);"></div>',
-                    className: '', iconSize: [14, 14], iconAnchor: [7, 7]
+                    html: employeeLocationMarkerHtml(18),
+                    className: '', iconSize: [18, 18], iconAnchor: [9, 18]
                 })}).addTo(geofenceMap).bindPopup('<b>{% trans "Your Location" %}</b>').openPopup();
 
                 geofenceMap.fitBounds(L.latLngBounds([center, userPos]).pad(0.4));
@@ -2383,8 +2890,9 @@
         // Reset form
         function resetForm() {
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
-            $('#clock-preview-map').hide();
+            $('#clock-preview-map').removeClass('is-placeholder').hide();
             $('#employee-branch').hide().text('');
+            $('#mobile-employee-meta').text('');
             selectedEmployee = null;
             employeeDataById = {};
             capturedAddress = null;
@@ -2398,6 +2906,8 @@
             setPinMessage('{% trans "Use the keypad to enter PIN." %}');
             updatePinUi();
             $('#employee-info').css('display', 'none');
+            setPortalLocationText('{% trans "Getting location..." %}');
+            setPortalCoordinatesText(null, null);
             $('#video-preview').css('display', 'none');
             $('#captured-photo').css('display', 'none');
             $('#location-overlay').css('display', 'none');
