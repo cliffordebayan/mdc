@@ -28,6 +28,8 @@ from attendance.models import (
 )
 from attendance.views.views import (
     build_my_attendance_activity_meta,
+    build_daily_activity_rows,
+    group_daily_activity_rows,
     paginator_qry,
     strtime_seconds,
 )
@@ -237,23 +239,34 @@ def attendance_activity_search(request):
     attendance_activities = attendance_activities.distinct()
     template = "attendance/attendance_activity/activity_list.html"
     attendance_activities = sortby(request, attendance_activities, "orderby")
+    daily_activity_rows = build_daily_activity_rows(attendance_activities)
     if field != "" and field is not None:
-        attendance_activities = group_by_queryset(
-            attendance_activities, field, request.GET.get("page"), "page"
+        attendance_activities = group_daily_activity_rows(
+            daily_activity_rows, field, request
         )
-        list_values = [entry["list"] for entry in attendance_activities]
-        id_list = []
-        for value in list_values:
-            for instance in value.object_list:
-                id_list.append(instance.id)
-        activity_ids = json.dumps(list(id_list))
+        activity_ids = json.dumps(
+            sorted(
+                {
+                    activity_id
+                    for group in attendance_activities.object_list
+                    for row in group["list"].object_list
+                    for activity_id in row.activity_ids
+                }
+            )
+        )
         template = "attendance/attendance_activity/group_by.html"
     else:
         attendance_activities = paginator_qry(
-            attendance_activities, request.GET.get("page")
+            daily_activity_rows, request.GET.get("page")
         )
         activity_ids = json.dumps(
-            [instance.id for instance in paginator_qry(attendance_activities, None)]
+            sorted(
+                {
+                    activity_id
+                    for row in daily_activity_rows
+                    for activity_id in row.activity_ids
+                }
+            )
         )
     data_dict = parse_qs(previous_data)
     get_key_instances(AttendanceActivity, data_dict)

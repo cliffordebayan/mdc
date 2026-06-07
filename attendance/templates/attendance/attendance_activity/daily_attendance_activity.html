@@ -1,0 +1,110 @@
+{% load static %} {% load i18n %} {% load basefilters %}
+{% if messages %}
+    <div class="oh-wrapper">
+        {% for message in messages %}
+        <div class="oh-alert-container">
+            <div class="oh-alert oh-alert--animated {{message.tags}}">
+                {{ message }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <span class="oh-span__class" hx-trigger="load" hx-get="{% url 'attendance-activity-search' %}?{{pd}}"
+        hx-target="#activity-table"></span>
+{% endif %}
+{% if row %}
+    <div class="oh-modal__dialog-header">
+        <h2 class="oh-modal__dialog-title m-0" id="addEmployeeModalLabel">
+            {% trans "Details" %}
+        </h2>
+        <button class="oh-modal__close" aria-label="Close">
+            <ion-icon name="close-outline"></ion-icon>
+        </button>
+    </div>
+    <div class="oh-modal__dialog-body oh-modal__dialog-relative">
+        <a class="oh-timeoff-modal__profile-content" style="text-decoration: none"
+            href="{% url 'employee-view-individual' row.employee.id %}">
+            <div class="oh-profile mb-2">
+                <div class="oh-profile__avatar">
+                    <img src="{{row.employee.get_avatar}}" class="oh-profile__image me-2" alt="" />
+                </div>
+                <div class="oh-timeoff-modal__profile-info">
+                    <span class="oh-timeoff-modal__user fw-bold">{{row.employee}}</span>
+                    <span class="oh-timeoff-modal__user m-0" style="font-size: 18px; color: #4d4a4a">
+                        {{row.employee.employee_work_info.department_id}} /
+                        {{row.employee.employee_work_info.job_position_id}}</span>
+                </div>
+            </div>
+        </a>
+
+        <div class="oh-modal__dialog-header pt-0">
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Attendance Date" %}</span>
+                    <span class="oh-timeoff-modal__stat-count dateformat_changer">{{row.attendance_date}}</span>
+                </div>
+                <div class="oh-timeoff-modal__stat" style="margin-left: 20px">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Day" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{row.shift_day}}</span>
+                </div>
+            </div>
+
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Shift" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{row.shift|default:"&mdash;"}}</span>
+                </div>
+                <div class="oh-timeoff-modal__stat" style="margin-left: 20px">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Work Type" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{row.work_type|default:"&mdash;"}}</span>
+                </div>
+            </div>
+
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Work Hours" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{row.work_hours|default:"&mdash;"}}</span>
+                </div>
+                <div class="oh-timeoff-modal__stat" style="margin-left: 20px">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Pending Hour" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{row.pending_hour|default:"&mdash;"}}</span>
+                </div>
+            </div>
+
+            <h5 class="mt-4 mb-2">{% trans "Work" %}</h5>
+            {% for segment in row.work_segments %}
+                {% include 'attendance/attendance_activity/daily_activity_segment_detail.html' with segment=segment title='Work' %}
+            {% empty %}
+                <p class="oh-text--light">&mdash;</p>
+            {% endfor %}
+
+            <h5 class="mt-4 mb-2">{% trans "Break" %}</h5>
+            {% for segment in row.break_segments %}
+                {% include 'attendance/attendance_activity/daily_activity_segment_detail.html' with segment=segment title='Break' %}
+            {% empty %}
+                <p class="oh-text--light">&mdash;</p>
+            {% endfor %}
+
+            <h5 class="mt-4 mb-2">{% trans "Lunch" %}</h5>
+            {% for segment in row.lunch_segments %}
+                {% include 'attendance/attendance_activity/daily_activity_segment_detail.html' with segment=segment title='Lunch' %}
+            {% empty %}
+                <p class="oh-text--light">&mdash;</p>
+            {% endfor %}
+        </div>
+    </div>
+{% else %}
+    <div class="oh-modal__dialog-header">
+        <span class="oh-modal__dialog-title" style="margin-left: 30px"></span>
+        <button class="oh-modal__close" aria-label="Close">
+            <ion-icon name="close-outline"></ion-icon>
+        </button>
+    </div>
+    <div class="oh-modal__dialog-body oh-modal__dialog-relative">
+        <img style="margin-left: 33%; width: 150px; height: 150px" src="{% static 'images/ui/present.png' %}"
+            class="oh-404__image mb-2" alt="Page not found. 404." />
+        <h5 class="oh-404__subtitle">
+            {% trans "There are no attendance records to display." %}
+        </h5>
+    </div>
+{% endif %}

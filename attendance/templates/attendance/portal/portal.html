@@ -282,6 +282,28 @@
             margin-top: 4px;
         }
 
+        .pin-forgot-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            width: 100%;
+            margin: 0 0 10px;
+            color: #475569;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .pin-forgot-link:hover {
+            color: #2563eb;
+            text-decoration: none;
+        }
+
+        .pin-forgot-link ion-icon {
+            font-size: 16px;
+        }
+
         .pin-keypad .pin-util-btn {
             height: 50px;
             border: 1px solid #d9dee8;
@@ -314,6 +336,359 @@
         }
 
         /* ── Fullscreen clock step ── */
+        .selection-fullscreen {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            background: #f8f9fa;
+            padding: 24px 14px;
+            overflow-y: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .selection-card {
+            border: 1px solid #dbe4f4;
+            background: #ffffff;
+            padding: 22px;
+            width: 100%;
+            max-width: 520px;
+            margin: 0 auto;
+            box-shadow: rgba(0, 0, 0, 0.1) 0px 1px 3px 0px, rgba(0, 0, 0, 0.06) 0px 1px 2px 0px;
+        }
+
+        .selection-title {
+            text-align: center;
+            color: #334155;
+            font-weight: 700;
+            margin-bottom: 16px;
+            font-size: 18px;
+        }
+
+        .selection-employee-summary {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .selection-employee-summary img {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #e0e0e0;
+            background: #e0e0e0;
+            flex-shrink: 0;
+        }
+
+        .selection-employee-summary h4 {
+            margin: 0;
+            font-size: 16px;
+            color: #1f2937;
+        }
+
+        .selection-employee-summary p {
+            margin: 2px 0 0;
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .selection-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .selection-option {
+            min-height: 106px;
+            border: 1px solid #d9dee8;
+            border-radius: 8px;
+            background: #f8fafc;
+            color: #1f2937;
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 7px;
+            text-align: left;
+            cursor: pointer;
+            transition: background-color .12s, border-color .12s, transform .08s;
+        }
+
+        .selection-option:hover:not(:disabled) {
+            background: #edf7ff;
+            border-color: #9cc9ff;
+        }
+
+        .selection-option:active:not(:disabled) {
+            transform: scale(.99);
+        }
+
+        .selection-option:disabled,
+        .selection-option.is-disabled {
+            cursor: not-allowed;
+            opacity: .58;
+            background: #f3f4f6;
+        }
+
+        .selection-option ion-icon {
+            font-size: 24px;
+            color: #2563eb;
+        }
+
+        .selection-option strong {
+            font-size: 15px;
+            color: #111827;
+        }
+
+        .selection-option span {
+            font-size: 12px;
+            color: #6b7280;
+            line-height: 1.25;
+        }
+
+        .selection-option.btn-clock-in-option ion-icon {
+            color: #16a34a;
+        }
+
+        .selection-option.btn-clock-out-option ion-icon {
+            color: #dc2626;
+        }
+
+        .attendance-status-strip {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 6px;
+            margin: 0 0 12px;
+            padding: 2px 0 8px;
+            border-bottom: 1px solid #edf0f5;
+        }
+
+        .attendance-status-item {
+            min-width: 0;
+            text-align: center;
+            color: #4b5563;
+        }
+
+        .attendance-status-icon {
+            width: 30px;
+            height: 30px;
+            margin: 0 auto 2px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #25324a;
+        }
+
+        .attendance-status-icon ion-icon {
+            font-size: 22px;
+        }
+
+        .attendance-status-value {
+            display: block;
+            min-height: 16px;
+            font-size: 12px;
+            line-height: 1.15;
+            font-weight: 700;
+            color: #111827;
+            white-space: nowrap;
+        }
+
+        .attendance-status-label {
+            display: block;
+            margin-top: 1px;
+            font-size: 9.5px;
+            line-height: 1.2;
+            color: #6b7280;
+            white-space: nowrap;
+        }
+
+        .attendance-history-btn {
+            width: 100%;
+            min-height: 44px;
+            margin: 0 0 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            font-weight: 700;
+        }
+
+        .attendance-history-swal {
+            width: min(98vw, 760px) !important;
+            max-height: min(94vh, 760px);
+        }
+
+        .attendance-history-swal .swal2-close {
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            top: 18px;
+            right: 18px;
+            width: 34px;
+            height: 34px;
+            border: 0 !important;
+            border-radius: 50%;
+            outline: 0 !important;
+            box-shadow: none !important;
+            background: #f3f4f6;
+            color: #6b7280;
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .attendance-history-swal .swal2-close:hover {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .attendance-history-swal .swal2-close:focus,
+        .attendance-history-swal .swal2-close:focus-visible {
+            border: 0 !important;
+            outline: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .attendance-history-swal-html {
+            display: flex !important;
+            flex-direction: column;
+            width: 100% !important;
+            max-height: min(78vh, 620px);
+            overflow: hidden !important;
+            margin: 0 0 1em !important;
+        }
+
+        .attendance-history-swal .swal2-content,
+        .attendance-history-swal .swal2-html-container {
+            width: 100% !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        .attendance-history-modal {
+            height: min(60vh, 500px);
+            min-height: 0;
+            max-height: min(60vh, 500px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            padding: 2px 4px 8px;
+        }
+
+        .attendance-history-filters {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 12px;
+            flex: 0 0 auto;
+        }
+
+        .attendance-history-filter {
+            min-width: 0;
+            text-align: left;
+        }
+
+        .attendance-history-filter label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #6b7280;
+        }
+
+        .attendance-history-filter input {
+            width: 100%;
+            min-height: 42px;
+            border: 1px solid #d9dee8;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 14px;
+        }
+
+        .attendance-history-filter-btn {
+            min-height: 42px;
+            width: 46px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .attendance-history-row {
+            border: 1px solid #e5eaf2;
+            border-radius: 8px;
+            padding: 10px 9px 9px;
+            margin-bottom: 9px;
+            background: #ffffff;
+        }
+
+        .attendance-history-date {
+            margin: 0 0 7px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .attendance-history-row .attendance-status-strip {
+            margin: 0;
+            padding: 0;
+            border-bottom: 0;
+            gap: 4px;
+        }
+
+        .attendance-history-row .attendance-status-icon {
+            width: 24px;
+            height: 24px;
+            margin-bottom: 1px;
+        }
+
+        .attendance-history-row .attendance-status-icon ion-icon {
+            font-size: 18px;
+        }
+
+        .attendance-history-row .attendance-status-value {
+            min-height: 14px;
+            font-size: 11px;
+        }
+
+        .attendance-history-row .attendance-status-label {
+            margin-top: 1px;
+            font-size: 8.5px;
+        }
+
+        .attendance-history-empty {
+            margin: 10px 0 4px;
+            padding: 18px 12px;
+            border: 1px solid #e5eaf2;
+            border-radius: 8px;
+            background: #f8fafc;
+            text-align: center;
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        .attendance-history-loading {
+            margin: 10px 0 4px;
+            padding: 18px 12px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        .selection-back-btn {
+            width: 100%;
+            margin-top: 4px;
+        }
+
         .clock-fullscreen {
             position: fixed;
             top: 0;
@@ -1336,6 +1711,11 @@
                                 <button type="button" class="pin-util-btn" id="pin-backspace-btn"><ion-icon name="backspace-outline"></ion-icon></button>
                             </div>
 
+                            <a href="{% url 'portal-forgot-pin' %}" class="pin-forgot-link">
+                                <ion-icon name="key-outline"></ion-icon>
+                                {% trans "Forgot PIN?" %}
+                            </a>
+
                             <button type="button" class="btn-back" id="pin-back-btn" style="width:100%;">
                                 <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
                                 {% trans "Back to Search" %}
@@ -1344,7 +1724,142 @@
                     </div>
                 </div>
 
-                <!-- Step 3: Fullscreen Clock In/Out -->
+                <!-- Step 3: Service Selection -->
+                <div class="self-service-step" id="step-service-menu">
+                    <div class="selection-fullscreen">
+                        <div class="selection-card">
+                            <p class="selection-title">{% trans "Select Service" %}</p>
+                            <div class="selection-employee-summary">
+                                <img id="service-employee-avatar" src="" alt="Avatar" />
+                                <div>
+                                    <h4 id="service-employee-name"></h4>
+                                    <p id="service-employee-meta"></p>
+                                </div>
+                            </div>
+
+                            <div class="selection-grid">
+                                <button type="button" class="selection-option" id="service-attendance-btn">
+                                    <ion-icon name="time-outline"></ion-icon>
+                                    <strong>{% trans "Attendance" %}</strong>
+                                    <span>{% trans "Clock in, breaks, lunch, or clock out." %}</span>
+                                </button>
+                                <button type="button" class="selection-option is-disabled" disabled aria-disabled="true">
+                                    <ion-icon name="person-circle-outline"></ion-icon>
+                                    <strong>{% trans "Personal Info" %}</strong>
+                                    <span>{% trans "Coming soon" %}</span>
+                                </button>
+                                <button type="button" class="selection-option is-disabled" disabled aria-disabled="true">
+                                    <ion-icon name="calendar-outline"></ion-icon>
+                                    <strong>{% trans "Leave" %}</strong>
+                                    <span>{% trans "Coming soon" %}</span>
+                                </button>
+                                <button type="button" class="selection-option is-disabled" disabled aria-disabled="true">
+                                    <ion-icon name="document-text-outline"></ion-icon>
+                                    <strong>{% trans "Request" %}</strong>
+                                    <span>{% trans "Coming soon" %}</span>
+                                </button>
+                                <button type="button" class="selection-option is-disabled" disabled aria-disabled="true">
+                                    <ion-icon name="help-circle-outline"></ion-icon>
+                                    <strong>{% trans "Helpdesk" %}</strong>
+                                    <span>{% trans "Coming soon" %}</span>
+                                </button>
+                            </div>
+
+                            <button type="button" class="btn-back selection-back-btn" id="service-back-btn">
+                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                {% trans "Back to PIN" %}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Attendance Action Selection -->
+                <div class="self-service-step" id="step-attendance-actions">
+                    <div class="selection-fullscreen">
+                        <div class="selection-card">
+                            <p class="selection-title">{% trans "Select Attendance" %}</p>
+                            <div class="selection-employee-summary">
+                                <img id="attendance-employee-avatar" src="" alt="Avatar" />
+                                <div>
+                                    <h4 id="attendance-employee-name"></h4>
+                                    <p id="attendance-employee-meta"></p>
+                                </div>
+                            </div>
+
+                            <div class="attendance-status-strip" aria-label="{% trans 'Attendance summary' %}">
+                                <div class="attendance-status-item">
+                                    <span class="attendance-status-icon">
+                                        <ion-icon name="time-outline"></ion-icon>
+                                    </span>
+                                    <strong class="attendance-status-value" id="attendance-summary-clock-in">--:--</strong>
+                                    <span class="attendance-status-label">{% trans "Clock In" %}</span>
+                                </div>
+                                <div class="attendance-status-item">
+                                    <span class="attendance-status-icon">
+                                        <ion-icon name="log-out-outline"></ion-icon>
+                                    </span>
+                                    <strong class="attendance-status-value" id="attendance-summary-clock-out">--:--</strong>
+                                    <span class="attendance-status-label">{% trans "Clock Out" %}</span>
+                                </div>
+                                <div class="attendance-status-item">
+                                    <span class="attendance-status-icon">
+                                        <ion-icon name="checkmark-circle-outline"></ion-icon>
+                                    </span>
+                                    <strong class="attendance-status-value" id="attendance-summary-working-hours">--:--</strong>
+                                    <span class="attendance-status-label">{% trans "Working Hrs" %}</span>
+                                </div>
+                                <div class="attendance-status-item">
+                                    <span class="attendance-status-icon">
+                                        <ion-icon name="pause-circle-outline"></ion-icon>
+                                    </span>
+                                    <strong class="attendance-status-value" id="attendance-summary-breaks">--:--</strong>
+                                    <span class="attendance-status-label">{% trans "Breaks" %}</span>
+                                </div>
+                                <div class="attendance-status-item">
+                                    <span class="attendance-status-icon">
+                                        <ion-icon name="restaurant-outline"></ion-icon>
+                                    </span>
+                                    <strong class="attendance-status-value" id="attendance-summary-lunch">--:--</strong>
+                                    <span class="attendance-status-label">{% trans "Lunch" %}</span>
+                                </div>
+                            </div>
+
+                            <div class="selection-grid">
+                                <button type="button" class="selection-option btn-clock-in-option" id="attendance-clock-in-option" data-attendance-action="clock_in">
+                                    <ion-icon name="log-in-outline"></ion-icon>
+                                    <strong>{% trans "Clock In" %}</strong>
+                                    <span id="attendance-clock-in-note"></span>
+                                </button>
+                                <button type="button" class="selection-option" id="attendance-break-option" data-attendance-action="break_start">
+                                    <ion-icon name="pause-circle-outline"></ion-icon>
+                                    <strong id="attendance-break-title">{% trans "Break" %}</strong>
+                                    <span id="attendance-break-note"></span>
+                                </button>
+                                <button type="button" class="selection-option" id="attendance-lunch-option" data-attendance-action="lunch_start">
+                                    <ion-icon name="restaurant-outline"></ion-icon>
+                                    <strong id="attendance-lunch-title">{% trans "Lunch" %}</strong>
+                                    <span id="attendance-lunch-note"></span>
+                                </button>
+                                <button type="button" class="selection-option btn-clock-out-option" id="attendance-clock-out-option" data-attendance-action="clock_out">
+                                    <ion-icon name="log-out-outline"></ion-icon>
+                                    <strong>{% trans "Clock Out" %}</strong>
+                                    <span id="attendance-clock-out-note"></span>
+                                </button>
+                            </div>
+
+                            <button type="button" class="oh-btn oh-btn--secondary attendance-history-btn" id="attendance-history-btn">
+                                <ion-icon name="list-outline"></ion-icon>
+                                {% trans "View Attendance" %}
+                            </button>
+                            <button type="button" class="btn-back selection-back-btn" id="attendance-back-btn">
+                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                {% trans "Back to Services" %}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 5: Fullscreen Clock In/Out -->
                 <div class="self-service-step" id="step-clock">
                     <div class="clock-fullscreen">
                         <div class="clock-scroll-inner">
@@ -1431,6 +1946,10 @@
                                         <ion-icon name="log-out-outline"></ion-icon>
                                         {% trans "Clock Out" %}
                                     </button>
+                                    <button type="button" class="btn-clock-in" id="activity-transition-btn" style="display:none;">
+                                        <ion-icon name="pause-circle-outline"></ion-icon>
+                                        <span id="activity-transition-label">{% trans "Start Break" %}</span>
+                                    </button>
                                 </div>
                                 <!-- Back -->
                                 <button type="button" class="btn-back" id="back-btn" style="width:100%; max-width:320px;">
@@ -1465,7 +1984,7 @@
                     </div>
                 </div>
 
-                <!-- Step 4: Confirmation -->
+                <!-- Step 6: Confirmation -->
                 <div class="self-service-step" id="step-confirmation">
                     <div id="confirmation-content"></div>
                     <button type="button" class="oh-btn oh-btn--secondary w-100 mt-3" id="new-clock-btn">
@@ -1487,6 +2006,7 @@
     <script>
         const CSRF_TOKEN = '{{ csrf_token }}';
         let selectedEmployee = null;
+        let selectedAttendanceAction = null;
         let videoStream = null;
         let cameraReady = false;
         let latitude = null;
@@ -1519,6 +2039,7 @@
         // cannot manipulate the displayed time by changing their computer clock.
         let serverTimeOffset = new Date('{{ server_time_iso }}').getTime() - Date.now();
         let liveWorkHoursInterval = null;
+        let attendanceSummaryInterval = null;
         let searchLiveHoursInterval = null;
 
         function formatElapsedTime(ms) {
@@ -1528,6 +2049,123 @@
             const m = Math.floor((s % 3600) / 60);
             const sec = s % 60;
             return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+        }
+
+        function formatDurationHM(seconds) {
+            const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+            const h = Math.floor(totalSeconds / 3600);
+            const m = Math.floor((totalSeconds % 3600) / 60);
+            return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+        }
+
+        function formatDurationHMS(seconds) {
+            const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+            const h = Math.floor(totalSeconds / 3600);
+            const m = Math.floor((totalSeconds % 3600) / 60);
+            const s = totalSeconds % 60;
+            return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        }
+
+        function parsePortalDateMs(value) {
+            if (!value) {
+                return null;
+            }
+            const parsed = new Date(value).getTime();
+            return Number.isNaN(parsed) ? null : parsed;
+        }
+
+        function attendanceActivityTotalSecondsFromState(state, activityType) {
+            if (!state) {
+                return 0;
+            }
+
+            const totalKey = activityType === 'lunch' ? 'lunch_total_seconds' : 'break_total_seconds';
+            const totalSeconds = Number(state[totalKey] || 0);
+            const activeType = state.active_activity_type || (state.is_clocked_in ? 'work' : null);
+            if (activeType !== activityType) {
+                return totalSeconds;
+            }
+
+            const nowMs = Date.now() + serverTimeOffset;
+            const updatedAtMs = Number(state.activity_totals_updated_at_ms || nowMs);
+            const startedAtMs = parsePortalDateMs(state.active_activity_started_at);
+            if (startedAtMs !== null) {
+                const elapsedAtPayload = Math.floor(Math.max(0, updatedAtMs - startedAtMs) / 1000);
+                const elapsedNow = Math.floor(Math.max(0, nowMs - startedAtMs) / 1000);
+                const closedTotalSeconds = Math.max(0, totalSeconds - elapsedAtPayload);
+                return closedTotalSeconds + elapsedNow;
+            }
+
+            const elapsedSincePayload = Math.floor(Math.max(0, nowMs - updatedAtMs) / 1000);
+            return totalSeconds + elapsedSincePayload;
+        }
+
+        function attendanceActivityTotalSeconds(activityType) {
+            return attendanceActivityTotalSecondsFromState(selectedEmployee, activityType);
+        }
+
+        function attendanceActivityStatusText(activityType) {
+            const totalSeconds = attendanceActivityTotalSeconds(activityType);
+            const activeType = selectedEmployee ? (selectedEmployee.active_activity_type || 'work') : 'work';
+            if (activeType === activityType) {
+                return formatDurationHMS(totalSeconds);
+            }
+            return totalSeconds > 0 ? formatDurationHM(totalSeconds) : '--:--';
+        }
+
+        function workedTotalSecondsFromState(state) {
+            if (!state) {
+                return 0;
+            }
+
+            const totalSeconds = Number(state.worked_total_seconds || 0);
+            const nowMs = Date.now() + serverTimeOffset;
+            const clockInMs = parsePortalDateMs(state.clock_in_datetime);
+            if (state.is_clocked_in && clockInMs !== null) {
+                const grossSeconds = Math.floor(Math.max(0, nowMs - clockInMs) / 1000);
+                return Math.max(totalSeconds, grossSeconds);
+            }
+
+            const clockOutMs = parsePortalDateMs(state.clock_out_datetime);
+            if (clockInMs !== null && clockOutMs !== null) {
+                const grossSeconds = Math.floor(Math.max(0, clockOutMs - clockInMs) / 1000);
+                return Math.max(totalSeconds, grossSeconds);
+            }
+
+            const updatedAtMs = Number(state.activity_totals_updated_at_ms || nowMs);
+            const startedAtMs = parsePortalDateMs(state.active_activity_started_at);
+            if (startedAtMs !== null) {
+                const elapsedAtPayload = Math.floor(Math.max(0, updatedAtMs - startedAtMs) / 1000);
+                const elapsedNow = Math.floor(Math.max(0, nowMs - startedAtMs) / 1000);
+                const closedTotalSeconds = Math.max(0, totalSeconds - elapsedAtPayload);
+                return closedTotalSeconds + elapsedNow;
+            }
+
+            const elapsedSincePayload = Math.floor(Math.max(0, nowMs - updatedAtMs) / 1000);
+            return totalSeconds + elapsedSincePayload;
+        }
+
+
+        function attendanceWorkedStatusText(state) {
+            if (!state) {
+                return '--:--';
+            }
+            
+            // If not clocked in, always show --:-- regardless of worked seconds
+            if (!state.is_clocked_in) {
+                return '--:--';
+            }
+            
+            const totalSeconds = workedTotalSecondsFromState(state);
+            return formatDurationHMS(totalSeconds);
+        }
+
+        function attendanceHistoryDurationValue(value) {
+            const cleanValue = String(value || '').trim();
+            if (!cleanValue || cleanValue === '00:00' || cleanValue === '00:00:00') {
+                return '--:--';
+            }
+            return escapeHtml(cleanValue);
         }
 
         function resyncServerTime() {
@@ -1677,13 +2315,480 @@
             }
         }
 
+        function clockActionButtonSelector() {
+            return '#clock-in-btn, #clock-out-btn, #activity-transition-btn';
+        }
+
         function disableClockButtons() {
-            $('#clock-in-btn, #clock-out-btn').prop('disabled', true).attr('title', '{% trans "Location is required to clock in or out." %}');
+            $(clockActionButtonSelector()).prop('disabled', true).attr('title', '{% trans "Location is required." %}');
         }
 
         function enableClockButtons() {
             if (!cameraReady) return;
-            $('#clock-in-btn, #clock-out-btn').prop('disabled', false).removeAttr('title');
+            const $button = getSelectedClockButton();
+            if ($button.length) {
+                $button.prop('disabled', false).removeAttr('title');
+            }
+        }
+
+        function employeeMetaText() {
+            const parts = [];
+            if (selectedEmployee && selectedEmployee.badge) {
+                parts.push(`#${selectedEmployee.badge}`);
+            }
+            if (selectedEmployee && selectedEmployee.branch) {
+                parts.push(selectedEmployee.branch);
+            }
+            return parts.join(' | ');
+        }
+
+        function syncSelectionEmployeeSummary(prefix) {
+            if (!selectedEmployee) {
+                return;
+            }
+            $(`#${prefix}-employee-name`).text(selectedEmployee.name || '');
+            $(`#${prefix}-employee-meta`).text(employeeMetaText());
+            $(`#${prefix}-employee-avatar`).attr('src', selectedEmployee.avatar || '');
+        }
+
+        function formatAttendanceSummaryTime(dateValue) {
+            if (!dateValue) {
+                return '--:--';
+            }
+            const parsed = new Date(dateValue);
+            if (Number.isNaN(parsed.getTime())) {
+                return '--:--';
+            }
+            return parsed.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: SERVER_TZ
+            });
+        }
+
+        function stopAttendanceSummaryTimer() {
+            if (attendanceSummaryInterval) {
+                clearInterval(attendanceSummaryInterval);
+                attendanceSummaryInterval = null;
+            }
+        }
+
+        function resetAttendanceSummaryStrip() {
+            stopAttendanceSummaryTimer();
+            $('#attendance-summary-clock-in').text('--:--');
+            $('#attendance-summary-clock-out').text('--:--');
+            $('#attendance-summary-working-hours').text('--:--');
+            $('#attendance-summary-breaks').text('--:--');
+            $('#attendance-summary-lunch').text('--:--');
+        }
+
+        function deferAttendanceUiUpdate(callback) {
+            if (window.requestAnimationFrame) {
+                window.requestAnimationFrame(callback);
+            } else {
+                setTimeout(callback, 0);
+            }
+        }
+
+        function updateAttendanceSummaryStrip() {
+            stopAttendanceSummaryTimer();
+
+            const hasClockInTime = selectedEmployee && selectedEmployee.is_clocked_in && selectedEmployee.clock_in_datetime;
+            $('#attendance-summary-clock-in').text(hasClockInTime ? formatAttendanceSummaryTime(selectedEmployee.clock_in_datetime) : '--:--');
+            $('#attendance-summary-clock-out').text('--:--');
+            $('#attendance-summary-working-hours').text(selectedEmployee ? attendanceWorkedStatusText(selectedEmployee) : '--:--');
+            $('#attendance-summary-breaks').text(selectedEmployee ? attendanceActivityStatusText('break') : '--:--');
+            $('#attendance-summary-lunch').text(selectedEmployee ? attendanceActivityStatusText('lunch') : '--:--');
+
+            if (!selectedEmployee || !selectedEmployee.is_clocked_in) {
+                return;
+            }
+
+            function tickWorkingHours() {
+                $('#attendance-summary-working-hours').text(attendanceWorkedStatusText(selectedEmployee));
+                $('#attendance-summary-breaks').text(attendanceActivityStatusText('break'));
+                $('#attendance-summary-lunch').text(attendanceActivityStatusText('lunch'));
+            }
+
+            tickWorkingHours();
+            attendanceSummaryInterval = setInterval(tickWorkingHours, 1000);
+        }
+    
+
+        function openServiceMenuStep() {
+            if (!selectedEmployee) {
+                resetForm();
+                showStep('search');
+                return;
+            }
+            stopAttendanceSummaryTimer();
+            selectedAttendanceAction = null;
+            syncSelectionEmployeeSummary('service');
+            showStep('service-menu');
+        }
+
+        function updateAttendanceActionSelection() {
+            if (!selectedEmployee) {
+                return;
+            }
+
+            syncSelectionEmployeeSummary('attendance');
+            updateAttendanceSummaryStrip();
+            const isClockedIn = !!selectedEmployee.is_clocked_in;
+            const activeType = selectedEmployee.active_activity_type || (isClockedIn ? 'work' : null);
+            const isWorking = isClockedIn && activeType === 'work';
+            const isOnBreak = isClockedIn && activeType === 'break';
+            const isOnLunch = isClockedIn && activeType === 'lunch';
+            const lunchTaken = !!selectedEmployee.lunch_taken;
+            const breaksTaken = Number(selectedEmployee.breaks_taken || 0);
+            const breaksAllowed = Number(selectedEmployee.breaks_allowed || 2);
+            const breakLimitReached = !isOnBreak && !!selectedEmployee.break_limit_reached;
+            const breakAction = isOnBreak ? 'break_end' : 'break_start';
+            const lunchAction = isOnLunch ? 'lunch_end' : 'lunch_start';
+            const breakDisabled = !isClockedIn || isOnLunch || breakLimitReached;
+            const lunchDisabled = !isClockedIn || isOnBreak || (lunchTaken && !isOnLunch);
+            $('#attendance-clock-in-option')
+                .prop('disabled', isClockedIn)
+                .attr('aria-disabled', isClockedIn ? 'true' : 'false')
+                .toggleClass('is-disabled', isClockedIn);
+            $('#attendance-clock-out-option')
+                .prop('disabled', !isWorking)
+                .attr('aria-disabled', !isWorking ? 'true' : 'false')
+                .toggleClass('is-disabled', !isWorking);
+            $('#attendance-break-option')
+                .attr('data-attendance-action', breakAction)
+                .prop('disabled', breakDisabled)
+                .attr('aria-disabled', breakDisabled ? 'true' : 'false')
+                .toggleClass('is-disabled', breakDisabled);
+            $('#attendance-lunch-option')
+                .attr('data-attendance-action', lunchAction)
+                .prop('disabled', lunchDisabled)
+                .attr('aria-disabled', lunchDisabled ? 'true' : 'false')
+                .toggleClass('is-disabled', lunchDisabled);
+            $('#attendance-break-title').text(isOnBreak ? '{% trans "End Break" %}' : '{% trans "Break" %}');
+            $('#attendance-lunch-title').text(isOnLunch ? '{% trans "End Lunch" %}' : '{% trans "Lunch" %}');
+            $('#attendance-clock-in-note').text(
+                isClockedIn ? '{% trans "Already clocked in" %}' : '{% trans "Capture selfie to clock in" %}'
+            );
+            $('#attendance-clock-out-note').text(
+                isWorking ? '{% trans "Capture selfie to clock out" %}' : (isClockedIn ? '{% trans "End break or lunch first" %}' : '{% trans "Clock in first" %}')
+            );
+            $('#attendance-break-note').text(
+                isOnBreak ? '{% trans "Capture selfie to resume work" %}' : (isClockedIn ? (isOnLunch ? '{% trans "End lunch first" %}' : (breakLimitReached ? `{% trans "Break limit reached" %} (${breaksTaken}/${breaksAllowed})` : '{% trans "Capture selfie to start break" %}')) : '{% trans "Clock in first" %}')
+            );
+            $('#attendance-lunch-note').text(
+                isOnLunch ? '{% trans "Capture selfie to resume work" %}' : (isClockedIn ? (isOnBreak ? '{% trans "End break first" %}' : (lunchTaken ? '{% trans "Lunch already recorded" %}' : '{% trans "Capture selfie to start lunch" %}')) : '{% trans "Clock in first" %}')
+            );
+        }
+
+        function openAttendanceActionStep() {
+            if (!selectedEmployee) {
+                resetForm();
+                showStep('search');
+                return;
+            }
+            selectedAttendanceAction = null;
+            resetAttendanceSummaryStrip();
+            showStep('attendance-actions');
+            deferAttendanceUiUpdate(updateAttendanceActionSelection);
+        }
+
+        function selectAttendanceAction(action) {
+            if (!selectedEmployee) {
+                resetForm();
+                showStep('search');
+                return;
+            }
+
+            const activeType = selectedEmployee.active_activity_type || (selectedEmployee.is_clocked_in ? 'work' : null);
+            if (action === 'clock_in' && selectedEmployee.is_clocked_in) {
+                Toast.fire({ icon: 'warning', title: '{% trans "This employee is already clocked in." %}' });
+                return;
+            }
+            if (action === 'clock_out' && (!selectedEmployee.is_clocked_in || activeType !== 'work')) {
+                Toast.fire({ icon: 'warning', title: '{% trans "This employee must clock in first." %}' });
+                return;
+            }
+            if (activityActionConfig(action)) {
+                if (!selectedEmployee.is_clocked_in) {
+                    Toast.fire({ icon: 'warning', title: '{% trans "This employee must clock in first." %}' });
+                    return;
+                }
+                if ((action === 'break_start' || action === 'lunch_start') && activeType !== 'work') {
+                    Toast.fire({ icon: 'warning', title: '{% trans "End the current activity first." %}' });
+                    return;
+                }
+                if (action === 'break_end' && activeType !== 'break') {
+                    Toast.fire({ icon: 'warning', title: '{% trans "No active break found." %}' });
+                    return;
+                }
+                if (action === 'break_start' && selectedEmployee.break_limit_reached) {
+                    Toast.fire({ icon: 'warning', title: '{% trans "Break limit reached for today." %}' });
+                    return;
+                }
+                if (action === 'lunch_end' && activeType !== 'lunch') {
+                    Toast.fire({ icon: 'warning', title: '{% trans "No active lunch found." %}' });
+                    return;
+                }
+                if (action === 'lunch_start' && selectedEmployee.lunch_taken) {
+                    Toast.fire({ icon: 'warning', title: '{% trans "Lunch has already been recorded." %}' });
+                    return;
+                }
+            }
+
+            selectedAttendanceAction = action;
+            openClockStep();
+        }
+
+        function escapeHtml(value) {
+            return String(value === null || value === undefined ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function attendanceHistoryValue(value, fallback) {
+            return escapeHtml(value || fallback);
+        }
+
+        function attendanceHistoryRowHtml(row) {
+            return `
+                <div class="attendance-history-row">
+                    <p class="attendance-history-date">${attendanceHistoryValue(row.attendance_date, '')}</p>
+                    <div class="attendance-status-strip">
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon">
+                                <ion-icon name="time-outline"></ion-icon>
+                            </span>
+                            <strong class="attendance-status-value">${attendanceHistoryValue(row.clock_in_time, '--:--')}</strong>
+                            <span class="attendance-status-label">{% trans "Clock In" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon">
+                                <ion-icon name="log-out-outline"></ion-icon>
+                            </span>
+                            <strong class="attendance-status-value">${attendanceHistoryValue(row.clock_out_time, '--:--')}</strong>
+                            <span class="attendance-status-label">{% trans "Clock Out" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon">
+                                <ion-icon name="checkmark-circle-outline"></ion-icon>
+                            </span>
+                            <strong class="attendance-status-value">${attendanceHistoryValue(row.worked_hours, '--:--')}</strong>
+                            <span class="attendance-status-label">{% trans "Working Hrs" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon">
+                                <ion-icon name="pause-circle-outline"></ion-icon>
+                            </span>
+                            <strong class="attendance-status-value">${attendanceHistoryDurationValue(row.break_time)}</strong>
+                            <span class="attendance-status-label">{% trans "Breaks" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon">
+                                <ion-icon name="restaurant-outline"></ion-icon>
+                            </span>
+                            <strong class="attendance-status-value">${attendanceHistoryDurationValue(row.lunch_time)}</strong>
+                            <span class="attendance-status-label">{% trans "Lunch" %}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function formatDateInputValue(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function defaultAttendanceHistoryRange() {
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(endDate.getDate() - 14);
+            return {
+                start: formatDateInputValue(startDate),
+                end: formatDateInputValue(endDate)
+            };
+        }
+
+        function attendanceHistoryModalHtml(range) {
+            return `
+                <div class="attendance-history-filters">
+                    <div class="attendance-history-filter">
+                        <label for="attendance-history-start">{% trans "From" %}</label>
+                        <input type="date" id="attendance-history-start" value="${escapeHtml(range.start)}" />
+                    </div>
+                    <div class="attendance-history-filter">
+                        <label for="attendance-history-end">{% trans "To" %}</label>
+                        <input type="date" id="attendance-history-end" value="${escapeHtml(range.end)}" />
+                    </div>
+                    <button type="button" class="oh-btn oh-btn--secondary attendance-history-filter-btn" id="attendance-history-filter-btn" title="{% trans 'Load attendance' %}">
+                        <ion-icon name="search-outline"></ion-icon>
+                    </button>
+                </div>
+                <div class="attendance-history-modal" id="attendance-history-results">
+                    <div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>
+                </div>
+            `;
+        }
+
+        function renderAttendanceHistoryRows(rows) {
+            const html = rows.length
+                ? rows.map(attendanceHistoryRowHtml).join('')
+                : `<div class="attendance-history-empty">{% trans "No attendance records found." %}</div>`;
+            $('#attendance-history-results').html(html);
+        }
+
+        async function loadAttendanceHistoryRows() {
+            if (!selectedEmployee) {
+                return;
+            }
+
+            const $results = $('#attendance-history-results');
+            const $filterButton = $('#attendance-history-filter-btn');
+            $filterButton.prop('disabled', true);
+            $results.html('<div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>');
+
+            try {
+                const formData = new FormData();
+                formData.append('employee_id', selectedEmployee.id);
+                formData.append('start_date', $('#attendance-history-start').val() || '');
+                formData.append('end_date', $('#attendance-history-end').val() || '');
+
+                const response = await fetch('{% url "portal-attendance-history" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    $results.html(`<div class="attendance-history-empty">${escapeHtml(data.message || '{% trans "Unable to load attendance." %}')}</div>`);
+                    return;
+                }
+
+                if (data.start_date) {
+                    $('#attendance-history-start').val(data.start_date);
+                }
+                if (data.end_date) {
+                    $('#attendance-history-end').val(data.end_date);
+                }
+
+                renderAttendanceHistoryRows(Array.isArray(data.rows) ? data.rows : []);
+            } catch (error) {
+                console.error('Attendance history error:', error);
+                $results.html(`<div class="attendance-history-empty">${escapeHtml(error.message || '{% trans "Unable to load attendance." %}')}</div>`);
+            } finally {
+                $filterButton.prop('disabled', false);
+            }
+        }
+
+        async function showAttendanceHistoryModal() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#attendance-history-btn');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Loading..." %}');
+
+            try {
+                const range = defaultAttendanceHistoryRange();
+                await Swal.fire({
+                    title: '{% trans "Attendance" %}',
+                    html: attendanceHistoryModalHtml(range),
+                    showConfirmButton: false,
+                    showCloseButton: true,
+                    customClass: {
+                        container: 'swal-toast-above',
+                        popup: 'attendance-history-swal',
+                        htmlContainer: 'attendance-history-swal-html'
+                    },
+                    didOpen: function () {
+                        $('#attendance-history-filter-btn').on('click', function () {
+                            loadAttendanceHistoryRows();
+                        });
+                        loadAttendanceHistoryRows();
+                    }
+                });
+            } catch (error) {
+                console.error('Attendance history error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load attendance." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function activityActionConfig(action) {
+            const configs = {
+                break_start: {
+                    activity_type: 'break',
+                    transition: 'start',
+                    label: '{% trans "Start Break" %}',
+                    icon: 'pause-circle-outline'
+                },
+                break_end: {
+                    activity_type: 'break',
+                    transition: 'end',
+                    label: '{% trans "End Break" %}',
+                    icon: 'play-circle-outline'
+                },
+                lunch_start: {
+                    activity_type: 'lunch',
+                    transition: 'start',
+                    label: '{% trans "Start Lunch" %}',
+                    icon: 'restaurant-outline'
+                },
+                lunch_end: {
+                    activity_type: 'lunch',
+                    transition: 'end',
+                    label: '{% trans "End Lunch" %}',
+                    icon: 'play-circle-outline'
+                }
+            };
+            return configs[action] || null;
+        }
+
+        function getSelectedClockButton() {
+            if (selectedAttendanceAction === 'clock_in') {
+                return $('#clock-in-btn');
+            }
+            if (selectedAttendanceAction === 'clock_out') {
+                return $('#clock-out-btn');
+            }
+            if (activityActionConfig(selectedAttendanceAction)) {
+                return $('#activity-transition-btn');
+            }
+            return $();
+        }
+
+        function applySelectedClockActionVisibility() {
+            $(clockActionButtonSelector()).css('display', 'none').prop('disabled', true);
+            const config = activityActionConfig(selectedAttendanceAction);
+            if (config) {
+                $('#activity-transition-btn ion-icon').attr('name', config.icon);
+                $('#activity-transition-label').text(config.label);
+            }
+            getSelectedClockButton().css('display', 'flex');
+        }
+
+        function stopClockCapturePreview() {
+            if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
+            $('#clock-preview-map').removeClass('is-placeholder').hide();
+            cameraReady = false;
+            $('#video-preview').css('display', 'none');
+            $('#captured-photo').css('display', 'none');
+            $('#location-overlay').css('display', 'none');
+            $('#action-buttons').css('display', 'none');
+            $(clockActionButtonSelector()).css('display', 'none').prop('disabled', true);
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
         }
 
         // Setup event listeners
@@ -1728,12 +2833,49 @@
                 removePinDigit();
             });
 
+            $('#service-attendance-btn').on('click', function () {
+                const $button = $(this);
+                if ($button.prop('disabled')) {
+                    return;
+                }
+                $button.prop('disabled', true);
+                openAttendanceActionStep();
+                deferAttendanceUiUpdate(function () {
+                    $button.prop('disabled', false);
+                });
+            });
+
+            $('#service-back-btn').on('click', function () {
+                selectedAttendanceAction = null;
+                clearPinInput();
+                setPinMessage('{% trans "Use the keypad to enter PIN." %}');
+                showStep('pin');
+            });
+
+            $('#attendance-back-btn').on('click', function () {
+                selectedAttendanceAction = null;
+                openServiceMenuStep();
+            });
+
+            $('#attendance-history-btn').on('click', function () {
+                showAttendanceHistoryModal();
+            });
+
+            $('[data-attendance-action]').on('click', function () {
+                if ($(this).prop('disabled')) {
+                    return;
+                }
+                selectAttendanceAction($(this).attr('data-attendance-action'));
+            });
+
             // Back button
             $('#back-btn').on('click', function () {
                 clearInterval(liveWorkHoursInterval);
                 liveWorkHoursInterval = null;
-                resetForm();
-                showStep('search');
+                stopAttendanceSummaryTimer();
+                stopClockCapturePreview();
+                selectedAttendanceAction = null;
+                openAttendanceActionStep();
             });
 
             // Clock in/out buttons
@@ -1745,8 +2887,13 @@
                 clockOutEmployee();
             });
 
+            $('#activity-transition-btn').on('click', function () {
+                transitionAttendanceActivity();
+            });
+
             // New clock button
             $('#new-clock-btn').on('click', function () {
+                stopAttendanceSummaryTimer();
                 resetForm();
                 showStep('search');
             });
@@ -1770,6 +2917,7 @@
             $('#geofence-reset-btn').on('click', function () {
                 $('#geofence-error-overlay').css('display', 'none');
                 if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
+                stopAttendanceSummaryTimer();
                 resetForm();
                 showStep('search');
             });
@@ -1795,12 +2943,19 @@
                 // Clock step: Enter triggers the visible and enabled action button
                 if ($('#step-clock').hasClass('active') && e.key === 'Enter') {
                     e.preventDefault();
-                    const $clockIn = $('#clock-in-btn');
-                    const $clockOut = $('#clock-out-btn');
-                    if ($clockIn.is(':visible') && !$clockIn.prop('disabled')) {
-                        $clockIn.trigger('click');
-                    } else if ($clockOut.is(':visible') && !$clockOut.prop('disabled')) {
-                        $clockOut.trigger('click');
+                    const $button = getSelectedClockButton();
+                    if ($button.is(':visible') && !$button.prop('disabled')) {
+                        $button.trigger('click');
+                    }
+                }
+
+                if ($('#step-attendance-actions').hasClass('active') && e.key === 'Enter') {
+                    e.preventDefault();
+                    const $firstEnabled = $('#step-attendance-actions [data-attendance-action]').filter(function () {
+                        return !$(this).prop('disabled');
+                    }).first();
+                    if ($firstEnabled.length) {
+                        $firstEnabled.trigger('click');
                     }
                 }
             });
@@ -1824,11 +2979,15 @@
                 .then(data => {
                     if (data.success && data.results.length > 0) {
                         employeeDataById = {};
-                        data.results.forEach(function (e) { employeeDataById[e.id] = e; });
+                        const payloadUpdatedAtMs = Date.now() + serverTimeOffset;
+                        data.results.forEach(function (e) {
+                            e.activity_totals_updated_at_ms = payloadUpdatedAtMs;
+                            employeeDataById[e.id] = e;
+                        });
 
                         if (data.results.length === 1) {
                             const emp = data.results[0];
-                            selectEmployee(emp.id, emp.name, emp.employee_no, emp.avatar, emp.is_clocked_in, emp.clock_in_datetime);
+                            selectEmployee(emp.id, emp.name, emp.employee_no, emp.avatar, emp.is_clocked_in, emp.clock_in_datetime, emp.clock_out_datetime);
                             return;
                         }
 
@@ -1838,13 +2997,14 @@
                             const safeBadge = String(emp.employee_no || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                             const safeAvatar = String(emp.avatar || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                             const safeClockIn = String(emp.clock_in_datetime || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                            const safeClockOut = String(emp.clock_out_datetime || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                             const badge = emp.employee_no ? `<span class="badge-badge">${emp.employee_no}</span>` : '';
                             const status = emp.is_clocked_in
                                 ? `<span class="badge-badge clocked-in-badge">{% trans "CLOCKED IN" %}</span>` +
-                                  (emp.clock_in_datetime ? ` <span class="live-work-hours" data-clock-in="${emp.clock_in_datetime}">--:--:--</span>` : '')
+                                  ` <span class="live-work-hours" data-employee-id="${emp.id}">--:--:--</span>`
                                 : '';
                             html += `
-                            <div class="search-result-item" onclick="selectEmployee(${emp.id}, '${safeName}', '${safeBadge}', '${safeAvatar}', ${emp.is_clocked_in}, '${safeClockIn}')">
+                            <div class="search-result-item" onclick="selectEmployee(${emp.id}, '${safeName}', '${safeBadge}', '${safeAvatar}', ${emp.is_clocked_in}, '${safeClockIn}', '${safeClockOut}')">
                                 <img src="${emp.avatar}" class="search-result-avatar" />
                                 <div style="flex: 1; text-align: left;">
                                     <div>${emp.name}</div>
@@ -1855,10 +3015,12 @@
                         });
                         $('#search-results').html(html);
                         clearInterval(searchLiveHoursInterval);
+                        document.querySelectorAll('.live-work-hours[data-employee-id]').forEach(function (el) {
+                            el.textContent = attendanceWorkedStatusText(employeeDataById[el.dataset.employeeId]);
+                        });
                         searchLiveHoursInterval = setInterval(function () {
-                            document.querySelectorAll('.live-work-hours[data-clock-in]').forEach(function (el) {
-                                const elapsed = (Date.now() + serverTimeOffset) - new Date(el.dataset.clockIn).getTime();
-                                el.textContent = formatElapsedTime(elapsed);
+                            document.querySelectorAll('.live-work-hours[data-employee-id]').forEach(function (el) {
+                                el.textContent = attendanceWorkedStatusText(employeeDataById[el.dataset.employeeId]);
                             });
                         }, 1000);
                     } else {
@@ -1873,7 +3035,7 @@
         }
 
         // Select employee
-        function selectEmployee(empId, empName, empBadge, empAvatar, isClockedIn, clockInDatetime) {
+        function selectEmployee(empId, empName, empBadge, empAvatar, isClockedIn, clockInDatetime, clockOutDatetime) {
             const cached = employeeDataById[empId] || {};
             selectedEmployee = {
                 id: empId,
@@ -1881,7 +3043,23 @@
                 badge: empBadge,
                 avatar: empAvatar,
                 is_clocked_in: isClockedIn,
-                clock_in_datetime: clockInDatetime || null,
+                clock_in_datetime: clockInDatetime || cached.clock_in_datetime || null,
+                clock_out_datetime: clockOutDatetime || cached.clock_out_datetime || null,
+                active_activity_type: cached.active_activity_type || (isClockedIn ? 'work' : null),
+                active_activity_started_at: cached.active_activity_started_at || null,
+                lunch_taken: !!cached.lunch_taken,
+                breaks_taken: Number(cached.breaks_taken || 0),
+                breaks_allowed: Number(cached.breaks_allowed || 2),
+                break_minutes_allowed: Number(cached.break_minutes_allowed || 15),
+                lunch_minutes_allowed: Number(cached.lunch_minutes_allowed || 60),
+                break_limit_reached: !!cached.break_limit_reached,
+                break_total_seconds: Number(cached.break_total_seconds || 0),
+                break_total_time: cached.break_total_time || '00:00',
+                lunch_total_seconds: Number(cached.lunch_total_seconds || 0),
+                lunch_total_time: cached.lunch_total_time || '00:00',
+                worked_total_seconds: Number(cached.worked_total_seconds || 0),
+                worked_total_time: cached.worked_total_time || '00:00',
+                activity_totals_updated_at_ms: Date.now() + serverTimeOffset,
                 geo_fence: cached.geo_fence || null,
                 branch: cached.branch || "",
             };
@@ -1977,7 +3155,7 @@
                         setPinMessage(data.message || '{% trans "PIN verified successfully." %}', 'success');
                         clearPinInput();
                         setTimeout(function () {
-                            openClockStep();
+                            openServiceMenuStep();
                         }, 120);
                         return;
                     }
@@ -2003,7 +3181,7 @@
         }
 
         function openClockStep() {
-            if (!selectedEmployee) {
+            if (!selectedEmployee || (selectedAttendanceAction !== 'clock_in' && selectedAttendanceAction !== 'clock_out' && !activityActionConfig(selectedAttendanceAction))) {
                 return;
             }
 
@@ -2032,18 +3210,12 @@
             if (selectedEmployee.is_clocked_in) {
                 employeeCard.addClass('is-clocked-in');
                 $('#employee-status').html('<span class="clock-status-pill is-in">{% trans "CLOCKED IN" %}</span>');
-                if (selectedEmployee.clock_in_datetime) {
-                    $('#clock-live-work-hours').show();
-                    const _clockIn = new Date(selectedEmployee.clock_in_datetime);
-                    function _updateWorkHours() {
-                        const elapsed = (Date.now() + serverTimeOffset) - _clockIn.getTime();
-                        $('#clock-work-hours-value').text(formatElapsedTime(elapsed));
-                    }
-                    _updateWorkHours();
-                    liveWorkHoursInterval = setInterval(_updateWorkHours, 1000);
-                } else {
-                    $('#clock-live-work-hours').hide();
+                $('#clock-live-work-hours').show();
+                function _updateWorkHours() {
+                    $('#clock-work-hours-value').text(attendanceWorkedStatusText(selectedEmployee));
                 }
+                _updateWorkHours();
+                liveWorkHoursInterval = setInterval(_updateWorkHours, 1000);
             } else {
                 $('#employee-status').empty();
                 $('#clock-live-work-hours').hide();
@@ -2090,15 +3262,7 @@
                             $('#captured-photo').css('display', 'none');
                             $('#location-overlay').css('display', 'none');
                             $('#action-buttons').css('display', 'flex');
-
-                            // Show appropriate clock in/out button based on status
-                            if (selectedEmployee.is_clocked_in) {
-                                $('#clock-out-btn').css('display', 'flex');
-                                $('#clock-in-btn').css('display', 'none');
-                            } else {
-                                $('#clock-in-btn').css('display', 'flex');
-                                $('#clock-out-btn').css('display', 'none');
-                            }
+                            applySelectedClockActionVisibility();
 
                             // Enable buttons only if location is also already acquired
                             if (latitude && longitude) {
@@ -2546,7 +3710,7 @@
             ctx.font = `500 ${bodyFont}px Arial, sans-serif`;
             const bodyMaxW = employeeW - (cardPadding * 2);
             const bodyRows = [
-                ...wrapLine(address, bodyMaxW).slice(0, 3),
+                ...wrapLine(address, bodyMaxW),
                 ...wrapLine(coordLine, bodyMaxW),
                 ...wrapLine(timestamp, bodyMaxW),
             ];
@@ -2731,6 +3895,66 @@
             }
         }
 
+        // Start/end break or lunch (selfie is captured automatically on click)
+        async function transitionAttendanceActivity() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const config = activityActionConfig(selectedAttendanceAction);
+            if (!config) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an attendance action first." %}' });
+                return;
+            }
+
+            if (!latitude || !longitude) {
+                Toast.fire({ icon: 'error', title: '{% trans "Location is required. Please enable location access and retry." %}' });
+                return;
+            }
+
+            const btn = $('#activity-transition-btn');
+            const originalText = btn.html();
+            btn.html('<span class="loading"></span> {% trans "Getting address..." %}').prop('disabled', true);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            btn.html('<span class="loading"></span> {% trans "Processing..." %}');
+
+            try {
+                const selfieBlob = await capturePhotoBlobFromLiveVideo();
+
+                const formData = new FormData();
+                formData.append('employee_id', selectedEmployee.id);
+                formData.append('activity_type', config.activity_type);
+                formData.append('transition', config.transition);
+                formData.append('selfie', selfieBlob, 'selfie.jpg');
+                formData.append('latitude', latitude || '');
+                formData.append('longitude', longitude || '');
+
+                const response = await fetch('{% url "portal-activity-transition" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    const successMessage = data.message || config.label;
+                    stopClockCapturePreview();
+                    resetForm();
+                    showStep('search');
+                    Toast.fire({ icon: 'success', title: successMessage });
+                } else if (data.geo_fence_violation) {
+                    showGeofenceError(data);
+                } else {
+                    showConfirmation(data, 'error');
+                }
+            } catch (error) {
+                console.error('Activity transition error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Attendance action failed." %}' });
+            } finally {
+                btn.html(originalText).prop('disabled', false);
+            }
+        }
+
         // Show live location/geofence map in the clock step before clock-in/out is attempted.
         function initClockPreviewMap(options = {}) {
             const $map = $('#clock-preview-map');
@@ -2846,12 +4070,13 @@
             liveWorkHoursInterval = null;
             let html = '';
             if (type === 'success') {
-                const action = response.worked_hours ? '{% trans "Clocked Out" %}' : '{% trans "Clocked In" %}';
+                const action = response.action_title || (response.clock_out_time ? '{% trans "Clocked Out" %}' : '{% trans "Clocked In" %}');
+                const eventTime = response.clock_in_time || response.clock_out_time || response.activity_time || '';
                 html = `
                     <div class="confirmation-card">
                         <h3>✓ ${action}</h3>
                         <p>${response.employee_name}</p>
-                        <div class="confirmation-time">${response.clock_in_time || response.clock_out_time}</div>
+                        <div class="confirmation-time">${eventTime}</div>
                         ${response.worked_hours ? `<p>{% trans "Worked Hours" %}: ${response.worked_hours}</p>` : ''}
                     </div>
                 `;
@@ -2905,11 +4130,13 @@
 
         // Reset form
         function resetForm() {
+            stopAttendanceSummaryTimer();
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
             $('#clock-preview-map').removeClass('is-placeholder').hide();
             $('#employee-branch').hide().text('');
             $('#mobile-employee-meta').text('');
             selectedEmployee = null;
+            selectedAttendanceAction = null;
             employeeDataById = {};
             capturedAddress = null;
             cameraReady = false;
@@ -2919,6 +4146,9 @@
             $('#pin-employee-name').text('');
             $('#pin-employee-badge').text('');
             $('#pin-employee-avatar').attr('src', '');
+            $('#service-employee-name, #attendance-employee-name').text('');
+            $('#service-employee-meta, #attendance-employee-meta').text('');
+            $('#service-employee-avatar, #attendance-employee-avatar').attr('src', '');
             setPinMessage('{% trans "Use the keypad to enter PIN." %}');
             updatePinUi();
             $('#employee-info').css('display', 'none');
@@ -2930,6 +4160,7 @@
             $('#action-buttons').css('display', 'none');
             $('#clock-in-btn').css('display', 'none');
             $('#clock-out-btn').css('display', 'none');
+            $('#activity-transition-btn').css('display', 'none');
 
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());

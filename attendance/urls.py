@@ -33,6 +33,16 @@ urlpatterns = [
         name="portal-employee-lookup",
     ),
     path(
+        "portal/forgot-pin/",
+        attendance.views.portal.forgot_pin,
+        name="portal-forgot-pin",
+    ),
+    path(
+        "portal/reset-pin/<str:token>/",
+        attendance.views.portal.reset_pin,
+        name="portal-reset-pin",
+    ),
+    path(
         "portal/verify-pin/",
         attendance.views.portal.verify_pin,
         name="portal-verify-pin",
@@ -46,6 +56,16 @@ urlpatterns = [
         "portal/clock-out/",
         attendance.views.portal.public_clock_out,
         name="portal-clock-out",
+    ),
+    path(
+        "portal/activity-transition/",
+        attendance.views.portal.public_activity_transition,
+        name="portal-activity-transition",
+    ),
+    path(
+        "portal/attendance-history/",
+        attendance.views.portal.attendance_history,
+        name="portal-attendance-history",
     ),
     path(
         "portal/server-time/",
@@ -131,6 +151,11 @@ urlpatterns = [
         "attendance-activity-single-view/<int:obj_id>/",
         views.activity_single_view,
         name="attendance-activity-single-view",
+    ),
+    path(
+        "attendance-activity-daily-view/<int:employee_id>/<str:attendance_date>/",
+        views.activity_daily_single_view,
+        name="attendance-activity-daily-view",
     ),
     path(
         "attendance-activity-search",

@@ -1,0 +1,109 @@
+{% load static %}
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% trans "Forgot PIN" %} - {{ white_label_company_name }}</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/favicon-32x32.png' %}{% endif %}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/favicon-16x16.png' %}{% endif %}">
+    <link rel="stylesheet" href="{% static '/build/css/style.min.css' %}" />
+    <style>
+      .portal-pin-card {
+        width: min(100%, 460px);
+        border: 1px solid #dbe4f4;
+        box-shadow: rgba(0, 0, 0, 0.1) 0 1px 3px 0, rgba(0, 0, 0, 0.06) 0 1px 2px 0;
+      }
+      .portal-pin-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .portal-pin-logo {
+        max-height: 48px;
+        width: auto;
+        object-fit: contain;
+      }
+      .portal-pin-company {
+        margin: 0;
+        color: #334155;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .portal-pin-message {
+        margin: 16px 0 0;
+        padding: 12px;
+        border: 1px solid #bbf7d0;
+        border-radius: 8px;
+        background: #f0fdf4;
+        color: #166534;
+        font-size: 13px;
+        line-height: 1.45;
+        text-align: center;
+      }
+      .portal-pin-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        color: #334155;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="main">
+      <main class="oh-auth">
+        <div class="oh-auth-card portal-pin-card">
+          <div class="portal-pin-header">
+            <img src="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'images/ui/auth-logo.png' %}{% endif %}" alt="Logo" class="portal-pin-logo" />
+            {% if white_label_company %}
+              <p class="portal-pin-company">{{ white_label_company }}</p>
+            {% endif %}
+          </div>
+
+          <h1 class="oh-onboarding-card__title oh-onboarding-card__title--h2 text-center my-3">
+            {% trans "Forgot PIN" %}?
+          </h1>
+          <p class="text-muted text-center">
+            {% trans "Enter your email to receive a secure attendance PIN reset link." %}
+          </p>
+
+          {% if sent %}
+            <div class="portal-pin-message">{{ generic_message }}</div>
+          {% endif %}
+
+          <form method="post" class="oh-form-group">
+            {% csrf_token %}
+            <div class="oh-input-group">
+              <label class="oh-label" for="{{ form.email.id_for_label }}">{% trans "Email" %}</label>
+              {{ form.email }}
+              {{ form.email.errors }}
+            </div>
+
+            <button type="submit" class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100 mb-3">
+              {% trans "Send Reset Link" %}
+            </button>
+          </form>
+
+          <div class="text-center">
+            <a href="{% url 'public-portal' %}" class="portal-pin-link">
+              <ion-icon name="arrow-back-outline"></ion-icon>
+              {% trans "Back to Attendance Portal" %}
+            </a>
+          </div>
+        </div>
+      </main>
+    </div>
+    <script src="{% static 'build/js/web.frontend.min.js' %}"></script>
+    <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
+    <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+  </body>
+</html>

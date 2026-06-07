@@ -26,6 +26,7 @@ import io
 import json
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 from urllib.parse import parse_qs
 
 import pandas as pd
@@ -33,7 +34,7 @@ from django.contrib import messages
 from django.core.paginator import Paginator
 from django.core.validators import validate_ipv46_address
 from django.db import transaction
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q
 from django.forms import ValidationError
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import redirect, render
@@ -71,7 +72,9 @@ from attendance.forms import (
 )
 from attendance.methods.utils import (
     Request,
+    WEEKDAY_SHIFT_FALLBACK_DAYS,
     attendance_day_checking,
+    calculate_schedule_end_overtime,
     format_time,
     is_reportingmanger,
     monthly_leave_days,
@@ -79,6 +82,7 @@ from attendance.methods.utils import (
     parse_date,
     parse_datetime,
     parse_time,
+    shift_schedule_with_weekday_fallback,
     sort_activity_dicts,
     strtime_seconds,
 )
@@ -105,11 +109,13 @@ from base.methods import (
     export_data,
     filtersubordinates,
     filtersubordinatesemployeemodel,
+    format_export_value,
     get_key_instances,
     get_pagination,
 )
 from base.models import (
     AttendanceAllowedIP,
+    EmployeeShiftDay,
     EmployeeShiftSchedule,
     TrackLateComeEarlyOut,
     WorkType,
@@ -379,6 +385,830 @@ def build_my_attendance_activity_meta(paginated_attendances):
         activity_meta_by_attendance[attendance.id] = meta
 
     return activity_meta_by_attendance
+
+
+def _activity_type(activity):
+    activity_type = getattr(activity, "activity_type", "work") or "work"
+    return activity_type if activity_type in {"work", "break", "lunch"} else "work"
+
+
+def _activity_in_datetime(activity):
+    direct_datetime = getattr(activity, "in_datetime", None)
+    if direct_datetime:
+        return _naive_local_datetime(direct_datetime)
+    if activity.clock_in_date and activity.clock_in:
+        return datetime.combine(activity.clock_in_date, activity.clock_in)
+    return datetime.min
+
+
+def _activity_out_datetime(activity):
+    direct_datetime = getattr(activity, "out_datetime", None)
+    if direct_datetime:
+        return _naive_local_datetime(direct_datetime)
+    if activity.clock_out_date and activity.clock_out:
+        return datetime.combine(activity.clock_out_date, activity.clock_out)
+    return datetime.min
+
+
+def _activity_display_in_datetime(activity):
+    if activity.clock_in_date and activity.clock_in:
+        return datetime.combine(activity.clock_in_date, activity.clock_in)
+    return _activity_in_datetime(activity)
+
+
+def _activity_display_out_datetime(activity):
+    if activity.clock_out_date and activity.clock_out:
+        return datetime.combine(activity.clock_out_date, activity.clock_out)
+    return _activity_out_datetime(activity)
+
+
+def _naive_local_datetime(value):
+    if django_timezone.is_aware(value):
+        return django_timezone.localtime(value).replace(tzinfo=None)
+    return value
+
+
+def _activity_map_url(activity, clock_event):
+    if clock_event == "in":
+        return activity.clock_in_maps_url
+    return activity.clock_out_maps_url
+
+
+def _activity_location(activity, clock_event):
+    if clock_event == "in":
+        if activity.clock_in_gps_address:
+            return activity.clock_in_gps_address
+        if activity.gps_address and not activity.clock_out:
+            return activity.gps_address
+    else:
+        if activity.clock_out_gps_address:
+            return activity.clock_out_gps_address
+        if activity.gps_address and activity.clock_out:
+            return activity.gps_address
+    return ""
+
+
+def _daily_activity_segment(activity):
+    return SimpleNamespace(
+        activity=activity,
+        activity_type=_activity_type(activity),
+        clock_in=activity.clock_in,
+        clock_in_date=activity.clock_in_date,
+        clock_out=activity.clock_out,
+        clock_out_date=activity.clock_out_date,
+        clock_in_selfie=activity.clock_in_selfie,
+        clock_out_selfie=activity.clock_out_selfie,
+        clock_in_location=_activity_location(activity, "in"),
+        clock_out_location=_activity_location(activity, "out"),
+        clock_in_map_url=_activity_map_url(activity, "in"),
+        clock_out_map_url=_activity_map_url(activity, "out"),
+    )
+
+
+def _activity_duration_seconds(activity):
+    if not activity or not activity.clock_out:
+        return 0
+
+    if activity.in_datetime and activity.out_datetime:
+        start = activity.in_datetime
+        end = activity.out_datetime
+    elif activity.clock_in_date and activity.clock_in and activity.clock_out_date:
+        start = datetime.combine(activity.clock_in_date, activity.clock_in)
+        end = datetime.combine(activity.clock_out_date, activity.clock_out)
+    else:
+        return 0
+    if not start or not end or end <= start:
+        return 0
+    return int((end - start).total_seconds())
+
+
+def _activity_total_hours(activities):
+    return format_time(sum(_activity_duration_seconds(activity) for activity in activities))
+
+
+def _attendance_row_hours(attendance):
+    if not attendance:
+        return SimpleNamespace(
+            shift=None,
+            work_type=None,
+            min_hour="",
+            work_hours="",
+            pending_hour="",
+            overtime="",
+        )
+    return SimpleNamespace(
+        shift=attendance.shift_id,
+        work_type=attendance.work_type_id,
+        min_hour=attendance.minimum_hour,
+        work_hours=attendance.attendance_worked_hour,
+        pending_hour=attendance.hours_pending(),
+        overtime=attendance.attendance_overtime,
+    )
+
+
+def _related_object_id(instance, field_name):
+    direct_id = getattr(instance, f"{field_name}_id", None)
+    if direct_id:
+        return direct_id
+    related_obj = getattr(instance, field_name, None)
+    if isinstance(related_obj, int):
+        return related_obj
+    return getattr(related_obj, "id", None) or getattr(related_obj, "pk", None)
+
+
+def _employee_work_info(employee):
+    return getattr(employee, "employee_work_info", None)
+
+
+def _row_shift(attendance, employee):
+    shift = getattr(attendance, "shift_id", None) if attendance else None
+    if shift:
+        return shift
+    work_info = _employee_work_info(employee)
+    return getattr(work_info, "shift_id", None) if work_info else None
+
+
+def _row_shift_id(attendance, employee):
+    shift_id = _related_object_id(attendance, "shift_id") if attendance else None
+    if shift_id:
+        return shift_id
+    work_info = _employee_work_info(employee)
+    return _related_object_id(work_info, "shift_id") if work_info else None
+
+
+def _row_shift_day(attendance, activity_shift_day, attendance_date=None):
+    day = getattr(attendance, "attendance_day", None) if attendance else None
+    if day:
+        return day
+    if activity_shift_day:
+        return activity_shift_day
+    if attendance_date:
+        return attendance_date.strftime("%A").lower()
+    return None
+
+
+def _row_shift_day_id(attendance, activity_shift_day):
+    day_id = _related_object_id(attendance, "attendance_day") if attendance else None
+    if day_id:
+        return day_id
+    direct_id = getattr(activity_shift_day, "id", None) or getattr(
+        activity_shift_day, "pk", None
+    )
+    return direct_id
+
+
+def _row_shift_day_name(attendance, activity_shift_day, attendance_date):
+    day = _row_shift_day(attendance, activity_shift_day, attendance_date)
+    day_name = getattr(day, "day", None)
+    if day_name:
+        return str(day_name).lower()
+    if isinstance(day, str):
+        return day.lower()
+    if attendance_date:
+        return attendance_date.strftime("%A").lower()
+    return None
+
+
+def _row_attendance_date(attendance, activity):
+    attendance_date = getattr(attendance, "attendance_date", None) if attendance else None
+    if attendance_date:
+        return attendance_date
+    return getattr(activity, "attendance_date", None) if activity else None
+
+
+def _activity_late_early_duration(work_in, work_out, attendance, schedule, report_type):
+    if not schedule:
+        return ""
+
+    if report_type == "late_come":
+        if not work_in or not schedule.start_time:
+            return ""
+        clock_in_dt = _activity_display_in_datetime(work_in)
+        if clock_in_dt == datetime.min:
+            return ""
+        start_date = _row_attendance_date(attendance, work_in) or clock_in_dt.date()
+        if (
+            schedule.is_night_shift
+            and clock_in_dt.date() <= start_date
+            and clock_in_dt.time() < schedule.start_time
+        ):
+            clock_in_dt = clock_in_dt + timedelta(days=1)
+        schedule_dt = datetime.combine(start_date, schedule.start_time)
+        diff = clock_in_dt - schedule_dt
+    elif report_type == "early_out":
+        if not work_out or not schedule.end_time:
+            return ""
+        clock_out_dt = _activity_display_out_datetime(work_out)
+        if clock_out_dt == datetime.min:
+            return ""
+        start_date = _row_attendance_date(attendance, work_out) or clock_out_dt.date()
+        if (
+            schedule.is_night_shift
+            and clock_out_dt.date() <= start_date
+            and clock_out_dt.time() <= schedule.end_time
+        ):
+            clock_out_dt = clock_out_dt + timedelta(days=1)
+        end_date = start_date + timedelta(days=1) if schedule.is_night_shift else clock_out_dt.date()
+        schedule_dt = datetime.combine(end_date, schedule.end_time)
+        diff = schedule_dt - clock_out_dt
+    else:
+        return ""
+
+    seconds = int(diff.total_seconds())
+    if seconds <= 0:
+        return ""
+    return format_time(seconds)
+
+
+def _employee_shift_schedules(schedule_keys):
+    if not schedule_keys:
+        return {}
+    shift_ids = {shift_id for shift_id, _, _ in schedule_keys if shift_id}
+    attendance_day_ids = {
+        attendance_day_id
+        for _, attendance_day_id, _ in schedule_keys
+        if attendance_day_id
+    }
+    attendance_day_names = {
+        attendance_day_name
+        for _, _, attendance_day_name in schedule_keys
+        if attendance_day_name
+    }
+    if not shift_ids or (not attendance_day_ids and not attendance_day_names):
+        return {}
+
+    schedules = EmployeeShiftSchedule.objects.filter(shift_id_id__in=shift_ids)
+    if hasattr(schedules, "filter"):
+        if attendance_day_ids and attendance_day_names:
+            schedules = schedules.filter(
+                Q(day_id__in=attendance_day_ids)
+                | Q(day__day__in=attendance_day_names)
+                | Q(day__day__in=WEEKDAY_SHIFT_FALLBACK_DAYS)
+            )
+        elif attendance_day_ids:
+            schedules = schedules.filter(
+                Q(day_id__in=attendance_day_ids)
+                | Q(day__day__in=WEEKDAY_SHIFT_FALLBACK_DAYS)
+            )
+        else:
+            schedules = schedules.filter(
+                Q(day__day__in=attendance_day_names)
+                | Q(day__day__in=WEEKDAY_SHIFT_FALLBACK_DAYS)
+            )
+    else:
+        schedules = [
+            schedule
+            for schedule in schedules
+            if getattr(schedule, "day_id", None) in attendance_day_ids
+            or str(getattr(getattr(schedule, "day", None), "day", "")).lower()
+            in attendance_day_names
+            or str(getattr(getattr(schedule, "day", None), "day", "")).lower()
+            in WEEKDAY_SHIFT_FALLBACK_DAYS
+        ]
+
+    schedule_by_key = {}
+    for schedule in schedules:
+        shift_id = schedule.shift_id_id
+        day_id = getattr(schedule, "day_id", None)
+        day_name = getattr(getattr(schedule, "day", None), "day", None)
+        day_name = str(day_name).lower() if day_name else None
+        if day_id:
+            schedule_by_key[(shift_id, day_id, None)] = schedule
+        if day_name:
+            schedule_by_key[(shift_id, None, day_name)] = schedule
+            if day_name in WEEKDAY_SHIFT_FALLBACK_DAYS:
+                schedule_by_key.setdefault(
+                    (shift_id, None, "__weekday_fallback__"), schedule
+                )
+    return schedule_by_key
+
+
+def build_daily_activity_rows(attendance_activities):
+    """
+    Convert activity records into one row per employee and attendance date.
+    Break/lunch rows keep all underlying activity ids for bulk actions.
+    """
+
+    activities = list(
+        attendance_activities.select_related(
+            "employee_id",
+            "employee_id__employee_work_info",
+            "employee_id__employee_work_info__branch_id",
+            "employee_id__employee_work_info__department_id",
+            "shift_day",
+        )
+    )
+    grouped = {}
+    employee_ids = set()
+    attendance_dates = set()
+
+    for activity in activities:
+        key = (activity.employee_id_id, activity.attendance_date)
+        if key not in grouped:
+            grouped[key] = {
+                "employee": activity.employee_id,
+                "attendance_date": activity.attendance_date,
+                "shift_day": activity.shift_day,
+                "activities": [],
+                "activity_ids": [],
+            }
+        grouped[key]["activities"].append(activity)
+        grouped[key]["activity_ids"].append(activity.id)
+        employee_ids.add(activity.employee_id_id)
+        if activity.attendance_date:
+            attendance_dates.add(activity.attendance_date)
+
+    attendances = Attendance.objects.filter(
+        employee_id_id__in=employee_ids,
+        attendance_date__in=attendance_dates,
+    )
+    attendance_by_key = {
+        (attendance.employee_id_id, attendance.attendance_date): attendance
+        for attendance in attendances
+    }
+
+    row_contexts = []
+    schedule_keys = set()
+    for (employee_id, attendance_date), row_data in grouped.items():
+        row_activities = sorted(row_data["activities"], key=_activity_in_datetime)
+        work_activities = [
+            activity for activity in row_activities if _activity_type(activity) == "work"
+        ]
+        break_activities = [
+            activity for activity in row_activities if _activity_type(activity) == "break"
+        ]
+        lunch_activities = [
+            activity for activity in row_activities if _activity_type(activity) == "lunch"
+        ]
+        work_in = work_activities[0] if work_activities else None
+        closed_work = [activity for activity in work_activities if activity.clock_out]
+        work_out = (
+            sorted(closed_work, key=_activity_out_datetime)[-1]
+            if closed_work
+            else None
+        )
+        latest_work_activity = (
+            sorted(work_activities, key=_activity_in_datetime)[-1]
+            if work_activities
+            else None
+        )
+        early_out_work_out = (
+            work_out
+            if latest_work_activity and latest_work_activity.clock_out
+            else None
+        )
+        attendance = attendance_by_key.get((employee_id, attendance_date))
+        hours = _attendance_row_hours(attendance)
+        shift = _row_shift(attendance, row_data["employee"])
+        shift_day = _row_shift_day(
+            attendance, row_data["shift_day"], attendance_date
+        )
+        schedule_key = (
+            _row_shift_id(attendance, row_data["employee"]),
+            _row_shift_day_id(attendance, row_data["shift_day"]),
+            _row_shift_day_name(attendance, row_data["shift_day"], attendance_date),
+        )
+        if schedule_key[0] and (schedule_key[1] or schedule_key[2]):
+            schedule_keys.add(schedule_key)
+        row_contexts.append(
+            {
+                "employee_id": employee_id,
+                "attendance_date": attendance_date,
+                "row_data": row_data,
+                "work_activities": work_activities,
+                "break_activities": break_activities,
+                "lunch_activities": lunch_activities,
+                "work_in": work_in,
+                "work_out": work_out,
+                "first_work_clock_in": work_in,
+                "last_work_clock_out": early_out_work_out,
+                "attendance": attendance,
+                "hours": hours,
+                "shift": shift,
+                "shift_day": shift_day,
+                "schedule_key": schedule_key,
+            }
+        )
+
+    schedule_by_key = _employee_shift_schedules(schedule_keys)
+
+    rows = []
+    for row_context in row_contexts:
+        employee_id = row_context["employee_id"]
+        attendance_date = row_context["attendance_date"]
+        row_data = row_context["row_data"]
+        work_activities = row_context["work_activities"]
+        break_activities = row_context["break_activities"]
+        lunch_activities = row_context["lunch_activities"]
+        work_in = row_context["work_in"]
+        work_out = row_context["work_out"]
+        first_work_clock_in = row_context["first_work_clock_in"]
+        last_work_clock_out = row_context["last_work_clock_out"]
+        attendance = row_context["attendance"]
+        hours = row_context["hours"]
+        schedule_key = row_context["schedule_key"]
+        schedule = schedule_by_key.get(
+            (schedule_key[0], schedule_key[1], None)
+        ) or schedule_by_key.get(
+            (schedule_key[0], None, schedule_key[2])
+        ) or schedule_by_key.get((schedule_key[0], None, "__weekday_fallback__"))
+        late_early_durations = {
+            report_type: _activity_late_early_duration(
+                first_work_clock_in,
+                last_work_clock_out,
+                attendance,
+                schedule,
+                report_type,
+            )
+            for report_type in ("late_come", "early_out")
+        }
+        activity_ids = sorted(set(row_data["activity_ids"]))
+        detail_activity = work_in or (
+            row_data["activities"][0] if row_data["activities"] else None
+        )
+        work_segments = [_daily_activity_segment(activity) for activity in work_activities]
+        break_segments = [_daily_activity_segment(activity) for activity in break_activities]
+        lunch_segments = [_daily_activity_segment(activity) for activity in lunch_activities]
+        rows.append(
+            SimpleNamespace(
+                employee=row_data["employee"],
+                attendance_date=attendance_date,
+                attendance_date_iso=attendance_date.isoformat()
+                if attendance_date
+                else "",
+                shift_day=row_context["shift_day"],
+                attendance=attendance,
+                activity_ids=activity_ids,
+                activity_ids_json=json.dumps(activity_ids),
+                detail_activity_id=getattr(detail_activity, "id", None),
+                row_key=f"{employee_id}-{attendance_date.isoformat() if attendance_date else 'unknown'}",
+                work_segments=work_segments,
+                break_segments=break_segments,
+                lunch_segments=lunch_segments,
+                work_in=_daily_activity_segment(work_in) if work_in else None,
+                work_out=_daily_activity_segment(work_out) if work_out else None,
+                has_work_images=any(
+                    segment.clock_in_selfie or segment.clock_out_selfie
+                    for segment in work_segments
+                ),
+                shift=row_context["shift"],
+                work_type=hours.work_type,
+                min_hour=hours.min_hour,
+                late_come_duration=late_early_durations["late_come"],
+                early_out_duration=late_early_durations["early_out"],
+                work_hours=hours.work_hours,
+                break_hours=_activity_total_hours(break_activities),
+                lunch_hours=_activity_total_hours(lunch_activities),
+                pending_hour=hours.pending_hour,
+                overtime=calculate_schedule_end_overtime(
+                    schedule,
+                    work_activities,
+                    attendance_date,
+                ),
+            )
+        )
+    return rows
+
+
+ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS = {
+    "daily_clock_in",
+    "daily_clock_out",
+    "daily_break_in",
+    "daily_break_out",
+    "daily_lunch_in",
+    "daily_lunch_out",
+    "daily_clock_in_location",
+    "daily_clock_out_location",
+    "daily_break_in_location",
+    "daily_break_out_location",
+    "daily_lunch_in_location",
+    "daily_lunch_out_location",
+    "daily_clock_image",
+    "daily_break_image",
+    "daily_lunch_image",
+    "daily_shift",
+    "daily_late_come",
+    "daily_early_out",
+    "daily_work_hours",
+    "daily_break_hours",
+    "daily_lunch_hours",
+    "daily_overtime",
+}
+
+
+ATTENDANCE_ACTIVITY_EXPORT_VALUE_MAP = {
+    "late_come": _("Late Come"),
+    "early_out": _("Early Out"),
+}
+
+
+def _attendance_activity_export_image_url(image):
+    if not image:
+        return ""
+    with contextlib.suppress(Exception):
+        return image.url
+    return str(image)
+
+
+def _attendance_activity_export_image_pair(segment):
+    if not segment:
+        return ""
+
+    parts = []
+    clock_in_url = _attendance_activity_export_image_url(segment.clock_in_selfie)
+    clock_out_url = _attendance_activity_export_image_url(segment.clock_out_selfie)
+    if clock_in_url:
+        parts.append(f"In {clock_in_url}")
+    if clock_out_url:
+        parts.append(f"Out {clock_out_url}")
+    return " / ".join(parts)
+
+
+def _attendance_activity_export_images(segments):
+    return "; ".join(
+        image_pair
+        for segment in segments
+        if (image_pair := _attendance_activity_export_image_pair(segment))
+    )
+
+
+def _format_attendance_activity_export_value(value, employee):
+    if callable(value):
+        with contextlib.suppress(TypeError):
+            value = value()
+    if value is True:
+        value = _("Yes")
+    elif value is False:
+        value = _("No")
+    if value in ATTENDANCE_ACTIVITY_EXPORT_VALUE_MAP:
+        value = ATTENDANCE_ACTIVITY_EXPORT_VALUE_MAP[value]
+    if value is None or value == "None":
+        return ""
+    value = format_export_value(value, employee)
+    return "" if value is None else value
+
+
+def _attendance_activity_export_times(segments, field_name, employee):
+    return "; ".join(
+        str(formatted_time)
+        for segment in segments
+        if (
+            formatted_time := _format_attendance_activity_export_value(
+                getattr(segment, field_name, None), employee
+            )
+        )
+    )
+
+
+def _attendance_activity_export_locations(segments, field_name):
+    return "; ".join(
+        str(location)
+        for segment in segments
+        if (location := getattr(segment, field_name, None))
+    )
+
+
+def _attendance_activity_daily_export_value(row, field_name, employee):
+    if not row:
+        return ""
+
+    if field_name == "daily_clock_in":
+        return _format_attendance_activity_export_value(
+            row.work_in.clock_in if row.work_in else None, employee
+        )
+    if field_name == "daily_clock_out":
+        return _format_attendance_activity_export_value(
+            row.work_out.clock_out if row.work_out else None, employee
+        )
+    if field_name == "daily_break_in":
+        return _attendance_activity_export_times(row.break_segments, "clock_in", employee)
+    if field_name == "daily_break_out":
+        return _attendance_activity_export_times(row.break_segments, "clock_out", employee)
+    if field_name == "daily_lunch_in":
+        return _attendance_activity_export_times(row.lunch_segments, "clock_in", employee)
+    if field_name == "daily_lunch_out":
+        return _attendance_activity_export_times(row.lunch_segments, "clock_out", employee)
+    if field_name == "daily_clock_in_location":
+        return row.work_in.clock_in_location if row.work_in else ""
+    if field_name == "daily_clock_out_location":
+        return row.work_out.clock_out_location if row.work_out else ""
+    if field_name == "daily_break_in_location":
+        return _attendance_activity_export_locations(
+            row.break_segments, "clock_in_location"
+        )
+    if field_name == "daily_break_out_location":
+        return _attendance_activity_export_locations(
+            row.break_segments, "clock_out_location"
+        )
+    if field_name == "daily_lunch_in_location":
+        return _attendance_activity_export_locations(
+            row.lunch_segments, "clock_in_location"
+        )
+    if field_name == "daily_lunch_out_location":
+        return _attendance_activity_export_locations(
+            row.lunch_segments, "clock_out_location"
+        )
+    if field_name == "daily_clock_image":
+        parts = []
+        if row.work_in:
+            clock_in_url = _attendance_activity_export_image_url(
+                row.work_in.clock_in_selfie
+            )
+            if clock_in_url:
+                parts.append(f"In {clock_in_url}")
+        if row.work_out:
+            clock_out_url = _attendance_activity_export_image_url(
+                row.work_out.clock_out_selfie
+            )
+            if clock_out_url:
+                parts.append(f"Out {clock_out_url}")
+        return " / ".join(parts)
+    if field_name == "daily_break_image":
+        return _attendance_activity_export_images(row.break_segments)
+    if field_name == "daily_lunch_image":
+        return _attendance_activity_export_images(row.lunch_segments)
+    if field_name == "daily_shift":
+        return _format_attendance_activity_export_value(row.shift, employee)
+    if field_name == "daily_late_come":
+        return _format_attendance_activity_export_value(
+            row.late_come_duration, employee
+        )
+    if field_name == "daily_early_out":
+        return _format_attendance_activity_export_value(
+            row.early_out_duration, employee
+        )
+    if field_name == "daily_work_hours":
+        return _format_attendance_activity_export_value(row.work_hours, employee)
+    if field_name == "daily_break_hours":
+        return _format_attendance_activity_export_value(row.break_hours, employee)
+    if field_name == "daily_lunch_hours":
+        return _format_attendance_activity_export_value(row.lunch_hours, employee)
+    if field_name == "daily_overtime":
+        return _format_attendance_activity_export_value(row.overtime, employee)
+
+    return ""
+
+
+def _attendance_activity_export_row_value(row, field_name, employee):
+    if field_name in ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS:
+        return _attendance_activity_daily_export_value(row, field_name, employee)
+
+    row_values = {
+        "employee_id": row.employee,
+        "employee_id__employee_work_info__branch_id": getattr(
+            getattr(row.employee, "employee_work_info", None), "branch_id", None
+        ),
+        "employee_id__employee_work_info__department_id": getattr(
+            getattr(row.employee, "employee_work_info", None), "department_id", None
+        ),
+        "attendance_date": row.attendance_date,
+    }
+    value = row_values.get(field_name)
+    return _format_attendance_activity_export_value(value, employee)
+
+
+def _attendance_activity_export_daily_rows(activities):
+    row_keys = {
+        (activity.employee_id_id, activity.attendance_date)
+        for activity in activities
+        if activity.employee_id_id and activity.attendance_date
+    }
+    if not row_keys:
+        return []
+
+    employee_ids = {employee_id for employee_id, _ in row_keys}
+    attendance_dates = {attendance_date for _, attendance_date in row_keys}
+    daily_activities = AttendanceActivity.objects.filter(
+        employee_id_id__in=employee_ids,
+        attendance_date__in=attendance_dates,
+    )
+    rows = build_daily_activity_rows(daily_activities)
+    return [
+        row
+        for row in rows
+        if (row.employee.id, row.attendance_date) in row_keys
+    ]
+
+
+def _attendance_activity_export_columns(form, selected_fields):
+    return [
+        (field_name, verbose_name)
+        for field_name, verbose_name in form.fields["selected_fields"].choices
+        if field_name in selected_fields
+    ]
+
+
+def _attendance_activity_export_data(export_objects, selected_columns, employee):
+    activities = list(
+        export_objects.select_related(
+            "employee_id",
+            "employee_id__employee_work_info",
+            "employee_id__employee_work_info__branch_id",
+            "employee_id__employee_work_info__department_id",
+            "shift_day",
+        )
+    )
+    daily_rows = _attendance_activity_export_daily_rows(activities)
+    data_export = {verbose_name: [] for _, verbose_name in selected_columns}
+
+    for field_name, verbose_name in selected_columns:
+        for row in daily_rows:
+            data_export[verbose_name].append(
+                _attendance_activity_export_row_value(row, field_name, employee)
+            )
+
+    return data_export
+
+
+def export_attendance_activity_data(request):
+    employee = request.user.employee_get
+    form = AttendanceActivityExportForm()
+    selected_fields = request.GET.getlist("selected_fields")
+    export_objects = AttendanceActivityFilter(request.GET).qs
+
+    if not selected_fields:
+        selected_fields = form.fields["selected_fields"].initial
+        ids = request.GET.get("ids")
+        if ids:
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
+                export_objects = AttendanceActivity.objects.filter(id__in=json.loads(ids))
+
+    selected_columns = _attendance_activity_export_columns(form, selected_fields)
+    data_export = _attendance_activity_export_data(
+        export_objects, selected_columns, employee
+    )
+    data_frame = pd.DataFrame(data=data_export)
+    styled_data_frame = data_frame.style.map(
+        lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
+    )
+
+    today_date = date.today().strftime("%Y-%m-%d")
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response[
+        "Content-Disposition"
+    ] = f'attachment; filename="Attendance_activity_{today_date}.xlsx"'
+
+    writer = pd.ExcelWriter(response, engine="xlsxwriter")
+    styled_data_frame.to_excel(writer, index=False, sheet_name="Sheet1")
+    worksheet = writer.sheets["Sheet1"]
+    worksheet.set_column("A:Z", 18)
+    writer.close()
+    return response
+
+
+def _daily_row_group_value(row, field):
+    employee = row.employee
+    work_info = getattr(employee, "employee_work_info", None)
+    values = {
+        "employee_id": employee,
+        "attendance_date": row.attendance_date,
+        "clock_in_date": row.work_in.clock_in_date if row.work_in else None,
+        "clock_out_date": row.work_out.clock_out_date if row.work_out else None,
+        "shift_day": row.shift_day,
+        "employee_id__country": getattr(employee, "country", None),
+        "employee_id__employee_work_info__reporting_manager_id": getattr(
+            work_info, "reporting_manager_id", None
+        ),
+        "employee_id__employee_work_info__shift_id": row.shift,
+        "employee_id__employee_work_info__work_type_id": row.work_type,
+        "employee_id__employee_work_info__department_id": getattr(
+            work_info, "department_id", None
+        ),
+        "employee_id__employee_work_info__job_position_id": getattr(
+            work_info, "job_position_id", None
+        ),
+        "employee_id__employee_work_info__employee_type_id": getattr(
+            work_info, "employee_type_id", None
+        ),
+        "employee_id__employee_work_info__company_id": getattr(
+            work_info, "company_id", None
+        ),
+        "employee_id__employee_work_info__branch_id": getattr(
+            work_info, "branch_id", None
+        ),
+    }
+    return values.get(field) or _("Unknown")
+
+
+def group_daily_activity_rows(rows, field, request, page_name="page"):
+    groups_by_value = {}
+    for row in rows:
+        grouper = _daily_row_group_value(row, field)
+        groups_by_value.setdefault(grouper, []).append(row)
+
+    groups = []
+    for grouper, group_rows in groups_by_value.items():
+        dynamic_name = f"dynamic_page_{page_name}{str(grouper)}".replace(" ", "_")
+        groups.append(
+            {
+                "grouper": grouper,
+                "list": paginator_qry(group_rows, request.GET.get(dynamic_name)),
+                "dynamic_name": dynamic_name,
+            }
+        )
+    return paginator_qry(groups, request.GET.get(page_name))
 
 
 def attendance_validate(attendance):
@@ -1012,8 +1842,15 @@ def attendance_activity_view(request):
     attendance_activities = attendance_activities | self_attendance_activities
     attendance_activities = attendance_activities.distinct()
     attendance_activities = attendance_activities.order_by("-pk")
+    daily_activity_rows = build_daily_activity_rows(attendance_activities)
     activity_ids = json.dumps(
-        [instance.id for instance in paginator_qry(attendance_activities, None)]
+        sorted(
+            {
+                activity_id
+                for row in daily_activity_rows
+                for activity_id in row.activity_ids
+            }
+        )
     )
     if attendance_activities.exists():
         template = "attendance/attendance_activity/attendance_activity_view.html"
@@ -1023,11 +1860,36 @@ def attendance_activity_view(request):
         request,
         template,
         {
-            "data": paginator_qry(attendance_activities, request.GET.get("page")),
+            "data": paginator_qry(daily_activity_rows, request.GET.get("page")),
             "pd": previous_data,
             "f": filter_obj,
             "gp_fields": AttendanceActivityReGroup.fields,
             "activity_ids": activity_ids,
+        },
+    )
+
+
+@login_required
+def activity_daily_single_view(request, employee_id, attendance_date):
+    request_copy = request.GET.copy()
+    previous_data = request_copy.urlencode()
+    try:
+        parsed_attendance_date = datetime.strptime(attendance_date, "%Y-%m-%d").date()
+    except ValueError:
+        return HttpResponseBadRequest(_("Invalid attendance date"))
+
+    activities = AttendanceActivity.objects.filter(
+        employee_id_id=employee_id,
+        attendance_date=parsed_attendance_date,
+    ).order_by("clock_in_date", "clock_in", "id")
+    rows = build_daily_activity_rows(activities)
+    row = rows[0] if rows else None
+    return render(
+        request,
+        "attendance/attendance_activity/daily_attendance_activity.html",
+        {
+            "pd": previous_data,
+            "row": row,
         },
     )
 
@@ -1342,13 +2204,7 @@ def attendance_activity_export(request):
             "attendance/attendance_activity/export_filter.html",
             context=context,
         )
-    return export_data(
-        request=request,
-        model=AttendanceActivity,
-        filter_class=AttendanceActivityFilter,
-        form_class=AttendanceActivityExportForm,
-        file_name="Attendance_activity",
-    )
+    return export_attendance_activity_data(request)
 
 
 @login_required
@@ -1813,13 +2669,10 @@ def update_fields_based_shift(request):
         if attendance_date_str
         else datetime.today().date()
     )
-    day = attendance_date.strftime("%A").lower()
-
-    schedule_today = (
-        EmployeeShiftSchedule.objects.filter(shift_id=shift_id, day__day=day).first()
-        if shift_id
-        else None
-    )
+    day = EmployeeShiftDay.objects.filter(
+        day=attendance_date.strftime("%A").lower()
+    ).first()
+    schedule_today = shift_schedule_with_weekday_fallback(day, shift_id)
 
     shift_start_time = schedule_today.start_time if schedule_today else ""
     shift_end_time = schedule_today.end_time if schedule_today else ""
@@ -1925,10 +2778,10 @@ def form_date_checking(request):
 
     if request.POST["shift_id"]:
         shift_id = request.POST["shift_id"]
-        day = attendance_date.strftime("%A").lower()
-        schedule_today = EmployeeShiftSchedule.objects.filter(
-            shift_id__id=shift_id, day__day=day
+        day = EmployeeShiftDay.objects.filter(
+            day=attendance_date.strftime("%A").lower()
         ).first()
+        schedule_today = shift_schedule_with_weekday_fallback(day, shift_id)
 
         # Checking the Shift is present in the selected attendance day.
         if schedule_today is not None:
@@ -2772,21 +3625,48 @@ def enable_disable_check_in(request):
     Enables or disables check-in check-out.
     """
     if request.method == "POST":
-        is_checked = request.POST.get("isChecked")
         setting_id = request.POST.get("setting_Id")
+        setting = AttendanceGeneralSetting.objects.filter(id=setting_id).first()
+        if not setting:
+            return HttpResponse("")
+
+        if (
+            "portal_break_limit" in request.POST
+            or "portal_break_minutes" in request.POST
+            or "portal_lunch_minutes" in request.POST
+        ):
+            portal_setting_fields = [
+                "portal_break_limit",
+                "portal_break_minutes",
+                "portal_lunch_minutes",
+            ]
+            updated_fields = []
+            for field_name in portal_setting_fields:
+                if field_name not in request.POST:
+                    continue
+                try:
+                    value = int(request.POST.get(field_name))
+                except (TypeError, ValueError):
+                    value = None
+                if value and value > 0:
+                    setattr(setting, field_name, value)
+                    updated_fields.append(field_name)
+            if updated_fields:
+                setting.save(update_fields=updated_fields)
+                messages.success(request, _("Portal break/lunch settings updated."))
+            return HttpResponse("success")
+
+        is_checked = request.POST.get("isChecked")
         enable = bool(is_checked)
+        setting.enable_check_in = enable
+        setting.save(update_fields=["enable_check_in"])
 
-        updated = AttendanceGeneralSetting.objects.filter(id=setting_id).update(
-            enable_check_in=enable
+        message = _("Check In/Check Out has been successfully {}.").format(
+            _("enabled") if enable else _("disabled")
         )
-
-        if updated:
-            message = _("Check In/Check Out has been successfully {}.").format(
-                _("enabled") if enable else _("disabled")
-            )
-            messages.success(request, message)
-            if enable:
-                return render(request, "attendance/components/in_out_component.html")
+        messages.success(request, message)
+        if enable:
+            return render(request, "attendance/components/in_out_component.html")
 
     return HttpResponse("")
 

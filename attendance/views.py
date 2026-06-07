@@ -42,6 +42,7 @@ from attendance.forms import (
 )
 from attendance.methods.utils import (
     activity_datetime,
+    clock_time_seconds,
     employee_exists,
     format_time,
     is_reportingmanger,
@@ -96,7 +97,9 @@ def late_come(attendance, start_time, end_time):
 
     """
 
-    now_sec = strtime_seconds(datetime.now().strftime("%H:%M"))
+    now_sec = clock_time_seconds(attendance.attendance_clock_in)
+    if now_sec is None:
+        return
     mid_day_sec = strtime_seconds("12:00")
     if start_time > end_time and start_time != end_time:
         # night shift
@@ -135,7 +138,9 @@ def early_out(attendance, start_time, end_time):
         start_end : attendance day shift end time
     """
 
-    now_sec = strtime_seconds(datetime.now().strftime("%H:%M"))
+    now_sec = clock_time_seconds(attendance.attendance_clock_out)
+    if now_sec is None:
+        return
     mid_day_sec = strtime_seconds("12:00")
     if start_time > end_time:
         # Early out condition for night shift

@@ -22,6 +22,8 @@ from attendance.methods.utils import (
     attendance_date_validate,
     format_time,
     get_diff_dict,
+    schedule_end_overtime_calculation,
+    shift_schedule_with_weekday_fallback,
     strtime_seconds,
     validate_hh_mm_ss_format,
     validate_time_format,
@@ -29,7 +31,7 @@ from attendance.methods.utils import (
 )
 from base.horilla_company_manager import HorillaCompanyManager
 from base.methods import is_company_leave, is_holiday
-from base.models import Company, EmployeeShift, EmployeeShiftDay, EmployeeShiftSchedule, WorkType
+from base.models import Company, EmployeeShift, EmployeeShiftDay, WorkType
 from employee.models import Employee
 from horilla.methods import get_horilla_model_class
 from horilla.models import HorillaModel, upload_path
@@ -70,6 +72,11 @@ class AttendanceActivity(HorillaModel):
     clock_out_date = models.DateField(null=True, verbose_name=_("Out Date"))
     out_datetime = models.DateTimeField(null=True)
     clock_out = models.TimeField(null=True, verbose_name=_("Check Out"))
+    activity_type = models.CharField(
+        max_length=20,
+        default="work",
+        verbose_name=_("Activity Type"),
+    )
     # Self-service clock in/out fields
     clock_in_selfie = models.ImageField(
         upload_to=upload_path,
@@ -387,10 +394,9 @@ class Attendance(HorillaModel):
         """
         check is night shift or not
         """
-        day = self.attendance_day
-        if day is None:
-            return False
-        schedule = day.day_schedule.filter(shift_id=self.shift_id).first()
+        schedule = shift_schedule_with_weekday_fallback(
+            self.attendance_day, self.shift_id
+        )
         if not schedule:
             return False
         return schedule.is_night_shift
@@ -635,15 +641,7 @@ class Attendance(HorillaModel):
         """
         Calculate and update attendance overtime and worked seconds.
         """
-        self.attendance_overtime = format_time(
-            max(
-                0,
-                (
-                    strtime_seconds(self.attendance_worked_hour)
-                    - strtime_seconds(self.minimum_hour)
-                ),
-            )
-        )
+        self.attendance_overtime = schedule_end_overtime_calculation(self)
         self.at_work_second = strtime_seconds(self.attendance_worked_hour)
         self.overtime_second = strtime_seconds(self.attendance_overtime)
 
@@ -1081,18 +1079,20 @@ class AttendanceLateComeEarlyOut(HorillaModel):
 
     def get_late_early_duration(self):
         attendance = self.attendance_id
-        if not attendance.shift_id or not attendance.attendance_day:
+        if not attendance.shift_id:
             return None
-        try:
-            schedule = EmployeeShiftSchedule.objects.get(
-                shift_id=attendance.shift_id,
-                day=attendance.attendance_day,
-            )
-        except EmployeeShiftSchedule.DoesNotExist:
+        schedule = shift_schedule_with_weekday_fallback(
+            attendance.attendance_day, attendance.shift_id
+        )
+        if not schedule:
             return None
 
         if self.type == "late_come":
-            if not attendance.attendance_clock_in or not schedule.start_time:
+            if (
+                not attendance.attendance_clock_in_date
+                or not attendance.attendance_clock_in
+                or not schedule.start_time
+            ):
                 return None
             clock_in_dt = datetime.combine(
                 attendance.attendance_clock_in_date, attendance.attendance_clock_in
@@ -1102,7 +1102,11 @@ class AttendanceLateComeEarlyOut(HorillaModel):
             )
             diff = clock_in_dt - start_dt
         elif self.type == "early_out":
-            if not attendance.attendance_clock_out or not schedule.end_time:
+            if (
+                not attendance.attendance_clock_out_date
+                or not attendance.attendance_clock_out
+                or not schedule.end_time
+            ):
                 return None
             clock_out_dt = datetime.combine(
                 attendance.attendance_clock_out_date, attendance.attendance_clock_out
@@ -1267,6 +1271,18 @@ class AttendanceGeneralSetting(HorillaModel):
         help_text=_(
             "Enabling this feature allows employees to record their attendance using the Check-In/Check-Out button."
         ),
+    )
+    portal_break_limit = models.PositiveSmallIntegerField(
+        default=2,
+        verbose_name=_("Portal Break Limit"),
+    )
+    portal_break_minutes = models.PositiveSmallIntegerField(
+        default=15,
+        verbose_name=_("Portal Break Minutes"),
+    )
+    portal_lunch_minutes = models.PositiveSmallIntegerField(
+        default=60,
+        verbose_name=_("Portal Lunch Minutes"),
     )
     company_id = models.ForeignKey(Company, on_delete=models.CASCADE, null=True)
     objects = HorillaCompanyManager()

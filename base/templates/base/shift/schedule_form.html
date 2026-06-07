@@ -11,6 +11,11 @@
     <form hx-post="{{ request.get_full_path }}"
         hx-target="{% if shift_schedule.id %} #objectUpdateModalTarget {% else %} #objectCreateModalTarget {% endif %}">
         {% csrf_token %} {{ form.non_field_errors}}
+        {% if form.errors %}
+            <div class="oh-alert oh-alert--danger" role="alert">
+                {% trans "Please correct the errors below and save again." %}
+            </div>
+        {% endif %}
         {{form.as_p}}
     </form>
 </div>

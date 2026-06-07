@@ -619,8 +619,8 @@ class EmployeeShift(HorillaModel):
     def __str__(self) -> str:
         return str(self.employee_shift)
 
-    def clean(self, *args, **kwargs):
-        super().clean(*args, **kwargs)
+    def clean(self):
+        super().clean()
         request = getattr(_thread_locals, "request", None)
         if request and request.POST:
             company = request.POST.getlist("company_id", None)
@@ -639,7 +639,7 @@ class EmployeeShift(HorillaModel):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        self.clean(*args, **kwargs)
+        self.clean()
         return self
 
 

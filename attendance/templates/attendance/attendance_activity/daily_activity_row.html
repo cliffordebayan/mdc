@@ -1,0 +1,141 @@
+{% load i18n %}
+<div class="oh-sticky-table__tr" draggable="false" data-toggle="oh-modal-toggle"
+    data-target="#objectDetailsModalW25" hx-target="#objectDetailsModalW25Target"
+    hx-get="{% url 'attendance-activity-daily-view' row.employee.id row.attendance_date_iso %}?{{pd}}">
+    <div class="oh-sticky-table__sd" onclick="event.stopPropagation();">
+        <div class="centered-div">
+            <input type="checkbox" id="{{row.row_key}}" data-activity-ids='{{ row.activity_ids_json }}'
+                onchange="highlightRow($(this))"
+                class="oh-input attendance-checkbox oh-input__checkbox all-attendance-activity-row" />
+        </div>
+    </div>
+    <div class="oh-sticky-table__td">
+        <div class="oh-profile oh-profile--md">
+            <div class="oh-profile__avatar mr-1">
+                <img src="{{row.employee.get_avatar}}" class="oh-profile__image" alt="" />
+            </div>
+            <span class="oh-profile__name oh-text--dark">{{row.employee}}</span>
+        </div>
+    </div>
+    <div data-cell-index="0" class="oh-sticky-table__td">{{ row.employee.employee_work_info.branch_id|default:"&mdash;" }}</div>
+    <div data-cell-index="1" class="oh-sticky-table__td">{{ row.employee.employee_work_info.department_id|default:"&mdash;" }}</div>
+    <div data-cell-index="2" class="oh-sticky-table__td dateformat_changer">{{row.attendance_date}}</div>
+    <div data-cell-index="3" class="oh-sticky-table__td">
+        <div class="oh-daily-activity-pair">
+            <strong>{% trans "In" %}</strong>
+            {% if row.work_in %}
+                <span class="timeformat_changer">{{row.work_in.clock_in}}</span>
+            {% else %}
+                <span class="oh-text--light">&mdash;</span>
+            {% endif %}
+            <strong>{% trans "Out" %}</strong>
+            {% if row.work_out and row.work_out.clock_out %}
+                <span class="timeformat_changer">{{row.work_out.clock_out}}</span>
+            {% else %}
+                <span class="oh-text--light">&mdash;</span>
+            {% endif %}
+        </div>
+    </div>
+    <div data-cell-index="4" class="oh-sticky-table__td">
+        {% for segment in row.break_segments %}
+            <div class="oh-daily-activity-pair">
+                <strong>{% trans "In" %}</strong>
+                <span class="timeformat_changer">{{segment.clock_in}}</span>
+                <strong>{% trans "Out" %}</strong>
+                {% if segment.clock_out %}
+                    <span class="timeformat_changer">{{segment.clock_out}}</span>
+                {% else %}
+                    <span class="oh-text--light">&mdash;</span>
+                {% endif %}
+            </div>
+        {% empty %}
+            <span class="oh-text--light">&mdash;</span>
+        {% endfor %}
+    </div>
+    <div data-cell-index="5" class="oh-sticky-table__td">
+        {% for segment in row.lunch_segments %}
+            <div class="oh-daily-activity-pair">
+                <strong>{% trans "In" %}</strong>
+                <span class="timeformat_changer">{{segment.clock_in}}</span>
+                <strong>{% trans "Out" %}</strong>
+                {% if segment.clock_out %}
+                    <span class="timeformat_changer">{{segment.clock_out}}</span>
+                {% else %}
+                    <span class="oh-text--light">&mdash;</span>
+                {% endif %}
+            </div>
+        {% empty %}
+            <span class="oh-text--light">&mdash;</span>
+        {% endfor %}
+    </div>
+    <div data-cell-index="6" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+        <div class="oh-daily-activity-images">
+            {% for segment in row.work_segments %}
+                {% if segment.clock_in_selfie %}
+                    <img src="{{segment.clock_in_selfie.url}}" alt="{% trans 'Clock In' %}" title="{% trans 'Clock In' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Clock In Image" %}')" />
+                {% endif %}
+                {% if segment.clock_out_selfie %}
+                    <img src="{{segment.clock_out_selfie.url}}" alt="{% trans 'Clock Out' %}" title="{% trans 'Clock Out' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Clock Out Image" %}')" />
+                {% endif %}
+            {% endfor %}
+            {% if not row.has_work_images %}
+                <span class="oh-text--light">&mdash;</span>
+            {% endif %}
+        </div>
+    </div>
+    <div data-cell-index="7" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+        {% for segment in row.break_segments %}
+            <div class="oh-daily-activity-images mb-1">
+                {% if segment.clock_in_selfie %}
+                    <img src="{{segment.clock_in_selfie.url}}" alt="{% trans 'Break In' %}" title="{% trans 'Break In' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Break In Image" %}')" />
+                {% endif %}
+                {% if segment.clock_out_selfie %}
+                    <img src="{{segment.clock_out_selfie.url}}" alt="{% trans 'Break Out' %}" title="{% trans 'Break Out' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Break Out Image" %}')" />
+                {% endif %}
+                {% if not segment.clock_in_selfie and not segment.clock_out_selfie %}
+                    <span class="oh-text--light">&mdash;</span>
+                {% endif %}
+            </div>
+        {% empty %}
+            <span class="oh-text--light">&mdash;</span>
+        {% endfor %}
+    </div>
+    <div data-cell-index="8" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+        {% for segment in row.lunch_segments %}
+            <div class="oh-daily-activity-images mb-1">
+                {% if segment.clock_in_selfie %}
+                    <img src="{{segment.clock_in_selfie.url}}" alt="{% trans 'Lunch In' %}" title="{% trans 'Lunch In' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Lunch In Image" %}')" />
+                {% endif %}
+                {% if segment.clock_out_selfie %}
+                    <img src="{{segment.clock_out_selfie.url}}" alt="{% trans 'Lunch Out' %}" title="{% trans 'Lunch Out' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Lunch Out Image" %}')" />
+                {% endif %}
+                {% if not segment.clock_in_selfie and not segment.clock_out_selfie %}
+                    <span class="oh-text--light">&mdash;</span>
+                {% endif %}
+            </div>
+        {% empty %}
+            <span class="oh-text--light">&mdash;</span>
+        {% endfor %}
+    </div>
+    <div data-cell-index="9" class="oh-sticky-table__td">{{ row.shift|default:"&mdash;" }}</div>
+    <div data-cell-index="10" class="oh-sticky-table__td">{{ row.late_come_duration|default:"&mdash;" }}</div>
+    <div data-cell-index="11" class="oh-sticky-table__td">{{ row.early_out_duration|default:"&mdash;" }}</div>
+    <div data-cell-index="12" class="oh-sticky-table__td">{{ row.work_hours|default:"&mdash;" }}</div>
+    <div data-cell-index="13" class="oh-sticky-table__td">{{ row.break_hours|default:"&mdash;" }}</div>
+    <div data-cell-index="14" class="oh-sticky-table__td">{{ row.lunch_hours|default:"&mdash;" }}</div>
+    <div data-cell-index="15" class="oh-sticky-table__td">{{ row.overtime|default:"&mdash;" }}</div>
+    {% if perms.attendance.delete_attendanceactivity %}
+        <div class="oh-sticky-table__td oh-sticky-table__right">
+            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100"
+                title="{% trans 'Remove' %}" onclick="deleteDailyActivityRow(event, '{{ row.activity_ids_json|escapejs }}')">
+                <ion-icon name="trash-outline"></ion-icon>
+            </button>
+        </div>
+    {% endif %}
+</div>

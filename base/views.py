@@ -6,6 +6,7 @@ This module is used to map url pattens with django views or methods
 
 import csv
 import json
+import logging
 import os
 import threading
 import uuid
@@ -26,6 +27,7 @@ from django.contrib.auth.views import PasswordResetConfirmView, PasswordResetVie
 from django.core.files.base import ContentFile
 from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.core.management import call_command
+from django.db import transaction
 from django.db.models import ProtectedError, Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -191,6 +193,8 @@ from horilla_audit.forms import HistoryTrackingFieldsForm
 from horilla_audit.models import AccountBlockUnblock, AuditTag, HistoryTrackingFields
 from notifications.models import Notification
 from notifications.signals import notify
+
+logger = logging.getLogger(__name__)
 
 
 def custom404(request):
@@ -2930,9 +2934,31 @@ def employee_shift_schedule_update(request, id, **kwargs):
             request.POST, instance=employee_shift_schedule
         )
         if form.is_valid():
-            form.save()
-            messages.success(request, _("Shift schedule created."))
-            return HorillaRedirect(request)
+            with transaction.atomic():
+                employee_shift_schedule = form.save()
+            if apps.is_installed("attendance"):
+                try:
+                    from attendance.methods.utils import recalculate_attendance_for_shift
+
+                    with transaction.atomic():
+                        recalculate_attendance_for_shift(employee_shift_schedule.shift_id)
+                except Exception:
+                    logger.exception(
+                        "Attendance recalculation failed after updating shift schedule %s",
+                        employee_shift_schedule.pk,
+                    )
+                    messages.warning(
+                        request,
+                        _(
+                            "Shift schedule updated, but attendance recalculation could not be completed automatically."
+                        ),
+                    )
+            messages.success(request, _("Shift schedule updated."))
+            if request.headers.get("HX-Request"):
+                return HttpResponse(status=204, headers={"HX-Refresh": "true"})
+            return HorillaRedirect(
+                request, redirect_to=reverse("employee-shift-schedule-view")
+            )
     return render(
         request,
         "base/shift/schedule_form.html",

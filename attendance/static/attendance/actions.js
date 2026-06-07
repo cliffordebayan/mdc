@@ -172,6 +172,20 @@ function validateActivityIds(event) {
     });
 }
 
+function getActivityRowIds(rowCheckbox) {
+    var rawIds = $(rowCheckbox).attr("data-activity-ids");
+    if (!rawIds) {
+        return [rowCheckbox.id];
+    }
+    try {
+        var parsedIds = JSON.parse(rawIds);
+        return Array.isArray(parsedIds) ? parsedIds : [rowCheckbox.id];
+    } catch (e) {
+        console.error("Invalid activity row ids:", e);
+        return [rowCheckbox.id];
+    }
+}
+
 $(".all-hour-account").change(function (e) {
     var is_checked = $(this).is(":checked");
     var closest = $(this)
@@ -234,6 +248,14 @@ function tickactivityCheckboxes() {
 
     uniqueIds.forEach(function (id) {
         $("#" + id).prop("checked", true);
+    });
+    $(".all-attendance-activity-row").each(function () {
+        var rowIds = getActivityRowIds(this);
+        var isSelected = rowIds.some(function (rowId) {
+            return uniqueIds.indexOf(rowId) > -1 || uniqueIds.indexOf(String(rowId)) > -1;
+        });
+        $(this).prop("checked", isSelected);
+        highlightRow($(this));
     });
     var selectedCount = uniqueIds.length;
     getCurrentLanguageCode(function (code) {
@@ -484,13 +506,21 @@ function addingActivityIds() {
     var selectedCount = 0;
 
     $(".all-attendance-activity-row").each(function () {
+        var rowIds = getActivityRowIds(this);
         if ($(this).is(":checked")) {
-            ids.push(this.id);
+            rowIds.forEach(function (rowId) {
+                ids.push(rowId);
+            });
         } else {
-            var index = ids.indexOf(this.id);
-            if (index > -1) {
-                ids.splice(index, 1);
-            }
+            rowIds.forEach(function (rowId) {
+                var index = ids.indexOf(rowId);
+                if (index === -1) {
+                    index = ids.indexOf(String(rowId));
+                }
+                if (index > -1) {
+                    ids.splice(index, 1);
+                }
+            });
         }
     });
 

@@ -1,0 +1,61 @@
+{% load i18n %}
+<div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+    <div class="oh-timeoff-modal__stat">
+        <span class="oh-timeoff-modal__stat-title">{{ title }} {% trans "In" %}</span>
+        <span class="oh-timeoff-modal__stat-count">
+            <span class="dateformat_changer">{{segment.clock_in_date}}</span>
+            <span class="timeformat_changer">{{segment.clock_in}}</span>
+        </span>
+        {% if segment.clock_in_selfie %}
+            <div style="margin-top: 8px;">
+                <img src="{{segment.clock_in_selfie.url}}" alt="{{ title }} {% trans 'In' %}"
+                    style="max-width: 120px; max-height: 120px; border-radius: 8px; cursor: pointer;"
+                    onclick="openImageModal(this.src, '{{ title }} {% trans "In Image" %}')" />
+            </div>
+        {% endif %}
+        {% if segment.clock_in_location or segment.clock_in_map_url %}
+            <span class="oh-timeoff-modal__stat-count" style="font-size: 13px; display:block; margin-top:8px;">
+                {% if segment.clock_in_location %}
+                    <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                    {{ segment.clock_in_location }}<br>
+                {% endif %}
+                {% if segment.clock_in_map_url %}
+                    <a href="{{ segment.clock_in_map_url }}" target="_blank" rel="noopener noreferrer" style="font-size:12px;">
+                        <ion-icon name="map-outline" style="vertical-align:middle;"></ion-icon> {% trans "View Map" %}
+                    </a>
+                {% endif %}
+            </span>
+        {% endif %}
+    </div>
+    <div class="oh-timeoff-modal__stat" style="margin-left: 20px">
+        <span class="oh-timeoff-modal__stat-title">{{ title }} {% trans "Out" %}</span>
+        <span class="oh-timeoff-modal__stat-count">
+            {% if segment.clock_out %}
+                <span class="dateformat_changer">{{segment.clock_out_date}}</span>
+                <span class="timeformat_changer">{{segment.clock_out}}</span>
+            {% else %}
+                <span class="oh-text--light">&mdash;</span>
+            {% endif %}
+        </span>
+        {% if segment.clock_out_selfie %}
+            <div style="margin-top: 8px;">
+                <img src="{{segment.clock_out_selfie.url}}" alt="{{ title }} {% trans 'Out' %}"
+                    style="max-width: 120px; max-height: 120px; border-radius: 8px; cursor: pointer;"
+                    onclick="openImageModal(this.src, '{{ title }} {% trans "Out Image" %}')" />
+            </div>
+        {% endif %}
+        {% if segment.clock_out_location or segment.clock_out_map_url %}
+            <span class="oh-timeoff-modal__stat-count" style="font-size: 13px; display:block; margin-top:8px;">
+                {% if segment.clock_out_location %}
+                    <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
+                    {{ segment.clock_out_location }}<br>
+                {% endif %}
+                {% if segment.clock_out_map_url %}
+                    <a href="{{ segment.clock_out_map_url }}" target="_blank" rel="noopener noreferrer" style="font-size:12px;">
+                        <ion-icon name="map-outline" style="vertical-align:middle;"></ion-icon> {% trans "View Map" %}
+                    </a>
+                {% endif %}
+            </span>
+        {% endif %}
+    </div>
+</div>

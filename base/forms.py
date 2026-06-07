@@ -1215,7 +1215,11 @@ class EmployeeShiftScheduleUpdateForm(ModelForm):
                             )
                         }
                     )
-                elif auto_punch_out_time < end_time:
+                elif (
+                    auto_punch_out_time
+                    and end_time
+                    and auto_punch_out_time < end_time
+                ):
                     raise ValidationError(
                         {
                             "auto_punch_out_time": _(

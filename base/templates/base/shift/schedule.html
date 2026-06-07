@@ -30,11 +30,16 @@
 </div>
 <script>
     function toggleDivVisibility(element) {
-        var isChecked = $(element).prop('checked');
-        if (isChecked) {
-            $(element).closest('form').find('#id_auto_punch_out_time_parent_div', '#id_auto_punch_out_time').show();
+        var form = $(element).closest('form');
+        var autoPunchOutTime = form.find('#id_auto_punch_out_time');
+        var autoPunchOutTimeWrapper = form.find('#id_auto_punch_out_time_parent_div');
+        var hasErrors = autoPunchOutTimeWrapper.find('.errorlist').length > 0;
+
+        if ($(element).prop('checked') || hasErrors) {
+            autoPunchOutTimeWrapper.show();
         } else {
-            $(element).closest('form').find('#id_auto_punch_out_time_parent_div', '#id_auto_punch_out_time').hide();
+            autoPunchOutTime.val('');
+            autoPunchOutTimeWrapper.hide();
         }
     }
 </script>

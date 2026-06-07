@@ -16,9 +16,9 @@ from django.http import HttpResponse
 from django.utils.translation import gettext_lazy as _
 
 from attendance.methods.utils import (
-    activity_datetime,
+    calculate_worked_hours,
+    clock_time_seconds,
     employee_exists,
-    format_time,
     overtime_calculation,
     shift_schedule_today,
     strtime_seconds,
@@ -76,7 +76,9 @@ def late_come(attendance, start_time, end_time, shift):
     if not enable_late_come_early_out_tracking(None).get("tracking"):
         return
     request = getattr(_thread_locals, "request", None)
-    now_sec = strtime_seconds(attendance.attendance_clock_in.strftime("%H:%M"))
+    now_sec = clock_time_seconds(attendance.attendance_clock_in)
+    if now_sec is None:
+        return
     mid_day_sec = strtime_seconds("12:00")
 
     # Checking gracetime allowance before creating late come
@@ -374,27 +376,15 @@ def clock_out_attendance_and_activity(
         attendance_activity.out_datetime = out_datetime
         attendance_activity.save()
 
-        attendance_activities = attendance_activities.filter(
-            attendance_date=attendance_activity.attendance_date
-        )
-        # Here calculate the total durations between the attendance activities
-
-        duration = 0
-        for activity in attendance_activities:
-            in_datetime, out_datetime = activity_datetime(activity)
-            difference = out_datetime - in_datetime
-            days_second = difference.days * 24 * 3600
-            seconds = difference.seconds
-            total_seconds = days_second + seconds
-            duration = duration + total_seconds
-        duration = format_time(duration)
         # update clock out of attendance
         attendance = Attendance.objects.filter(employee_id=employee).order_by(
             "-attendance_date", "-id"
         )[0]
         attendance.attendance_clock_out = now + ":00"
         attendance.attendance_clock_out_date = date_today
-        attendance.attendance_worked_hour = duration
+        attendance.attendance_worked_hour = calculate_worked_hours(
+            employee, attendance_activity.attendance_date
+        )
         # Overtime calculation
         attendance.attendance_overtime = overtime_calculation(attendance)
 
@@ -444,11 +434,9 @@ def early_out(attendance, start_time, end_time, shift):
     if not enable_late_come_early_out_tracking(None).get("tracking"):
         return
 
-    clock_out_time = attendance.attendance_clock_out
-    if isinstance(clock_out_time, str):
-        clock_out_time = datetime.strptime(clock_out_time, "%H:%M:%S")
-
-    now_sec = strtime_seconds(clock_out_time.strftime("%H:%M"))
+    now_sec = clock_time_seconds(attendance.attendance_clock_out)
+    if now_sec is None:
+        return
     mid_day_sec = strtime_seconds("12:00")
     # Checking gracetime allowance before creating early out
     if shift and shift.grace_time_id:

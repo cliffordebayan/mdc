@@ -15,6 +15,41 @@
     </div>
 {% endif %}
 {% if data %}
+    <style>
+        .oh-daily-activity-thumb {
+            width: 44px;
+            height: 44px;
+            object-fit: cover;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 4px;
+        }
+        .oh-daily-activity-images {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .oh-daily-activity-pair {
+            display: grid;
+            grid-template-columns: auto auto;
+            gap: 2px 8px;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+        .oh-daily-activity-location {
+            font-size: 11px;
+            display: block;
+            max-width: 180px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .oh-daily-activity-map {
+            font-size: 11px;
+            white-space: nowrap;
+        }
+    </style>
     <div class="oh-card">
         {% for attendance_list in data %}
             <div class="oh-accordion-meta">
@@ -45,113 +80,33 @@
                                                 hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=employee_id__employee_first_name">
                                                 {% trans "Employee" %}
                                             </div>
+                                            <div class='oh-sticky-table__th'>{% trans "Branch" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Department" %}</div>
                                             <div class='oh-sticky-table__th' hx-target='#activity-table'
                                                 hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=attendance_date">
-                                                {% trans "Attendnace Date" %}
+                                                {% trans "Attendance Date" %}
                                             </div>
-                                            <div class='oh-sticky-table__th' hx-target='#activity-table'
-                                                hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=clock_in_date">
-                                                {% trans "In Date" %}
-                                            </div>
-                                            <div class='oh-sticky-table__th'>{% trans "Check In" %}</div>
-                                            <div class='oh-sticky-table__th'>{% trans "Check Out" %}</div>
-                                            <div class='oh-sticky-table__th' hx-target='#activity-table'
-                                                hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=clock_out_date">
-                                                {% trans "Out Date" %}
-                                            </div>
-                                            <div class='oh-sticky-table__th'>{% trans "Check In Location" %}</div>
-                                            <div class='oh-sticky-table__th'>{% trans "Check In Map" %}</div>
-                                            <div class='oh-sticky-table__th'>{% trans "Check Out Location" %}</div>
-                                            <div class='oh-sticky-table__th'>{% trans "Check Out Map" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Clock In/Out" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Break In/Out" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Lunch In/Out" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Clock Image" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Break Image" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Lunch Image" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Shift" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Late Come" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Early Out" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Work Hours" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Break Hours" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Lunch Hours" %}</div>
+                                            <div class='oh-sticky-table__th'>{% trans "Overtime" %}</div>
                                             {% if perms.attendance.delete_attendanceactivity %}
                                                 <div class='oh-sticky-table__th oh-sticky-table__right' scope="col" style="width: 80px;">{% trans "Actions" %}</div>
                                             {% endif %}
                                         </div>
                                     </div>
                                     <div class="oh-sticky-table__tbody">
-                                        {% for activity in attendance_list.list %}
-                                            <div class="oh-sticky-table__tr" draggable="false" data-toggle="oh-modal-toggle"
-                                                data-target="#objectDetailsModalW25" hx-target="#objectDetailsModalW25Target"
-                                                hx-get="{% url 'attendance-activity-single-view' activity.id %}?{{pd}}&instances_ids={{activity_ids}}">
-                                                <div class="oh-sticky-table__sd" onclick="event.stopPropagation();">
-                                                    <div class="centered-div">
-                                                        <input type="checkbox" id="{{activity.id}}"
-                                                            class="oh-input attendance-checkbox oh-input__checkbox all-attendance-activity-row" />
-                                                    </div>
-                                                </div>
-                                                <div class="oh-sticky-table__td">
-                                                    <div class="oh-profile oh-profile--md">
-                                                        <div class="oh-profile__avatar mr-1">
-                                                            <img src="{{activity.employee_id.get_avatar}}" class="oh-profile__image"
-                                                                alt="" />
-                                                        </div>
-                                                        <span class="oh-profile__name oh-text--dark">{{activity.employee_id}}</span>
-                                                    </div>
-                                                </div>
-                                                <div class="oh-sticky-table__td dateformat_changer">{{activity.attendance_date}}
-                                                </div>
-                                                <div class="oh-sticky-table__td dateformat_changer">{{activity.clock_in_date}}</div>
-                                                <div class="oh-sticky-table__td timeformat_changer">{{activity.clock_in}}</div>
-                                                <div class="oh-sticky-table__td timeformat_changer">{{activity.clock_out}}</div>
-                                                <div class="oh-sticky-table__td dateformat_changer">{{activity.clock_out_date}}
-                                                </div>
-                                                <div class="oh-sticky-table__td">
-                                                    {% if activity.clock_in_gps_address %}
-                                                        {{ activity.clock_in_gps_address }}
-                                                    {% elif activity.gps_address and not activity.clock_out %}
-                                                        {{ activity.gps_address }}
-                                                    {% else %}
-                                                        &mdash;
-                                                    {% endif %}
-                                                </div>
-                                                <div class="oh-sticky-table__td">
-                                                    {% if activity.clock_in_latitude != None and activity.clock_in_longitude != None %}
-                                                        <a href="https://www.google.com/maps?q={{ activity.clock_in_latitude }},{{ activity.clock_in_longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
-                                                            {% trans "View Map" %}
-                                                        </a>
-                                                    {% elif activity.clock_out == None and activity.latitude != None and activity.longitude != None %}
-                                                        <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
-                                                            {% trans "View Map" %}
-                                                        </a>
-                                                    {% else %}
-                                                        <span class="oh-text--light">&mdash;</span>
-                                                    {% endif %}
-                                                </div>
-                                                <div class="oh-sticky-table__td">
-                                                    {% if activity.clock_out_gps_address %}
-                                                        {{ activity.clock_out_gps_address }}
-                                                    {% elif activity.gps_address and activity.clock_out %}
-                                                        {{ activity.gps_address }}
-                                                    {% else %}
-                                                        &mdash;
-                                                    {% endif %}
-                                                </div>
-                                                <div class="oh-sticky-table__td">
-                                                    {% if activity.clock_out_latitude != None and activity.clock_out_longitude != None %}
-                                                        <a href="https://www.google.com/maps?q={{ activity.clock_out_latitude }},{{ activity.clock_out_longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
-                                                            {% trans "View Map" %}
-                                                        </a>
-                                                    {% elif activity.clock_out and activity.latitude != None and activity.longitude != None %}
-                                                        <a href="https://www.google.com/maps?q={{ activity.latitude }},{{ activity.longitude }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
-                                                            {% trans "View Map" %}
-                                                        </a>
-                                                    {% else %}
-                                                        <span class="oh-text--light">&mdash;</span>
-                                                    {% endif %}
-                                                </div>
-                                                {% if perms.attendance.delete_attendanceactivity %}
-                                                    <div class="oh-sticky-table__td oh-sticky-table__right">
-                                                        <form hx-confirm="{% trans 'Are you sure want to delete this attendance?' %}"
-                                                            hx-post="{% url 'attendance-activity-delete' activity.id  %}?{{pd}}"
-                                                            onclick="event.stopPropagation()" hx-target="#activity-table">
-                                                            {% csrf_token %}
-                                                            <button type='submit' class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100" title="{% trans 'Remove' %}">
-                                                                <ion-icon name="trash-outline"></ion-icon>
-                                                            </button>
-                                                        </form>
-                                                    </div>
-                                                {% endif %}
-                                            </div>
+                                        {% for row in attendance_list.list %}
+                                            {% include 'attendance/attendance_activity/daily_activity_row.html' %}
                                         {% endfor %}
                                     </div>
                                 </div>
@@ -182,7 +137,8 @@
                                                 hx-get="{% url 'attendance-activity-search' %}?{{pd}}&{{attendance_list.dynamic_name}}={{ attendance_list.list.previous_page_number }}"
                                                 class="oh-pagination__link">{% trans "Previous" %}</a>
                                         </li>
-                                        {% endif %} {% if attendance_list.list.has_next %}
+                                        {% endif %}
+                                        {% if attendance_list.list.has_next %}
                                         <li class="oh-pagination__item oh-pagination__item--wide">
                                             <a hx-target="#activity-table"
                                                 hx-get="{% url 'attendance-activity-search' %}?{{pd}}&{{attendance_list.dynamic_name}}={{ attendance_list.list.next_page_number }}"
@@ -252,24 +208,13 @@
 {% endif %}
 
 <script>
-    $(".oh-table__sticky-collaspable-sort").click(function (e) {
-        e.preventDefault();
-        let clickedEl = $(e.target).closest(".oh-table__toggle-parent");
-        let targetSelector = clickedEl.data("target");
-        let toggleBtn = clickedEl.find(".oh-table__toggle-button");
-        $(`[data-group='${targetSelector}']`).toggleClass(
-            "oh-table__toggle-child--show"
-        );
-        if (toggleBtn) {
-            toggleBtn.toggleClass("oh-table__toggle-button--show");
-        }
-    });
     $(document).ready(function () {
         {% if data %}
             $('#selectAllActivity').show();
         {% else %}
             $('#selectAllActivity').hide();
         {% endif %}
+        tickactivityCheckboxes();
         $(".all-attendance-activity-row").change(function () {
             var parentTable = $(this).closest(".oh-sticky-table");
             var body = parentTable.find(".oh-sticky-table__tbody");
@@ -294,4 +239,12 @@
             unselectAllActivity();
         });
     });
+
+    function deleteDailyActivityRow(event, activityIdsJson) {
+        event.stopPropagation();
+        $("#bulkDeleteIds").val(activityIdsJson);
+        document.getElementById('bulkDeleteForm').dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true })
+        );
+    }
 </script>

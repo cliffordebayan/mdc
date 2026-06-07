@@ -11,21 +11,30 @@ import logging
 import re
 import socket
 import struct
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytz
+from django import forms
 from django.conf import settings
-from django.utils import timezone
-from geopy.distance import geodesic
-
 from django.contrib.auth.models import User
+from django.core import signing
+from django.core.mail import EmailMessage
+from django.core.signing import BadSignature, SignatureExpired
+from django.db import transaction
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.template.loader import render_to_string
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.crypto import constant_time_compare, salted_hmac
+from django.utils.translation import gettext as _
+from geopy.distance import geodesic
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from attendance.methods.utils import (
+    calculate_worked_hours,
     format_time,
     shift_schedule_today,
     strtime_seconds,
@@ -39,10 +48,27 @@ from attendance.views.clock_in_out import (
     clock_in_attendance_and_activity,
     clock_out_attendance_and_activity,
 )
-from base.models import AttendanceAllowedIP, Company, EmployeeShiftDay
+from base.backends import ConfiguredEmailBackend
+from base.models import (
+    AttendanceAllowedIP,
+    Company,
+    EmployeeShiftDay,
+    EmployeeShiftSchedule,
+)
 from employee.models import Employee
 
 logger = logging.getLogger(__name__)
+
+PORTAL_WORK_ACTIVITY = "work"
+PORTAL_BREAK_ACTIVITY = "break"
+PORTAL_LUNCH_ACTIVITY = "lunch"
+PORTAL_DEFAULT_BREAK_LIMIT = 2
+PORTAL_DEFAULT_BREAK_MINUTES = 15
+PORTAL_DEFAULT_LUNCH_MINUTES = 60
+PORTAL_NON_WORK_ACTIVITY_TYPES = {
+    PORTAL_BREAK_ACTIVITY: _("Break"),
+    PORTAL_LUNCH_ACTIVITY: _("Lunch"),
+}
 
 
 def _reverse_geocode(lat, lng):
@@ -59,9 +85,204 @@ def _reverse_geocode(lat, lng):
 _NTP_SERVERS = ["time.cloudflare.com", "pool.ntp.org", "time.google.com"]
 _NTP_DELTA = 2208988800  # seconds between NTP epoch (1900) and Unix epoch (1970)
 _PORTAL_PIN_ATTEMPTS_MAX = 3
-_PORTAL_PIN_VERIFICATION_TTL_SECONDS = 120
 _PORTAL_PIN_ATTEMPTS_SESSION_KEY = "portal_pin_attempts"
 _PORTAL_PIN_VERIFICATION_SESSION_KEY = "portal_pin_verification"
+_PORTAL_PIN_RESET_SALT = "attendance.portal.pin-reset"
+_PORTAL_PIN_RESET_TIMEOUT_SECONDS = 86400
+_PORTAL_PIN_RESET_GENERIC_MESSAGE = _(
+    "If an active employee matches that email, a PIN reset link has been sent."
+)
+
+
+class PortalForgotPINForm(forms.Form):
+    email = forms.EmailField(
+        widget=forms.EmailInput(
+            attrs={
+                "class": "oh-input w-100",
+                "placeholder": "example@mail.com",
+                "autocomplete": "email",
+                "autofocus": "autofocus",
+            }
+        )
+    )
+
+
+class PortalResetPINForm(forms.Form):
+    new_pin = forms.CharField(
+        max_length=6,
+        min_length=6,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "oh-input w-100",
+                "maxlength": "6",
+                "minlength": "6",
+                "placeholder": "123456",
+                "pattern": r"\d{6}",
+                "inputmode": "numeric",
+                "autocomplete": "new-password",
+            },
+            render_value=True,
+        ),
+    )
+    confirm_pin = forms.CharField(
+        max_length=6,
+        min_length=6,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "oh-input w-100",
+                "maxlength": "6",
+                "minlength": "6",
+                "placeholder": "123456",
+                "pattern": r"\d{6}",
+                "inputmode": "numeric",
+                "autocomplete": "new-password",
+            },
+            render_value=True,
+        ),
+    )
+
+    def clean_new_pin(self):
+        pin = self.cleaned_data.get("new_pin", "")
+        if not re.fullmatch(r"\d{6}", pin):
+            raise forms.ValidationError(_("PIN must be exactly 6 digits."))
+        return pin
+
+    def clean_confirm_pin(self):
+        pin = self.cleaned_data.get("confirm_pin", "")
+        if not re.fullmatch(r"\d{6}", pin):
+            raise forms.ValidationError(_("PIN must be exactly 6 digits."))
+        return pin
+
+    def clean(self):
+        cleaned_data = super().clean()
+        new_pin = cleaned_data.get("new_pin")
+        confirm_pin = cleaned_data.get("confirm_pin")
+        if new_pin and confirm_pin and new_pin != confirm_pin:
+            raise forms.ValidationError(_("PIN values do not match."))
+        return cleaned_data
+
+
+def _portal_pin_reset_timeout():
+    return int(
+        getattr(
+            settings,
+            "PORTAL_PIN_RESET_TIMEOUT",
+            _PORTAL_PIN_RESET_TIMEOUT_SECONDS,
+        )
+    )
+
+
+def _portal_employee_id(employee):
+    return str(getattr(employee, "pk", None) or getattr(employee, "id", ""))
+
+
+def _portal_employee_work_email(employee):
+    work_info = getattr(employee, "employee_work_info", None)
+    return (getattr(work_info, "email", None) or "").strip()
+
+
+def _portal_employee_personal_email(employee):
+    return (getattr(employee, "email", None) or "").strip()
+
+
+def _portal_employee_preferred_email(employee):
+    return _portal_employee_work_email(employee) or _portal_employee_personal_email(employee)
+
+
+def _portal_pin_reset_digest(employee):
+    work_info = getattr(employee, "employee_work_info", None)
+    pin = (getattr(work_info, "pin", None) or "").strip()
+    digest_value = ":".join(
+        [
+            _portal_employee_id(employee),
+            _portal_employee_personal_email(employee).lower(),
+            _portal_employee_work_email(employee).lower(),
+            pin,
+        ]
+    )
+    return salted_hmac(_PORTAL_PIN_RESET_SALT, digest_value).hexdigest()
+
+
+def _make_portal_pin_reset_token(employee):
+    return signing.dumps(
+        {
+            "employee_id": _portal_employee_id(employee),
+            "digest": _portal_pin_reset_digest(employee),
+        },
+        salt=_PORTAL_PIN_RESET_SALT,
+    )
+
+
+def _get_portal_pin_reset_employee(token):
+    try:
+        payload = signing.loads(
+            token,
+            salt=_PORTAL_PIN_RESET_SALT,
+            max_age=_portal_pin_reset_timeout(),
+        )
+    except SignatureExpired:
+        return None, _("This PIN reset link has expired.")
+    except BadSignature:
+        return None, _("This PIN reset link is invalid.")
+
+    employee_id = payload.get("employee_id")
+    token_digest = payload.get("digest", "")
+    if not employee_id or not token_digest:
+        return None, _("This PIN reset link is invalid.")
+
+    try:
+        employee = Employee.objects.get(pk=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return None, _("This PIN reset link is invalid.")
+
+    current_digest = _portal_pin_reset_digest(employee)
+    if not constant_time_compare(token_digest, current_digest):
+        return None, _("This PIN reset link is no longer valid.")
+
+    return employee, ""
+
+
+def _get_portal_pin_reset_employees(email):
+    return Employee.objects.filter(
+        Q(email__iexact=email) | Q(employee_work_info__email__iexact=email),
+        is_active=True,
+    ).distinct()
+
+
+def _send_portal_pin_reset_email(request, employee):
+    send_to_mail = _portal_employee_preferred_email(employee)
+    if not send_to_mail:
+        return False
+
+    token = _make_portal_pin_reset_token(employee)
+    reset_url = request.build_absolute_uri(
+        reverse("portal-reset-pin", kwargs={"token": token})
+    )
+    portal_url = request.build_absolute_uri(reverse("public-portal"))
+    subject = _("Reset your attendance portal PIN")
+    html_message = render_to_string(
+        "attendance/portal/pin_reset_email.html",
+        {
+            "employee": employee,
+            "reset_url": reset_url,
+            "portal_url": portal_url,
+        },
+    )
+    email_backend = ConfiguredEmailBackend()
+    email = EmailMessage(
+        subject=str(subject),
+        body=html_message,
+        from_email=email_backend.dynamic_from_email_with_display_name,
+        to=[send_to_mail],
+    )
+    email.content_subtype = "html"
+
+    try:
+        email.send()
+        return True
+    except Exception:
+        logger.exception("Failed to send attendance portal PIN reset email")
+        return False
 
 
 def get_real_now():
@@ -276,7 +497,7 @@ def _set_pin_verification(request, employee_id):
 
 def _get_pin_verification(request):
     """
-    Return active PIN verification from session, or None if invalid/expired.
+    Return active PIN verification from session, or None if invalid.
     """
     session = getattr(request, "session", None)
     if session is None:
@@ -290,11 +511,6 @@ def _get_pin_verification(request):
     verified_at = verification.get("verified_at")
 
     if employee_id is None or not isinstance(verified_at, (int, float)):
-        _clear_pin_verification(request)
-        return None
-
-    age_seconds = timezone.now().timestamp() - float(verified_at)
-    if age_seconds > _PORTAL_PIN_VERIFICATION_TTL_SECONDS:
         _clear_pin_verification(request)
         return None
 
@@ -320,6 +536,427 @@ def _require_verified_pin(request, employee_id):
         )
 
     return True, ""
+
+
+def _activity_datetime_iso(activity, date_field, time_field, datetime_field):
+    if not activity:
+        return None
+
+    direct_datetime = getattr(activity, datetime_field, None)
+    if isinstance(direct_datetime, datetime):
+        return direct_datetime.isoformat()
+
+    activity_date = getattr(activity, date_field, None)
+    activity_time = getattr(activity, time_field, None)
+    if isinstance(activity_date, date) and isinstance(activity_time, time):
+        return datetime.combine(activity_date, activity_time).isoformat()
+
+    return None
+
+
+def _portal_activity_type(activity):
+    activity_type = getattr(activity, "activity_type", PORTAL_WORK_ACTIVITY)
+    if activity_type in {
+        PORTAL_WORK_ACTIVITY,
+        PORTAL_BREAK_ACTIVITY,
+        PORTAL_LUNCH_ACTIVITY,
+    }:
+        return activity_type
+    return PORTAL_WORK_ACTIVITY
+
+
+def _open_portal_activity(employee):
+    return (
+        AttendanceActivity.objects.filter(employee_id=employee, clock_out__isnull=True)
+        .order_by("-clock_in_date", "-clock_in")
+        .first()
+    )
+
+
+def _latest_portal_activity(employee):
+    return (
+        AttendanceActivity.objects.filter(employee_id=employee)
+        .order_by(
+            "-attendance_date",
+            "-clock_out_date",
+            "-clock_out",
+            "-clock_in_date",
+            "-clock_in",
+            "-id",
+        )
+        .first()
+    )
+
+
+def _make_naive_datetime(value):
+    if isinstance(value, datetime) and timezone.is_aware(value):
+        return timezone.make_naive(value, timezone.get_current_timezone())
+    return value
+
+
+def _activity_start_datetime(activity):
+    started_at = getattr(activity, "in_datetime", None)
+    if isinstance(started_at, datetime):
+        return _make_naive_datetime(started_at)
+
+    clock_in_date = getattr(activity, "clock_in_date", None)
+    clock_in = getattr(activity, "clock_in", None)
+    if isinstance(clock_in_date, date) and isinstance(clock_in, time):
+        return datetime.combine(clock_in_date, clock_in)
+
+    return None
+
+
+def _auto_checkout_datetime(attendance_date, schedule):
+    auto_time = getattr(schedule, "auto_punch_out_time", None)
+    if not isinstance(attendance_date, date) or not isinstance(auto_time, time):
+        return None
+
+    checkout_date = attendance_date
+    start_time = getattr(schedule, "start_time", None)
+    end_time = getattr(schedule, "end_time", None)
+    is_night_shift = bool(getattr(schedule, "is_night_shift", False))
+    if (
+        isinstance(start_time, time)
+        and isinstance(end_time, time)
+        and (is_night_shift or start_time > end_time)
+        and auto_time < start_time
+    ):
+        checkout_date = attendance_date + timedelta(days=1)
+
+    return datetime.combine(checkout_date, auto_time)
+
+
+def _maybe_auto_checkout_employee(employee, current_time=None):
+    """
+    Close a stale open portal work attendance when its shift schedule auto
+    checkout time has passed. Auto checkout intentionally skips PIN, selfie,
+    and GPS because it is a server-side cleanup for forgotten checkouts.
+    """
+    current_time = _make_naive_datetime(current_time or get_real_now())
+    open_activity = _open_portal_activity(employee)
+    if not open_activity or _portal_activity_type(open_activity) != PORTAL_WORK_ACTIVITY:
+        return None
+
+    attendance_date = getattr(open_activity, "attendance_date", None)
+    if not isinstance(attendance_date, date):
+        return None
+
+    attendance = Attendance.objects.filter(
+        employee_id=employee,
+        attendance_date=attendance_date,
+    ).first()
+    if not attendance:
+        return None
+
+    shift = getattr(attendance, "shift_id", None)
+    if not shift:
+        work_info = getattr(employee, "employee_work_info", None)
+        shift = getattr(work_info, "shift_id", None) if work_info else None
+    if not shift:
+        return None
+
+    shift_day = (
+        getattr(attendance, "attendance_day", None)
+        or getattr(open_activity, "shift_day", None)
+    )
+    if not shift_day:
+        try:
+            shift_day = EmployeeShiftDay.objects.get(
+                day=attendance_date.strftime("%A").lower()
+            )
+        except EmployeeShiftDay.DoesNotExist:
+            return None
+
+    schedule = EmployeeShiftSchedule.objects.filter(
+        shift_id=shift,
+        day=shift_day,
+    ).first()
+    if not (
+        schedule
+        and schedule.is_auto_punch_out_enabled
+        and schedule.auto_punch_out_time
+    ):
+        return None
+
+    checkout_at = _auto_checkout_datetime(attendance_date, schedule)
+    if not checkout_at or current_time < checkout_at:
+        return None
+
+    started_at = _activity_start_datetime(open_activity)
+    if started_at and started_at > checkout_at:
+        return None
+
+    return clock_out_attendance_and_activity(
+        employee=employee,
+        date_today=checkout_at.date(),
+        now=checkout_at.strftime("%H:%M"),
+        out_datetime=checkout_at,
+        auto_validate=False,
+    )
+
+
+def _lunch_taken(employee, attendance_date):
+    if not attendance_date:
+        return False
+    return bool(AttendanceActivity.objects.filter(
+        employee_id=employee,
+        attendance_date=attendance_date,
+        activity_type=PORTAL_LUNCH_ACTIVITY,
+    ).exists())
+
+
+def _positive_int(value, default):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def _portal_break_policy(employee):
+    setting = None
+    work_info = getattr(employee, "employee_work_info", None)
+    company = getattr(work_info, "company_id", None) if work_info else None
+
+    try:
+        if company:
+            setting = AttendanceGeneralSetting.objects.filter(company_id=company).first()
+        if not setting:
+            setting = AttendanceGeneralSetting.objects.filter(company_id=None).first()
+    except Exception:
+        setting = None
+
+    return {
+        "breaks_allowed": _positive_int(
+            getattr(setting, "portal_break_limit", None),
+            PORTAL_DEFAULT_BREAK_LIMIT,
+        ),
+        "break_minutes_allowed": _positive_int(
+            getattr(setting, "portal_break_minutes", None),
+            PORTAL_DEFAULT_BREAK_MINUTES,
+        ),
+        "lunch_minutes_allowed": _positive_int(
+            getattr(setting, "portal_lunch_minutes", None),
+            PORTAL_DEFAULT_LUNCH_MINUTES,
+        ),
+    }
+
+
+def _portal_breaks_taken(employee, attendance_date):
+    if not attendance_date:
+        return 0
+    try:
+        count = AttendanceActivity.objects.filter(
+            employee_id=employee,
+            attendance_date=attendance_date,
+            activity_type=PORTAL_BREAK_ACTIVITY,
+        ).count()
+    except Exception:
+        return 0
+    return count if isinstance(count, int) else 0
+
+
+def _portal_break_metadata(employee, attendance_date, policy=None):
+    policy = policy or _portal_break_policy(employee)
+    breaks_taken = _portal_breaks_taken(employee, attendance_date)
+    breaks_allowed = policy["breaks_allowed"]
+    return {
+        "breaks_taken": breaks_taken,
+        "breaks_allowed": breaks_allowed,
+        "break_minutes_allowed": policy["break_minutes_allowed"],
+        "lunch_minutes_allowed": policy["lunch_minutes_allowed"],
+        "break_limit_reached": breaks_taken >= breaks_allowed,
+    }
+
+
+def _activity_duration_seconds(activity, ended_at):
+    started_at = getattr(activity, "in_datetime", None)
+    if not isinstance(started_at, datetime):
+        clock_in_date = getattr(activity, "clock_in_date", None)
+        clock_in = getattr(activity, "clock_in", None)
+        if isinstance(clock_in_date, date) and isinstance(clock_in, time):
+            started_at = datetime.combine(clock_in_date, clock_in)
+
+    if not isinstance(started_at, datetime) or not isinstance(ended_at, datetime):
+        return 0
+
+    if timezone.is_aware(started_at):
+        started_at = timezone.make_naive(started_at, timezone.get_current_timezone())
+    if timezone.is_aware(ended_at):
+        ended_at = timezone.make_naive(ended_at, timezone.get_current_timezone())
+
+    seconds = int((ended_at - started_at).total_seconds())
+    return max(seconds, 0)
+
+
+def _activity_end_datetime(activity):
+    ended_at = getattr(activity, "out_datetime", None)
+    if isinstance(ended_at, datetime):
+        return ended_at
+
+    clock_out_date = getattr(activity, "clock_out_date", None)
+    clock_out = getattr(activity, "clock_out", None)
+    if isinstance(clock_out_date, date) and isinstance(clock_out, time):
+        return datetime.combine(clock_out_date, clock_out)
+
+    return None
+
+
+def _portal_activity_total_seconds(
+    employee,
+    attendance_date,
+    activity_type,
+    current_time=None,
+):
+    if not attendance_date:
+        return 0
+
+    total_seconds = 0
+    current_time = current_time or timezone.now()
+    try:
+        activities = AttendanceActivity.objects.filter(
+            employee_id=employee,
+            attendance_date=attendance_date,
+            activity_type=activity_type,
+        )
+
+        for activity in activities:
+            ended_at = _activity_end_datetime(activity)
+            if ended_at is None and getattr(activity, "clock_out", None) is None:
+                ended_at = current_time
+            total_seconds += _activity_duration_seconds(activity, ended_at)
+    except Exception:
+        return 0
+
+    return total_seconds
+
+
+def _portal_activity_duration_metadata(employee, attendance_date, current_time=None):
+    break_total_seconds = _portal_activity_total_seconds(
+        employee,
+        attendance_date,
+        PORTAL_BREAK_ACTIVITY,
+        current_time,
+    )
+    lunch_total_seconds = _portal_activity_total_seconds(
+        employee,
+        attendance_date,
+        PORTAL_LUNCH_ACTIVITY,
+        current_time,
+    )
+    return {
+        "break_total_seconds": break_total_seconds,
+        "break_total_time": format_time(break_total_seconds),
+        "lunch_total_seconds": lunch_total_seconds,
+        "lunch_total_time": format_time(lunch_total_seconds),
+    }
+
+
+def _attendance_elapsed_seconds(attendance, current_time=None):
+    if not attendance:
+        return 0
+
+    clock_in_date = getattr(attendance, "attendance_clock_in_date", None)
+    clock_in = getattr(attendance, "attendance_clock_in", None)
+    if not isinstance(clock_in_date, date) or not isinstance(clock_in, time):
+        return 0
+
+    started_at = datetime.combine(clock_in_date, clock_in)
+    clock_out_date = getattr(attendance, "attendance_clock_out_date", None)
+    clock_out = getattr(attendance, "attendance_clock_out", None)
+    if isinstance(clock_out_date, date) and isinstance(clock_out, time):
+        ended_at = datetime.combine(clock_out_date, clock_out)
+    else:
+        ended_at = current_time or timezone.now()
+
+    if timezone.is_aware(started_at):
+        started_at = timezone.make_naive(started_at, timezone.get_current_timezone())
+    if timezone.is_aware(ended_at):
+        ended_at = timezone.make_naive(ended_at, timezone.get_current_timezone())
+
+    seconds = int((ended_at - started_at).total_seconds())
+    return max(seconds, 0)
+
+
+def _portal_worked_duration_metadata(employee, attendance_date, current_time=None):
+    attendance = None
+    if attendance_date:
+        attendance = Attendance.objects.filter(
+            employee_id=employee,
+            attendance_date=attendance_date,
+        ).first()
+
+    worked_total_seconds = _attendance_elapsed_seconds(attendance, current_time)
+    if not worked_total_seconds and attendance_date:
+        worked_total_seconds = _portal_activity_total_seconds(
+            employee,
+            attendance_date,
+            PORTAL_WORK_ACTIVITY,
+            current_time,
+        )
+    return {
+        "worked_total_seconds": worked_total_seconds,
+        "worked_total_time": format_time(worked_total_seconds),
+    }
+
+
+def _attendance_datetime_iso(attendance, date_field, time_field):
+    if not attendance:
+        return None
+
+    attendance_date = getattr(attendance, date_field, None)
+    attendance_time = getattr(attendance, time_field, None)
+    if isinstance(attendance_date, date) and isinstance(attendance_time, time):
+        return datetime.combine(attendance_date, attendance_time).isoformat()
+
+    return None
+
+
+def _activity_label(activity_type):
+    return PORTAL_NON_WORK_ACTIVITY_TYPES.get(activity_type, _("Work"))
+
+
+def _save_activity_location(activity, request, latitude, longitude, clock_event):
+    try:
+        lat_f = float(latitude)
+        lng_f = float(longitude)
+    except (TypeError, ValueError):
+        activity.location_verified = False
+        return
+
+    gps_address = _reverse_geocode(lat_f, lng_f)
+    if clock_event == "in":
+        if "selfie" in request.FILES:
+            activity.clock_in_selfie = request.FILES["selfie"]
+        activity.clock_in_latitude = lat_f
+        activity.clock_in_longitude = lng_f
+        activity.clock_in_gps_address = gps_address
+    else:
+        if "selfie" in request.FILES:
+            activity.clock_out_selfie = request.FILES["selfie"]
+        activity.clock_out_latitude = lat_f
+        activity.clock_out_longitude = lng_f
+        activity.clock_out_gps_address = gps_address
+
+    activity.latitude = lat_f
+    activity.longitude = lng_f
+    activity.gps_address = gps_address
+    activity.location_verified = True
+
+
+def _update_attendance_worked_hours(employee, attendance_date):
+    attendance = Attendance.objects.filter(
+        employee_id=employee,
+        attendance_date=attendance_date,
+    ).first()
+    if attendance:
+        attendance.attendance_worked_hour = calculate_worked_hours(
+            employee, attendance_date
+        )
+        attendance.attendance_validated = False
+        attendance.save()
+    return attendance
 
 
 def public_portal(request):
@@ -443,6 +1080,86 @@ def server_time(request):
     return JsonResponse({"server_time_iso": aware_now.isoformat()})
 
 
+@require_http_methods(["GET", "POST"])
+def forgot_pin(request):
+    """
+    Let employees request a signed attendance portal PIN reset link by email.
+    """
+    form = PortalForgotPINForm(request.POST or None)
+    sent = False
+
+    if request.method == "POST" and form.is_valid():
+        email = form.cleaned_data["email"].strip()
+        for employee in _get_portal_pin_reset_employees(email):
+            _send_portal_pin_reset_email(request, employee)
+        sent = True
+        form = PortalForgotPINForm()
+
+    return render(
+        request,
+        "attendance/portal/forgot_pin.html",
+        {
+            "form": form,
+            "sent": sent,
+            "generic_message": _PORTAL_PIN_RESET_GENERIC_MESSAGE,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def reset_pin(request, token):
+    """
+    Let employees set a new 6-digit attendance portal PIN from a signed link.
+    """
+    employee, token_error = _get_portal_pin_reset_employee(token)
+    portal_url = reverse("public-portal")
+
+    if not employee:
+        return render(
+            request,
+            "attendance/portal/reset_pin.html",
+            {
+                "token_error": token_error,
+                "portal_url": portal_url,
+            },
+        )
+
+    form = PortalResetPINForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        work_info = getattr(employee, "employee_work_info", None)
+        if not work_info:
+            return render(
+                request,
+                "attendance/portal/reset_pin.html",
+                {
+                    "token_error": _("Employee PIN is not configured. Please contact HR."),
+                    "portal_url": portal_url,
+                },
+            )
+
+        work_info.pin = form.cleaned_data["new_pin"]
+        work_info.save(update_fields=["pin"])
+        return render(
+            request,
+            "attendance/portal/reset_pin.html",
+            {
+                "reset_success": True,
+                "employee": employee,
+                "portal_url": portal_url,
+            },
+        )
+
+    return render(
+        request,
+        "attendance/portal/reset_pin.html",
+        {
+            "form": form,
+            "employee": employee,
+            "portal_url": portal_url,
+        },
+    )
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def employee_lookup(request):
@@ -487,20 +1204,52 @@ def employee_lookup(request):
 
         results = []
         for emp in employees:
-            active_activity = AttendanceActivity.objects.filter(
-                employee_id=emp, clock_out__isnull=True
-            ).order_by('-clock_in_date', '-clock_in').first()
+            _maybe_auto_checkout_employee(emp)
+            active_activity = _open_portal_activity(emp)
+            latest_activity = active_activity or _latest_portal_activity(emp)
+            attendance_date = getattr(active_activity or latest_activity, "attendance_date", None)
+            attendance = None
+            if attendance_date:
+                attendance = Attendance.objects.filter(
+                    employee_id=emp,
+                    attendance_date=attendance_date,
+                ).first()
 
             is_clocked_in = active_activity is not None
-            clock_in_datetime = None
-            if active_activity:
-                if active_activity.in_datetime:
-                    clock_in_datetime = active_activity.in_datetime.isoformat()
-                elif active_activity.clock_in_date and active_activity.clock_in:
-                    from datetime import datetime as _dt
-                    clock_in_datetime = _dt.combine(
-                        active_activity.clock_in_date, active_activity.clock_in
-                    ).isoformat()
+            active_activity_type = (
+                _portal_activity_type(active_activity) if active_activity else None
+            )
+            active_activity_started_at = _activity_datetime_iso(
+                active_activity,
+                "clock_in_date",
+                "clock_in",
+                "in_datetime",
+            )
+            lunch_taken = _lunch_taken(
+                emp,
+                attendance_date,
+            )
+            break_metadata = _portal_break_metadata(emp, attendance_date)
+            clock_in_datetime = _attendance_datetime_iso(
+                attendance,
+                "attendance_clock_in_date",
+                "attendance_clock_in",
+            ) or _activity_datetime_iso(
+                latest_activity,
+                "clock_in_date",
+                "clock_in",
+                "in_datetime",
+            )
+            clock_out_datetime = _attendance_datetime_iso(
+                attendance,
+                "attendance_clock_out_date",
+                "attendance_clock_out",
+            ) or _activity_datetime_iso(
+                latest_activity,
+                "clock_out_date",
+                "clock_out",
+                "out_datetime",
+            )
 
             geo_data = None
             branch_name = ""
@@ -526,7 +1275,14 @@ def employee_lookup(request):
                 "name": emp.get_full_name(),
                 "avatar": emp.get_avatar(),
                 "is_clocked_in": is_clocked_in,
+                "active_activity_type": active_activity_type,
+                "active_activity_started_at": active_activity_started_at,
+                "lunch_taken": lunch_taken,
+                **break_metadata,
+                **_portal_activity_duration_metadata(emp, attendance_date),
+                **_portal_worked_duration_metadata(emp, attendance_date),
                 "clock_in_datetime": clock_in_datetime,
+                "clock_out_datetime": clock_out_datetime,
                 "geo_fence": geo_data,
                 "branch": branch_name,
             })
@@ -537,6 +1293,103 @@ def employee_lookup(request):
         return JsonResponse(
             {"success": False, "message": f"Search error: {str(e)}"}, status=200
         )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def attendance_history(request):
+    """
+    Return the selected employee's recent attendance rows for the public portal.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    default_end_date = timezone.localdate()
+    default_start_date = default_end_date - timedelta(days=14)
+
+    def parse_history_date(value, fallback):
+        try:
+            return datetime.strptime(value or "", "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return fallback
+
+    start_date = parse_history_date(
+        request.POST.get("start_date"),
+        default_start_date,
+    )
+    end_date = parse_history_date(
+        request.POST.get("end_date"),
+        default_end_date,
+    )
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    def format_time_value(value):
+        if not value:
+            return "--:--"
+        if hasattr(value, "strftime"):
+            return value.strftime("%I:%M %p")
+        return str(value)
+
+    rows = []
+    attendance_rows = (
+        Attendance.objects.filter(
+            employee_id=employee,
+            attendance_date__gte=start_date,
+            attendance_date__lte=end_date,
+        )
+        .order_by("-attendance_date", "-id")
+    )
+
+    current_time = timezone.now()
+    for attendance in attendance_rows:
+        activity_totals = _portal_activity_duration_metadata(
+            employee,
+            attendance.attendance_date,
+            current_time,
+        )
+        rows.append(
+            {
+                "attendance_date": attendance.attendance_date.strftime("%b %d, %Y"),
+                "clock_in_time": format_time_value(attendance.attendance_clock_in),
+                "clock_out_time": format_time_value(attendance.attendance_clock_out),
+                "worked_hours": attendance.attendance_worked_hour or "00:00",
+                "break_time": activity_totals["break_total_time"],
+                "lunch_time": activity_totals["lunch_total_time"],
+            }
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "rows": rows,
+        },
+        status=200,
+    )
 
 
 @csrf_exempt
@@ -717,6 +1570,8 @@ def public_clock_in(request):
                 {"success": False, "message": "Employee not found"}, status=200
             )
 
+        _maybe_auto_checkout_employee(employee)
+
         # Check if employee has work info
         work_info = getattr(employee, 'employee_work_info', None)
 
@@ -830,6 +1685,8 @@ def public_clock_in(request):
             activity.location_verified = False
             activity.save()
 
+        activity.activity_type = PORTAL_WORK_ACTIVITY
+
         # Save selfie photo
         if "selfie" in request.FILES:
             activity.clock_in_selfie = request.FILES["selfie"]
@@ -867,6 +1724,263 @@ def public_clock_in(request):
         logger.error(f"Public clock in error: {str(e)}")
         return JsonResponse(
             {"success": False, "message": f"Error: {str(e)}"}, status=500
+        )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def public_activity_transition(request):
+    """
+    Start or end a non-work attendance activity from the public portal.
+    Break/lunch transitions require the same PIN, GPS, selfie, and geofence checks
+    as clock-in/out, but only work activities contribute to worked hours.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    try:
+        employee_id = request.POST.get("employee_id")
+        activity_type = request.POST.get("activity_type", "").strip().lower()
+        transition = request.POST.get("transition", "").strip().lower()
+
+        if not employee_id:
+            return JsonResponse(
+                {"success": False, "message": "Employee ID required"}, status=200
+            )
+
+        if activity_type not in PORTAL_NON_WORK_ACTIVITY_TYPES:
+            return JsonResponse(
+                {"success": False, "message": "Invalid activity type"}, status=200
+            )
+
+        if transition not in {"start", "end"}:
+            return JsonResponse(
+                {"success": False, "message": "Invalid activity transition"}, status=200
+            )
+
+        has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+        if not has_verified_pin:
+            return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+        latitude = request.POST.get("latitude")
+        longitude = request.POST.get("longitude")
+        if not latitude or not longitude:
+            return JsonResponse(
+                {
+                    "success": False,
+                    "message": "Location is required. Please enable location access and try again.",
+                },
+                status=200,
+            )
+
+        try:
+            employee = Employee.objects.get(id=employee_id, is_active=True)
+        except Employee.DoesNotExist:
+            return JsonResponse(
+                {"success": False, "message": "Employee not found"}, status=200
+            )
+
+        _maybe_auto_checkout_employee(employee)
+
+        work_info = getattr(employee, "employee_work_info", None)
+        geo_error = _geofence_check(employee, work_info, latitude, longitude)
+        if geo_error:
+            return JsonResponse(
+                {"success": False, "geo_fence_violation": True, **geo_error},
+                status=200,
+            )
+
+        datetime_now = get_real_now()
+        date_today = datetime_now.date()
+        label = _activity_label(activity_type)
+        break_policy = _portal_break_policy(employee)
+        break_overage_minutes = 0
+        lunch_overage_minutes = 0
+
+        with transaction.atomic():
+            open_activity = (
+                AttendanceActivity.objects.select_for_update()
+                .filter(employee_id=employee, clock_out__isnull=True)
+                .order_by("attendance_date", "id")
+                .last()
+            )
+
+            if not open_activity:
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "message": f"{employee.get_full_name()} must clock in first.",
+                    },
+                    status=200,
+                )
+
+            active_type = _portal_activity_type(open_activity)
+            attendance_date = open_activity.attendance_date
+            attendance = Attendance.objects.filter(
+                employee_id=employee,
+                attendance_date=attendance_date,
+            ).first()
+
+            if not attendance:
+                return JsonResponse(
+                    {"success": False, "message": "Active attendance not found"},
+                    status=200,
+                )
+
+            if transition == "start":
+                if active_type != PORTAL_WORK_ACTIVITY:
+                    active_label = _activity_label(active_type).lower()
+                    return JsonResponse(
+                        {
+                            "success": False,
+                            "message": f"Please end your {active_label} first.",
+                        },
+                        status=200,
+                    )
+
+                if activity_type == PORTAL_BREAK_ACTIVITY:
+                    current_break_metadata = _portal_break_metadata(
+                        employee,
+                        attendance_date,
+                        break_policy,
+                    )
+                    if current_break_metadata["break_limit_reached"]:
+                        return JsonResponse(
+                            {
+                                "success": False,
+                                "message": "Break limit reached for this attendance day.",
+                                **current_break_metadata,
+                            },
+                            status=200,
+                        )
+
+                if activity_type == PORTAL_LUNCH_ACTIVITY and _lunch_taken(
+                    employee, attendance_date
+                ):
+                    return JsonResponse(
+                        {
+                            "success": False,
+                            "message": "Lunch has already been recorded for this attendance day.",
+                        },
+                        status=200,
+                    )
+
+                open_activity.clock_out = datetime_now
+                open_activity.clock_out_date = date_today
+                open_activity.out_datetime = datetime_now
+                open_activity.save()
+
+                activity = AttendanceActivity.objects.create(
+                    employee_id=employee,
+                    attendance_date=attendance_date,
+                    clock_in_date=date_today,
+                    shift_day=open_activity.shift_day,
+                    clock_in=datetime_now,
+                    in_datetime=datetime_now,
+                    activity_type=activity_type,
+                )
+                _save_activity_location(activity, request, latitude, longitude, "in")
+                activity.save()
+                attendance = _update_attendance_worked_hours(employee, attendance_date)
+                message = f"{employee.get_full_name()} started {label.lower()}."
+                action_title = f"{label} Started"
+                active_activity_type = activity_type
+                active_activity_started_at = _activity_datetime_iso(
+                    activity, "clock_in_date", "clock_in", "in_datetime"
+                )
+
+            else:
+                if active_type != activity_type:
+                    return JsonResponse(
+                        {
+                            "success": False,
+                            "message": f"No active {label.lower()} found.",
+                        },
+                        status=200,
+                    )
+
+                if activity_type == PORTAL_BREAK_ACTIVITY:
+                    duration_seconds = _activity_duration_seconds(
+                        open_activity,
+                        datetime_now,
+                    )
+                    allowed_seconds = break_policy["break_minutes_allowed"] * 60
+                    overage_seconds = max(duration_seconds - allowed_seconds, 0)
+                    if overage_seconds:
+                        break_overage_minutes = (overage_seconds + 59) // 60
+                elif activity_type == PORTAL_LUNCH_ACTIVITY:
+                    duration_seconds = _activity_duration_seconds(
+                        open_activity,
+                        datetime_now,
+                    )
+                    allowed_seconds = break_policy["lunch_minutes_allowed"] * 60
+                    overage_seconds = max(duration_seconds - allowed_seconds, 0)
+                    if overage_seconds:
+                        lunch_overage_minutes = (overage_seconds + 59) // 60
+
+                open_activity.clock_out = datetime_now
+                open_activity.clock_out_date = date_today
+                open_activity.out_datetime = datetime_now
+                _save_activity_location(open_activity, request, latitude, longitude, "out")
+                open_activity.save()
+
+                new_work_activity = AttendanceActivity.objects.create(
+                    employee_id=employee,
+                    attendance_date=attendance_date,
+                    clock_in_date=date_today,
+                    shift_day=open_activity.shift_day,
+                    clock_in=datetime_now,
+                    in_datetime=datetime_now,
+                    activity_type=PORTAL_WORK_ACTIVITY,
+                )
+                attendance = _update_attendance_worked_hours(employee, attendance_date)
+                message = f"{employee.get_full_name()} ended {label.lower()}."
+                action_title = f"{label} Ended"
+                if activity_type == PORTAL_BREAK_ACTIVITY and break_overage_minutes:
+                    message = (
+                        f"{employee.get_full_name()} ended {label.lower()}. "
+                        f"Break exceeded the allowed time by {break_overage_minutes} minute(s)."
+                    )
+                elif activity_type == PORTAL_LUNCH_ACTIVITY and lunch_overage_minutes:
+                    message = (
+                        f"{employee.get_full_name()} ended {label.lower()}. "
+                        f"Lunch exceeded the allowed time by {lunch_overage_minutes} minute(s)."
+                    )
+                active_activity_type = PORTAL_WORK_ACTIVITY
+                active_activity_started_at = _activity_datetime_iso(
+                    new_work_activity, "clock_in_date", "clock_in", "in_datetime"
+                )
+
+        _clear_pin_verification(request)
+        response_data = {
+            "success": True,
+            "message": message,
+            "employee_name": employee.get_full_name(),
+            "action_title": action_title,
+            "activity_type": activity_type,
+            "transition": transition,
+            "activity_time": datetime_now.strftime("%I:%M %p"),
+            "worked_hours": attendance.attendance_worked_hour if attendance else "00:00",
+            "active_activity_type": active_activity_type,
+            "active_activity_started_at": active_activity_started_at,
+            "lunch_taken": _lunch_taken(employee, attendance_date),
+            **_portal_break_metadata(employee, attendance_date, break_policy),
+            **_portal_activity_duration_metadata(employee, attendance_date, datetime_now),
+            **_portal_worked_duration_metadata(employee, attendance_date, datetime_now),
+        }
+        if break_overage_minutes:
+            response_data["break_overage_minutes"] = break_overage_minutes
+        if lunch_overage_minutes:
+            response_data["lunch_overage_minutes"] = lunch_overage_minutes
+        return JsonResponse(response_data, status=200)
+
+    except Exception as e:
+        logger.error(f"Public activity transition error: {str(e)}", exc_info=True)
+        return JsonResponse(
+            {"success": False, "message": f"Error: {str(e)}"}, status=200
         )
 
 
@@ -929,6 +2043,8 @@ def public_clock_out(request):
                 {"success": False, "message": "Employee not found"}, status=200
             )
 
+        _maybe_auto_checkout_employee(employee)
+
         # Geofence check
         work_info_out = getattr(employee, "employee_work_info", None)
         geo_error = _geofence_check(employee, work_info_out, latitude, longitude)
@@ -944,6 +2060,17 @@ def public_clock_out(request):
             logger.info(f"Clock out - Employee not clocked in: {employee_id}")
             return JsonResponse(
                 {"success": False, "message": f"{employee.get_full_name()} is not clocked in"},
+                status=200,
+            )
+
+        active_activity_type = _portal_activity_type(open_activity)
+        if active_activity_type != PORTAL_WORK_ACTIVITY:
+            label = _activity_label(active_activity_type).lower()
+            return JsonResponse(
+                {
+                    "success": False,
+                    "message": f"Please end your {label} before clocking out.",
+                },
                 status=200,
             )
 

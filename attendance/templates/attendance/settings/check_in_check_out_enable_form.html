@@ -15,6 +15,15 @@
                     <div class="oh-sticky-table__th">
                         {% trans 'Check in/Check out' %}
                     </div>
+                    <div class="oh-sticky-table__th">
+                        {% trans 'Break Limit' %}
+                    </div>
+                    <div class="oh-sticky-table__th">
+                        {% trans 'Break Minutes' %}
+                    </div>
+                    <div class="oh-sticky-table__th">
+                        {% trans 'Lunch Minutes' %}
+                    </div>
                 </div>
             </div>
             <div class="oh-sticky-table__tbody">
@@ -48,6 +57,63 @@
                                 {% endif %}
                             >
                         </div>
+                    </div>
+                    <div class="oh-sticky-table__td">
+                        <input
+                            type="number"
+                            name="portal_break_limit"
+                            value="{{ att_setting.portal_break_limit|default:2 }}"
+                            min="1"
+                            class="oh-input w-100"
+                            style="max-width: 120px;"
+                            {% if perms.attendance.change_attendancegeneralsetting %}
+                                hx-post="{% url 'enable-disable-check-in' %}"
+                                hx-trigger="change delay:300ms"
+                                hx-include="#companyId{{att_setting.id}}"
+                                hx-swap="none"
+                                hx-on-htmx-after-request="setTimeout(() => { reloadMessage(); }, 200);"
+                            {% else %}
+                                disabled
+                            {% endif %}
+                        >
+                    </div>
+                    <div class="oh-sticky-table__td">
+                        <input
+                            type="number"
+                            name="portal_break_minutes"
+                            value="{{ att_setting.portal_break_minutes|default:15 }}"
+                            min="1"
+                            class="oh-input w-100"
+                            style="max-width: 120px;"
+                            {% if perms.attendance.change_attendancegeneralsetting %}
+                                hx-post="{% url 'enable-disable-check-in' %}"
+                                hx-trigger="change delay:300ms"
+                                hx-include="#companyId{{att_setting.id}}"
+                                hx-swap="none"
+                                hx-on-htmx-after-request="setTimeout(() => { reloadMessage(); }, 200);"
+                            {% else %}
+                                disabled
+                            {% endif %}
+                        >
+                    </div>
+                    <div class="oh-sticky-table__td">
+                        <input
+                            type="number"
+                            name="portal_lunch_minutes"
+                            value="{{ att_setting.portal_lunch_minutes|default:60 }}"
+                            min="1"
+                            class="oh-input w-100"
+                            style="max-width: 120px;"
+                            {% if perms.attendance.change_attendancegeneralsetting %}
+                                hx-post="{% url 'enable-disable-check-in' %}"
+                                hx-trigger="change delay:300ms"
+                                hx-include="#companyId{{att_setting.id}}"
+                                hx-swap="none"
+                                hx-on-htmx-after-request="setTimeout(() => { reloadMessage(); }, 200);"
+                            {% else %}
+                                disabled
+                            {% endif %}
+                        >
                     </div>
                 </div>
                 {% endfor %}
