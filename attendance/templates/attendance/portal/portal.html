@@ -2789,6 +2789,10 @@
                 videoStream.getTracks().forEach(track => track.stop());
                 videoStream = null;
             }
+            const video = document.getElementById('video-preview');
+            if (video) {
+                video.srcObject = null;
+            }
         }
 
         // Setup event listeners
@@ -3238,6 +3242,10 @@
                 videoStream.getTracks().forEach(track => track.stop());
                 videoStream = null;
             }
+            const video = document.getElementById('video-preview');
+            if (video) {
+                video.srcObject = null;
+            }
 
             setTimeout(function () {
                 startCamera();
@@ -3249,6 +3257,10 @@
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
                     .then(function (stream) {
+                        if (!$('#step-clock').hasClass('active')) {
+                            stream.getTracks().forEach(track => track.stop());
+                            return;
+                        }
                         videoStream = stream;
                         const video = document.getElementById('video-preview');
                         video.style.display = 'block';
@@ -4175,12 +4187,29 @@
                 videoStream.getTracks().forEach(track => track.stop());
                 videoStream = null;
             }
+            const video = document.getElementById('video-preview');
+            if (video) {
+                video.srcObject = null;
+            }
         }
 
-        // Handle visibility change to stop camera when page is hidden
+        // Handle visibility change to stop/start camera when page visibility changes
         document.addEventListener('visibilitychange', function () {
-            if (document.hidden && videoStream) {
-                videoStream.getTracks().forEach(track => track.stop());
+            if (document.hidden) {
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                    videoStream = null;
+                }
+                const video = document.getElementById('video-preview');
+                if (video) {
+                    video.srcObject = null;
+                }
+                cameraReady = false;
+            } else {
+                // When page becomes visible again, restart camera if we are on the clock step
+                if ($('#step-clock').hasClass('active')) {
+                    startCamera();
+                }
             }
         });
     </script>
