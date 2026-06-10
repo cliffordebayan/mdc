@@ -1865,7 +1865,7 @@
                         <div class="clock-scroll-inner">
                         <!-- LEFT: Camera -->
                         <div class="clock-camera-panel">
-                            <video id="video-preview" playsinline autoplay style="display:none;"></video>
+                            <video id="video-preview" playsinline autoplay muted style="display:none;"></video>
                             <img id="captured-photo" class="captured-photo-full" src="" style="display:none;" />
                             <canvas id="canvas"></canvas>
 
@@ -3251,7 +3251,11 @@
                     .then(function (stream) {
                         videoStream = stream;
                         const video = document.getElementById('video-preview');
+                        video.style.display = 'block';
                         video.srcObject = stream;
+                        video.play().catch(function (err) {
+                            console.error("Video play failed:", err);
+                        });
 
                         // Wait until the camera is actually streaming frames
                         video.addEventListener('playing', function onPlaying() {
