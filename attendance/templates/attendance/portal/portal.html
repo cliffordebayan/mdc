@@ -725,7 +725,7 @@
         }
 
         #video-preview {
-            transform: scaleX(-1);
+            /* transform: scaleX(-1); - moved inline to avoid Safari blank frame issue */
         }
 
         .clock-camera-panel canvas {
@@ -1865,7 +1865,7 @@
                         <div class="clock-scroll-inner">
                         <!-- LEFT: Camera -->
                         <div class="clock-camera-panel">
-                            <video id="video-preview" playsinline autoplay muted style="display:none;"></video>
+                            <video id="video-preview" playsinline webkit-playsinline autoplay muted style="display:none; transform: scaleX(-1);"></video>
                             <img id="captured-photo" class="captured-photo-full" src="" style="display:none;" />
                             <canvas id="canvas"></canvas>
 
@@ -3247,18 +3247,18 @@
         // Start camera
         function startCamera() {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
                     .then(function (stream) {
                         videoStream = stream;
                         const video = document.getElementById('video-preview');
                         video.style.display = 'block';
                         video.srcObject = stream;
-                        video.play().catch(function (err) {
-                            console.error("Video play failed:", err);
-                        });
 
                         // Wait until the camera is actually streaming frames
-                        video.addEventListener('playing', function onPlaying() {
+                        const onPlaying = function() {
+                            if (!video.srcObject || video.srcObject !== stream) {
+                                return;
+                            }
                             video.removeEventListener('playing', onPlaying);
                             cameraReady = true;
 
@@ -3274,6 +3274,11 @@
                             } else {
                                 disableClockButtons();
                             }
+                        };
+                        video.addEventListener('playing', onPlaying);
+
+                        video.play().catch(function (err) {
+                            console.error("Video play failed:", err);
                         });
                     })
                     .catch(function (error) {
