@@ -5,13 +5,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no" />
     <title>{% trans "Forgot PIN" %} - {{ white_label_company_name }}</title>
     <link rel="apple-touch-icon" sizes="180x180" href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}">
     <link rel="icon" type="image/png" sizes="32x32" href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/favicon-32x32.png' %}{% endif %}">
     <link rel="icon" type="image/png" sizes="16x16" href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/favicon-16x16.png' %}{% endif %}">
     <link rel="stylesheet" href="{% static '/build/css/style.min.css' %}" />
     <style>
+      /* iOS Safari Zoom & Overflow Fixes */
+      html, body {
+        max-width: 100%;
+        overflow-x: hidden;
+        -webkit-text-size-adjust: 100%;
+      }
+      @media (max-width: 768px) {
+        input, select, textarea, .oh-input {
+          font-size: 16px !important;
+        }
+      }
+
       .portal-pin-card {
         width: min(100%, 460px);
         border: 1px solid #dbe4f4;
