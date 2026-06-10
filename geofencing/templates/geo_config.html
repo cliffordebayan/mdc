@@ -1,6 +1,7 @@
 <div class="oh-inner-sidebar-content">
   <div class="oh-inner-sidebar-content__header d-flex justify-content-between align-items-center">
     <h2 class="oh-inner-sidebar-content__title">Branch Geofences</h2>
+    {% if perms.geofencing.add_geofencing %}
     <button class="oh-btn oh-btn--secondary oh-btn--shadow"
             data-toggle="oh-modal-toggle"
             data-target="#objectCreateModal"
@@ -9,6 +10,8 @@
             hx-swap="innerHTML">
       <ion-icon name="add-outline" class="me-1"></ion-icon>Add Geofence
     </button>
+    {% endif %}
+
   </div>
 
   {% if geofences %}
@@ -50,6 +53,7 @@
           </div>
           <div class="oh-sticky-table__td oh-sticky-table__right">
             <div class="oh-btn-group">
+              {% if perms.geofencing.change_geofencing %}
               <button class="oh-btn oh-btn--light-bkg w-50"
                       data-toggle="oh-modal-toggle"
                       data-target="#objectUpdateModal"
@@ -59,11 +63,14 @@
                       title="Edit">
                 <ion-icon name="create-outline"></ion-icon>
               </button>
+              {% endif %}
+              {% if perms.geofencing.delete_geofencing %}
               <button class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-50"
                       onclick="geoDeleteConfirm({{ geo.pk }}, '{{ geo.branch_id.branch|default:'this geofence' }}')"
                       title="Remove">
                 <ion-icon name="trash-outline"></ion-icon>
               </button>
+              {% endif %}
             </div>
           </div>
         </div>

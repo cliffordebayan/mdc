@@ -130,17 +130,26 @@ def _geo_config_context():
 
 
 @login_required
-@permission_required("geofencing.add_geofencing")
+@permission_required("geofencing.view_geofencing")
 def geo_location_config(request):
     if request.method == "POST":
+        from django.core.exceptions import PermissionDenied
         action = request.GET.get("action")
         if action == "delete":
+            if not request.user.has_perm("geofencing.delete_geofencing"):
+                raise PermissionDenied
             pk = request.GET.get("pk")
             geo = get_object_or_404(GeoFencing, pk=pk)
             geo.delete()
             messages.success(request, _("Geofence deleted successfully."))
         else:
             pk = request.POST.get("geo_id")
+            if pk:
+                if not request.user.has_perm("geofencing.change_geofencing"):
+                    raise PermissionDenied
+            else:
+                if not request.user.has_perm("geofencing.add_geofencing"):
+                    raise PermissionDenied
             instance = GeoFencing.objects.filter(pk=pk).first() if pk else None
             form = GeoFencingSetupForm(request.POST, instance=instance)
             if form.is_valid():

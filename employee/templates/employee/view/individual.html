@@ -554,10 +554,16 @@
 		}
 	});
 
+	{% if request.user.is_superuser or request.user|check_manager:employee or request.user == employee.employee_user_id %}
 	toggleColumns("employee-tab", "fieldContainerTable")
 	if (!localStorage.getItem("employee_tab")) {
 		$("#fieldContainerTable").find("[type=checkbox]").prop("checked", true).change()
 	}
+	{% else %}
+	// Show the tab container directly for users without column toggle access
+	$("#employee-tab").show();
+	$("#employee-tab [data-cell-index]").show();
+	{% endif %}
 
 	function submitForm(elem) {
 		$(elem).siblings('.add_more_submit').click()
