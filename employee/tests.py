@@ -258,7 +258,7 @@ class EmployeeStatusTransitionTests(TransactionTestCase):
         self.employee.refresh_from_db()
         self.assertEqual(self.employee.employee_no, "12345-2")
 
-    def test_multiple_transitions_increment_suffix(self):
+    def test_multiple_transitions_keeps_suffix_at_two(self):
         # 1st transition resigned -> active
         self.work_info.employee_status = "resigned"
         self.work_info.save()
@@ -275,9 +275,11 @@ class EmployeeStatusTransitionTests(TransactionTestCase):
         self.work_info.save()
         
         self.employee.refresh_from_db()
-        self.assertEqual(self.employee.employee_no, "12345-3")
+        self.assertEqual(self.employee.employee_no, "12345-2")
 
-    def test_transition_with_conflicting_suffix_increments_further(self):
+    def test_transition_with_conflicting_suffix_raises_validation_error(self):
+        from django.core.exceptions import ValidationError
+        
         # Create another employee that already has the "12345-2" number
         other_user = User.objects.create_user(
             username="otheruser",
@@ -296,11 +298,10 @@ class EmployeeStatusTransitionTests(TransactionTestCase):
         )
         
         # Transition original back to active.
-        # Normally it would want "12345-2", but since that exists, it should increment to "12345-3".
+        # This will set it to "12345-2", which is a duplicate of other employee.
+        # This must raise a ValidationError because employee_no unique constraint exists.
         self.work_info.employee_status = "resigned"
         self.work_info.save()
         self.work_info.employee_status = "active"
-        self.work_info.save()
-        
-        self.employee.refresh_from_db()
-        self.assertEqual(self.employee.employee_no, "12345-3")
+        with self.assertRaises(ValidationError):
+            self.work_info.save()

@@ -1223,12 +1223,17 @@ def employee_lookup(request):
 
         logger.info(f"Employee lookup query: {query}, POST data: {request.POST}")
 
-        if not query or not re.fullmatch(r"\d{7}", query):
+        if not query or not re.fullmatch(r"\d{7}(-\d+)?", query):
             return JsonResponse({"success": True, "results": []})
 
-        # Search by employee_no only (exact match on complete 7-digit ID)
+        # Search by employee_no (exact match on complete query, or prefix match with suffix if search doesn't include suffix)
+        if "-" in query:
+            employee_filter = Q(employee_no__exact=query)
+        else:
+            employee_filter = Q(employee_no__exact=query) | Q(employee_no__startswith=query + "-")
+
         employees = Employee.objects.filter(
-            employee_no__exact=query,
+            employee_filter,
             is_active=True,
         )[:10]
 

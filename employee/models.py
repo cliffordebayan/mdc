@@ -791,7 +791,6 @@ class EmployeeWorkInformation(models.Model):
         if not self.pin:
             self.pin = f"{random.randint(0, 999999):06d}"
 
-        # Check if the employee_status has transitioned to active from another status
         if self.pk is not None:
             original_status = getattr(self, "_original_employee_status", None)
             if self.employee_status == "active" and original_status and original_status != "active":
@@ -801,20 +800,9 @@ class EmployeeWorkInformation(models.Model):
                     import re
                     match = re.search(r'-(\d+)$', old_no)
                     if match:
-                        suffix_num = int(match.group(1))
-                        new_suffix_num = suffix_num + 1
-                        new_no = old_no[:match.start()] + f"-{new_suffix_num}"
+                        new_no = old_no[:match.start()] + "-2"
                     else:
                         new_no = f"{old_no}-2"
-                    
-                    while Employee.objects.filter(employee_no=new_no).exclude(pk=employee.pk).exists():
-                        match = re.search(r'-(\d+)$', new_no)
-                        if match:
-                            suffix_num = int(match.group(1))
-                            new_suffix_num = suffix_num + 1
-                            new_no = new_no[:match.start()] + f"-{new_suffix_num}"
-                        else:
-                            new_no = f"{new_no}-2"
                     
                     employee.employee_no = new_no
                     employee.save(update_fields=['employee_no'])

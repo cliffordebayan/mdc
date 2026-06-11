@@ -1319,6 +1319,83 @@ class PortalEmployeeLookupTests(SimpleTestCase):
         self.assertEqual(result["clock_in_datetime"], "2026-06-05T09:00:00")
         self.assertEqual(result["worked_total_seconds"], 12600)
 
+    @patch("attendance.views.portal.Attendance")
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_employee_lookup_with_suffix(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        attendance_model,
+    ):
+        from django.db.models import Q
+        request = self.factory.post(
+            "/attendance/portal/employee-lookup/",
+            {"query": "0000001-2"},
+        )
+        attach_session(request)
+        employee = self._employee()
+        employee.employee_no = "0000001-2"
+        employee_model.objects.filter.return_value = [employee]
+        attendance_model.objects.filter.return_value.first.return_value = None
+        attendance_activity_model.objects.filter.side_effect = self._activity_filter()
+
+        response = employee_lookup(request)
+        payload = json.loads(response.content)
+        
+        self.assertTrue(payload["success"])
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["employee_no"], "0000001-2")
+        
+        # Verify the Django Q filter constructed for exact match
+        args, kwargs = employee_model.objects.filter.call_args
+        self.assertTrue(any(isinstance(arg, Q) for arg in args))
+        q_obj = next(arg for arg in args if isinstance(arg, Q))
+        self.assertEqual(len(q_obj.children), 1)
+        self.assertEqual(q_obj.children[0], ("employee_no__exact", "0000001-2"))
+
+    @patch("attendance.views.portal.Attendance")
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_employee_lookup_without_suffix_matches_with_or_without_suffix(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        attendance_model,
+    ):
+        from django.db.models import Q
+        request = self.factory.post(
+            "/attendance/portal/employee-lookup/",
+            {"query": "0000001"},
+        )
+        attach_session(request)
+        employee = self._employee()
+        employee.employee_no = "0000001-2"
+        employee_model.objects.filter.return_value = [employee]
+        attendance_model.objects.filter.return_value.first.return_value = None
+        attendance_activity_model.objects.filter.side_effect = self._activity_filter()
+
+        response = employee_lookup(request)
+        payload = json.loads(response.content)
+        
+        self.assertTrue(payload["success"])
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["employee_no"], "0000001-2")
+        
+        # Verify the Django Q filter constructed for exact OR prefix with hyphen
+        args, kwargs = employee_model.objects.filter.call_args
+        self.assertTrue(any(isinstance(arg, Q) for arg in args))
+        q_obj = next(arg for arg in args if isinstance(arg, Q))
+        self.assertEqual(q_obj.connector, Q.OR)
+        self.assertEqual(len(q_obj.children), 2)
+        filters = dict(q_obj.children)
+        self.assertEqual(filters["employee_no__exact"], "0000001")
+        self.assertEqual(filters["employee_no__startswith"], "0000001-")
+
 
 class PortalAttendanceHistoryTests(SimpleTestCase):
     def setUp(self):
