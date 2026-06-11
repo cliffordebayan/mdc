@@ -30,11 +30,11 @@ SUBMENUS = [
         "menu": _("Attendance Activities"),
         "redirect": reverse("attendance-activity-view"),
     },
-    {
-        "menu": _("Work Record"),
-        "redirect": reverse("work-records"),
-        "accessibility": "attendance.sidebar.work_record_accessibility",
-    },
+    # {
+    #     "menu": _("Work Record"),
+    #     "redirect": reverse("work-records"),
+    #     "accessibility": "attendance.sidebar.work_record_accessibility",
+    # },
     {
         "menu": _("Attendance Request"),
         "redirect": reverse("request-attendance-view"),

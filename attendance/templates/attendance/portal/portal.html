@@ -3420,11 +3420,37 @@
 
         function drawSavedSelfieMap(ctx, x, y, w, h) {
             const geo = selectedEmployee && selectedEmployee.geo_fence;
-            const geoCenterLat = geo ? Number(geo.geo_center_lat) : null;
-            const geoCenterLng = geo ? Number(geo.geo_center_lng) : null;
-            const geoRadius = geo ? Number(geo.geo_radius_meters) : null;
-            const hasGeo = !!geo && Number.isFinite(geoCenterLat) && Number.isFinite(geoCenterLng) && Number.isFinite(geoRadius);
+            let geoList = [];
+            if (geo) {
+                if (Array.isArray(geo)) {
+                    geoList = geo;
+                } else {
+                    geoList = [geo];
+                }
+            }
             const hasUserLocation = latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined;
+
+            let closestGeo = null;
+            let minDistance = Infinity;
+            if (hasUserLocation) {
+                geoList.forEach(function(g) {
+                    const lat = Number(g.geo_center_lat);
+                    const lng = Number(g.geo_center_lng);
+                    const dist = Math.pow(lat - latitude, 2) + Math.pow(lng - longitude, 2);
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        closestGeo = g;
+                    }
+                });
+            }
+            if (!closestGeo && geoList.length > 0) {
+                closestGeo = geoList[0];
+            }
+
+            const geoCenterLat = closestGeo ? Number(closestGeo.geo_center_lat) : null;
+            const geoCenterLng = closestGeo ? Number(closestGeo.geo_center_lng) : null;
+            const geoRadius = closestGeo ? Number(closestGeo.geo_radius_meters) : null;
+            const hasGeo = !!closestGeo && Number.isFinite(geoCenterLat) && Number.isFinite(geoCenterLng) && Number.isFinite(geoRadius);
 
             ctx.save();
             ctx.fillStyle = '#d3f7dd';
@@ -3591,10 +3617,14 @@
 
         function drawSavedSelfieMapMarkers(ctx, x, y, w, h, startPixelX, startPixelY, zoom) {
             const geo = selectedEmployee && selectedEmployee.geo_fence;
-            const geoCenterLat = geo ? Number(geo.geo_center_lat) : null;
-            const geoCenterLng = geo ? Number(geo.geo_center_lng) : null;
-            const geoRadius = geo ? Number(geo.geo_radius_meters) : null;
-            const hasGeo = !!geo && Number.isFinite(geoCenterLat) && Number.isFinite(geoCenterLng) && Number.isFinite(geoRadius);
+            let geoList = [];
+            if (geo) {
+                if (Array.isArray(geo)) {
+                    geoList = geo;
+                } else {
+                    geoList = [geo];
+                }
+            }
             const tileSize = 256;
 
             function projectPoint(lat, lon) {
@@ -3609,26 +3639,31 @@
             ctx.rect(x, y, w, h);
             ctx.clip();
 
-            if (hasGeo) {
-                const center = projectPoint(geoCenterLat, geoCenterLng);
-                const metersPerPixel = 156543.03392 * Math.cos(geoCenterLat * Math.PI / 180) / Math.pow(2, zoom);
-                const radiusPx = Math.max(4, geoRadius / Math.max(1, metersPerPixel));
-                ctx.fillStyle = 'rgba(40, 167, 69, 0.16)';
-                ctx.strokeStyle = '#28a745';
-                ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
-                ctx.beginPath();
-                ctx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
+            geoList.forEach(function(g) {
+                const geoCenterLat = Number(g.geo_center_lat);
+                const geoCenterLng = Number(g.geo_center_lng);
+                const geoRadius = Number(g.geo_radius_meters);
+                if (Number.isFinite(geoCenterLat) && Number.isFinite(geoCenterLng) && Number.isFinite(geoRadius)) {
+                    const center = projectPoint(geoCenterLat, geoCenterLng);
+                    const metersPerPixel = 156543.03392 * Math.cos(geoCenterLat * Math.PI / 180) / Math.pow(2, zoom);
+                    const radiusPx = Math.max(4, geoRadius / Math.max(1, metersPerPixel));
+                    ctx.fillStyle = 'rgba(40, 167, 69, 0.16)';
+                    ctx.strokeStyle = '#28a745';
+                    ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
+                    ctx.beginPath();
+                    ctx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
 
-                ctx.fillStyle = '#28a745';
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
-                ctx.beginPath();
-                ctx.arc(center.x, center.y, Math.max(5, w * 0.055), 0, Math.PI * 2);
-                ctx.fill();
-                ctx.stroke();
-            }
+                    ctx.fillStyle = '#28a745';
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
+                    ctx.beginPath();
+                    ctx.arc(center.x, center.y, Math.max(5, w * 0.055), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+            });
 
             const user = projectPoint(latitude, longitude);
             drawCanvasEmployeeLocationMarker(ctx, user.x, user.y, Math.max(16, w * 0.18));
@@ -4002,10 +4037,15 @@
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
 
             const geo = selectedEmployee && selectedEmployee.geo_fence;
-            const geoCenterLat = geo ? Number(geo.geo_center_lat) : null;
-            const geoCenterLng = geo ? Number(geo.geo_center_lng) : null;
-            const geoRadius = geo ? Number(geo.geo_radius_meters) : null;
-            const hasGeo = !!geo && Number.isFinite(geoCenterLat) && Number.isFinite(geoCenterLng) && Number.isFinite(geoRadius);
+            let geoList = [];
+            if (geo) {
+                if (Array.isArray(geo)) {
+                    geoList = geo;
+                } else {
+                    geoList = [geo];
+                }
+            }
+            const hasGeo = geoList.length > 0;
             const hasUserLocation = latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined;
 
             if (!hasGeo && !hasUserLocation) {
@@ -4025,19 +4065,33 @@
 
                 const isMobileMap = isMobilePortalView();
                 const userPos = hasUserLocation ? [latitude, longitude] : null;
-                let bounds = null;
+                
+                const boundsPoints = [];
+                if (hasUserLocation) {
+                    boundsPoints.push(userPos);
+                }
 
-                if (hasGeo) {
-                    const center = [geoCenterLat, geoCenterLng];
-                    const circle = L.circle(center, {
-                        radius: geoRadius,
-                        color: '#28a745', fillColor: '#28a745', fillOpacity: 0.15, weight: 2
-                    }).addTo(clockPreviewMap);
-                    L.marker(center, { icon: L.divIcon({
-                        html: '<div style="width:12px;height:12px;border-radius:50%;background:#28a745;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);"></div>',
-                        className: '', iconSize: [12,12], iconAnchor: [6,6]
-                    })}).addTo(clockPreviewMap).bindPopup('<b>{% trans "Required Location" %}</b>');
-                    bounds = hasUserLocation ? L.latLngBounds([center, userPos]).pad(0.3) : circle.getBounds().pad(0.15);
+                geoList.forEach(function(g) {
+                    const lat = Number(g.geo_center_lat);
+                    const lng = Number(g.geo_center_lng);
+                    const rad = Number(g.geo_radius_meters);
+                    if (Number.isFinite(lat) && Number.isFinite(lng) && Number.isFinite(rad)) {
+                        const center = [lat, lng];
+                        L.circle(center, {
+                            radius: rad,
+                            color: '#28a745', fillColor: '#28a745', fillOpacity: 0.15, weight: 2
+                        }).addTo(clockPreviewMap);
+                        L.marker(center, { icon: L.divIcon({
+                            html: '<div style="width:12px;height:12px;border-radius:50%;background:#28a745;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);"></div>',
+                            className: '', iconSize: [12,12], iconAnchor: [6,6]
+                        })}).addTo(clockPreviewMap).bindPopup('<b>' + (g.name || '{% trans "Required Location" %}') + '</b>');
+                        boundsPoints.push(center);
+                    }
+                });
+
+                let bounds = null;
+                if (boundsPoints.length > 0) {
+                    bounds = L.latLngBounds(boundsPoints).pad(hasUserLocation ? 0.35 : 0.2);
                 }
 
                 if (hasUserLocation) {

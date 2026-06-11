@@ -356,6 +356,36 @@ def _geofence_check(employee, work_info, latitude, longitude):
     """
     try:
         from geofencing.models import GeoFencing
+        
+        # Check assigned geofences first
+        assigned_geos = employee.assigned_geofences.filter(start=True)
+        if assigned_geos.exists():
+            inside = False
+            nearest_geo = None
+            min_distance = float('inf')
+            for geo in assigned_geos:
+                distance = geodesic(
+                    (geo.latitude, geo.longitude),
+                    (float(latitude), float(longitude)),
+                ).meters
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_geo = geo
+                if distance <= geo.radius_in_meters:
+                    inside = True
+                    break
+            if not inside:
+                return {
+                    "message": "You are outside your assigned geofenced locations.",
+                    "geo_center_lat": nearest_geo.latitude if nearest_geo else None,
+                    "geo_center_lng": nearest_geo.longitude if nearest_geo else None,
+                    "geo_radius_meters": nearest_geo.radius_in_meters if nearest_geo else None,
+                    "user_lat": float(latitude),
+                    "user_lng": float(longitude),
+                }
+            return None
+
+        # Fallback to branch geofence
         branch = work_info.branch_id if work_info else None
         if not branch:
             return None
@@ -1251,7 +1281,7 @@ def employee_lookup(request):
                 "out_datetime",
             )
 
-            geo_data = None
+            geo_data = []
             branch_name = ""
             try:
                 from geofencing.models import GeoFencing
@@ -1259,13 +1289,16 @@ def employee_lookup(request):
                 branch = work_info.branch_id if work_info else None
                 if branch:
                     branch_name = branch.branch or ""
-                    geo = GeoFencing.objects.filter(branch_id=branch, start=True).first()
-                    if geo and not geo.excluded_employees.filter(pk=emp.pk).exists():
-                        geo_data = {
-                            "geo_center_lat": geo.latitude,
-                            "geo_center_lng": geo.longitude,
-                            "geo_radius_meters": geo.radius_in_meters,
-                        }
+                
+                # Fetch active assigned geofences for this employee
+                assigned_geos = emp.assigned_geofences.filter(start=True)
+                for geo in assigned_geos:
+                    geo_data.append({
+                        "name": geo.name or "",
+                        "geo_center_lat": geo.latitude,
+                        "geo_center_lng": geo.longitude,
+                        "geo_radius_meters": geo.radius_in_meters,
+                    })
             except Exception:
                 pass
 

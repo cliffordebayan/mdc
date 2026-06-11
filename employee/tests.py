@@ -211,3 +211,96 @@ class EmployeeImportFlowTests(TransactionTestCase):
         bank_accounts = EmployeeBankDetails.objects.filter(employee_id=employee)
         self.assertTrue(bank_accounts.filter(bank_name="GCash").exists())
         self.assertTrue(bank_accounts.filter(bank_name="Metrobank").exists())
+
+
+class EmployeeStatusTransitionTests(TransactionTestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="testuser@example.com",
+            password="password123",
+        )
+        self.employee = Employee.objects.create(
+            employee_user_id=self.user,
+            employee_first_name="Test",
+            employee_last_name="Employee",
+            email="testuser@example.com",
+            phone="09170000001",
+            gender="male",
+            employee_no="12345",
+            is_active=True,
+        )
+        # Note: EmployeeWorkInformation is created in Employee.save() if it doesn't exist.
+        self.work_info = getattr(self.employee, "employee_work_info", None)
+        if not self.work_info:
+            self.work_info = EmployeeWorkInformation.objects.create(employee_id=self.employee)
+
+    def test_default_status_is_active(self):
+        self.assertEqual(self.work_info.employee_status, "active")
+
+    def test_status_transition_to_resigned_keeps_employee_no(self):
+        self.work_info.employee_status = "resigned"
+        self.work_info.save()
+        
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.employee_no, "12345")
+
+    def test_status_transition_resigned_to_active_appends_suffix(self):
+        # First transition to resigned
+        self.work_info.employee_status = "resigned"
+        self.work_info.save()
+        
+        # Then transition back to active
+        self.work_info.employee_status = "active"
+        self.work_info.save()
+        
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.employee_no, "12345-2")
+
+    def test_multiple_transitions_increment_suffix(self):
+        # 1st transition resigned -> active
+        self.work_info.employee_status = "resigned"
+        self.work_info.save()
+        self.work_info.employee_status = "active"
+        self.work_info.save()
+        
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.employee_no, "12345-2")
+        
+        # 2nd transition awol -> active
+        self.work_info.employee_status = "awol"
+        self.work_info.save()
+        self.work_info.employee_status = "active"
+        self.work_info.save()
+        
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.employee_no, "12345-3")
+
+    def test_transition_with_conflicting_suffix_increments_further(self):
+        # Create another employee that already has the "12345-2" number
+        other_user = User.objects.create_user(
+            username="otheruser",
+            email="otheruser@example.com",
+            password="password123",
+        )
+        Employee.objects.create(
+            employee_user_id=other_user,
+            employee_first_name="Other",
+            employee_last_name="Employee",
+            email="otheruser@example.com",
+            phone="09170000002",
+            gender="male",
+            employee_no="12345-2",
+            is_active=True,
+        )
+        
+        # Transition original back to active.
+        # Normally it would want "12345-2", but since that exists, it should increment to "12345-3".
+        self.work_info.employee_status = "resigned"
+        self.work_info.save()
+        self.work_info.employee_status = "active"
+        self.work_info.save()
+        
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.employee_no, "12345-3")

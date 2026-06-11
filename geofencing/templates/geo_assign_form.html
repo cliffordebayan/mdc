@@ -1,0 +1,64 @@
+{% load i18n %}
+<div class="oh-modal__dialog-header pb-0 mb-3">
+  <span class="oh-modal__dialog-title">
+    {% if edit_mode %}
+      {% trans "Edit Geofence Assignments" %}
+    {% else %}
+      {% trans "Assign Geofences to Employee" %}
+    {% endif %}
+  </span>
+  <button class="oh-modal__close" aria-label="Close">
+    <ion-icon name="close-outline"></ion-icon>
+  </button>
+</div>
+
+<div class="oh-modal__dialog-body">
+  <form id="geoAssignForm"
+        hx-post="{% url 'geo-assign-save' %}"
+        hx-target="#geo"
+        hx-swap="innerHTML"
+        hx-on::after-request="if(event.detail.successful) { $('#objectCreateModal').removeClass('oh-modal--show'); $('#reloadMessagesButton').click(); switchGeoTab('assignments'); }"
+        class="oh-profile-section pt-0">
+    {% csrf_token %}
+    
+    {% if edit_mode %}
+      <input type="hidden" name="employee" value="{{ employee.id }}">
+      <div class="oh-input__group mb-3">
+        <label class="oh-input__label">{% trans "Employee" %}</label>
+        <input type="text" class="oh-input w-100" value="{{ employee.get_full_name }}" readonly disabled>
+      </div>
+    {% else %}
+      <div class="oh-input__group mb-3">
+        <label class="oh-input__label" for="id_employee">{% trans "Employee" %}</label>
+        {{ form.employee }}
+        {% if form.employee.errors %}<div class="text-danger small mt-1">{{ form.employee.errors }}</div>{% endif %}
+      </div>
+    {% endif %}
+
+    <div class="oh-input__group mb-3">
+      <label class="oh-input__label" for="id_geofences">{% trans "Geofences" %}</label>
+      {{ form.geofences }}
+      {% if form.geofences.errors %}<div class="text-danger small mt-1">{{ form.geofences.errors }}</div>{% endif %}
+    </div>
+  </form>
+</div>
+
+<div class="oh-modal__dialog-footer">
+  <button type="submit" form="geoAssignForm" class="oh-btn oh-btn--secondary oh-btn--shadow">
+    {% trans "Save Assignments" %}
+  </button>
+</div>
+
+<script>
+$(document).ready(function() {
+  // Initialize select2 fields if they weren't automatically initialized
+  if (typeof $.fn.select2 !== 'undefined') {
+    $('#id_employee').select2({
+      dropdownParent: $('#objectCreateModal')
+    });
+    $('#id_geofences').select2({
+      dropdownParent: $('#objectCreateModal')
+    });
+  }
+});
+</script>

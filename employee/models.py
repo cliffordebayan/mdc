@@ -170,7 +170,7 @@ class Employee(models.Model):
 
     def get_employee_dob(self) -> any:
         if self.dob:
-            return self.dob.strftime("%d %b")
+            return self.dob.strftime("%Y-%m-%d")
         return None
 
     def get_full_name(self):
@@ -770,8 +770,8 @@ class EmployeeWorkInformation(models.Model):
     ]
     employee_status = models.CharField(
         max_length=20,
-        null=True,
-        blank=True,
+        null=False,
+        blank=False,
         choices=choice_employee_status,
         default="active",
         verbose_name=_("Employee Status"),
@@ -790,12 +790,43 @@ class EmployeeWorkInformation(models.Model):
     def save(self, *args, **kwargs):
         if not self.pin:
             self.pin = f"{random.randint(0, 999999):06d}"
+
+        # Check if the employee_status has transitioned to active from another status
+        if self.pk is not None:
+            original_status = getattr(self, "_original_employee_status", None)
+            if self.employee_status == "active" and original_status and original_status != "active":
+                employee = self.employee_id
+                if employee and employee.employee_no:
+                    old_no = employee.employee_no
+                    import re
+                    match = re.search(r'-(\d+)$', old_no)
+                    if match:
+                        suffix_num = int(match.group(1))
+                        new_suffix_num = suffix_num + 1
+                        new_no = old_no[:match.start()] + f"-{new_suffix_num}"
+                    else:
+                        new_no = f"{old_no}-2"
+                    
+                    while Employee.objects.filter(employee_no=new_no).exclude(pk=employee.pk).exists():
+                        match = re.search(r'-(\d+)$', new_no)
+                        if match:
+                            suffix_num = int(match.group(1))
+                            new_suffix_num = suffix_num + 1
+                            new_no = new_no[:match.start()] + f"-{new_suffix_num}"
+                        else:
+                            new_no = f"{new_no}-2"
+                    
+                    employee.employee_no = new_no
+                    employee.save(update_fields=['employee_no'])
+
         self.full_clean()
         super().save(*args, **kwargs)
+        self._original_employee_status = self.employee_status
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.skip_history = False
+        self._original_employee_status = self.employee_status
 
     def tracking(self):
         """

@@ -1041,7 +1041,15 @@ def bulk_create_work_info_import(success_lists):
         branch_obj = existing_branches.get(work_info.get("Branch"))
         cost_center_obj = existing_cost_centers.get(work_info.get("Cost Center"))
         business_unit_obj = existing_business_units.get(work_info.get("Business Unit"))
-        employee_status = work_info.get("Employee Status") or None
+        raw_status = work_info.get("Employee Status")
+        if raw_status:
+            status_str = str(raw_status).strip().lower()
+            if status_str in ["active", "resigned", "awol", "terminated", "retired"]:
+                employee_status = status_str
+            else:
+                employee_status = "active"
+        else:
+            employee_status = "active"
         location = work_info.get("Work Location")
         work_email = convert_nan("Work Email", work_info) or None
         work_phone = convert_nan("Work Phone", work_info) or None

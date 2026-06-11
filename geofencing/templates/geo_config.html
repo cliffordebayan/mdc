@@ -1,94 +1,220 @@
 <div class="oh-inner-sidebar-content">
-  <div class="oh-inner-sidebar-content__header d-flex justify-content-between align-items-center">
-    <h2 class="oh-inner-sidebar-content__title">Branch Geofences</h2>
-    {% if perms.geofencing.add_geofencing %}
-    <button class="oh-btn oh-btn--secondary oh-btn--shadow"
-            data-toggle="oh-modal-toggle"
-            data-target="#objectCreateModal"
-            hx-get="{% url 'geo-config-add' %}"
-            hx-target="#objectCreateModalTarget"
-            hx-swap="innerHTML">
-      <ion-icon name="add-outline" class="me-1"></ion-icon>Add Geofence
-    </button>
-    {% endif %}
-
+  <div class="oh-inner-sidebar-content__header d-flex justify-content-between align-items-center mb-3">
+    <h2 class="oh-inner-sidebar-content__title">Employee Geofences</h2>
+    
+    <div class="d-flex align-items-center">
+      {% if perms.geofencing.add_geofencing %}
+      <button class="oh-btn oh-btn--secondary oh-btn--shadow d-none"
+              data-toggle="oh-modal-toggle"
+              data-target="#objectCreateModal"
+              hx-get="{% url 'geo-config-add' %}"
+              hx-target="#objectCreateModalTarget"
+              hx-swap="innerHTML"
+              id="add-geofence-btn">
+        <ion-icon name="add-outline" class="me-1"></ion-icon>Add Geofence
+      </button>
+      <button class="oh-btn oh-btn--secondary oh-btn--shadow"
+              data-toggle="oh-modal-toggle"
+              data-target="#objectCreateModal"
+              hx-get="{% url 'geo-assign-add' %}"
+              hx-target="#objectCreateModalTarget"
+              hx-swap="innerHTML"
+              id="assign-geofence-btn">
+        <ion-icon name="person-add-outline" class="me-1"></ion-icon>Assign Geofences
+      </button>
+      {% endif %}
+    </div>
   </div>
 
-  {% if geofences %}
-  <div class="oh-sticky-table">
-    <div class="oh-sticky-table__table oh-table--sortable">
-      <div class="oh-sticky-table__thead">
-        <div class="oh-sticky-table__tr">
-          <div class="oh-sticky-table__th">Branch</div>
-          <div class="oh-sticky-table__th">Latitude</div>
-          <div class="oh-sticky-table__th">Longitude</div>
-          <div class="oh-sticky-table__th">Radius (m)</div>
-          <div class="oh-sticky-table__th">Status</div>
-          <div class="oh-sticky-table__th">Excluded Employees</div>
-          <div class="oh-sticky-table__th oh-sticky-table__right">Actions</div>
-        </div>
-      </div>
-      <div class="oh-sticky-table__tbody">
-        {% for geo in geofences %}
-        <div class="oh-sticky-table__tr">
-          <div class="oh-sticky-table__sd">{{ geo.branch_id.branch|default:"—" }}</div>
-          <div class="oh-sticky-table__td">{{ geo.latitude|floatformat:6 }}</div>
-          <div class="oh-sticky-table__td">{{ geo.longitude|floatformat:6 }}</div>
-          <div class="oh-sticky-table__td">{{ geo.radius_in_meters }}</div>
-          <div class="oh-sticky-table__td">
-            {% if geo.start %}
-              <span class="oh-badge oh-badge--success">Active</span>
-            {% else %}
-              <span class="oh-badge oh-badge--danger">Inactive</span>
-            {% endif %}
-          </div>
-          <div class="oh-sticky-table__td">
-            {% with excl=geo.excluded_employees.all %}
-              {% if excl %}
-                {% for emp in excl %}<span class="oh-badge oh-badge--warning me-1">{{ emp.get_full_name }}</span>{% endfor %}
-              {% else %}
-                <span class="text-muted" style="font-size:12px">—</span>
-              {% endif %}
-            {% endwith %}
-          </div>
-          <div class="oh-sticky-table__td oh-sticky-table__right">
-            <div class="oh-btn-group">
-              {% if perms.geofencing.change_geofencing %}
-              <button class="oh-btn oh-btn--light-bkg w-50"
-                      data-toggle="oh-modal-toggle"
-                      data-target="#objectUpdateModal"
-                      hx-get="{% url 'geo-config-edit' geo.pk %}"
-                      hx-target="#objectUpdateModalTarget"
-                      hx-swap="innerHTML"
-                      title="Edit">
-                <ion-icon name="create-outline"></ion-icon>
-              </button>
-              {% endif %}
-              {% if perms.geofencing.delete_geofencing %}
-              <button class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-50"
-                      onclick="geoDeleteConfirm({{ geo.pk }}, '{{ geo.branch_id.branch|default:'this geofence' }}')"
-                      title="Remove">
-                <ion-icon name="trash-outline"></ion-icon>
-              </button>
-              {% endif %}
-            </div>
-          </div>
-        </div>
-        {% endfor %}
+  <div id="geofence-tab" data-table-name="geofence_tab">
+    <div class="row">
+      <div class="col-sm-12 col-md-12 col-lg-12">
+        <ul class="oh-general__tabs oh-general__tabs--border oh-general__tabs--profile oh-general__tabs--no-grow oh-profile-section__tab mt-2">
+          <li class="oh-general__tab">
+            <a href="#" class="oh-general__tab-link oh-general__tab-link--active" id="btn-tab-assignments" onclick="switchGeoTab('assignments'); return false;">Employee Assignments</a>
+          </li>
+          <li class="oh-general__tab">
+            <a href="#" class="oh-general__tab-link" id="btn-tab-geofences" onclick="switchGeoTab('geofences'); return false;">Manage Geofences</a>
+          </li>
+        </ul>
       </div>
     </div>
   </div>
-  {% else %}
-  <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:200px;">
-    <h5 class="oh-404__subtitle">No geofences configured yet.</h5>
+
+  <!-- Tab 1: Employee Assignments List -->
+  <div id="tab-content-assignments" class="oh-general__tab-target oh-profile__info-tab mt-4 mb-4">
+    {% if employees %}
+    <div class="oh-sticky-table">
+      <div class="oh-sticky-table__table oh-table--sortable">
+        <div class="oh-sticky-table__thead">
+          <div class="oh-sticky-table__tr">
+            <div class="oh-sticky-table__th">Employee</div>
+            <div class="oh-sticky-table__th">Department</div>
+            <div class="oh-sticky-table__th">Assigned Geofences</div>
+            <div class="oh-sticky-table__th oh-sticky-table__right">Actions</div>
+          </div>
+        </div>
+        <div class="oh-sticky-table__tbody">
+          {% for employee in employees %}
+          <div class="oh-sticky-table__tr">
+            <div class="oh-sticky-table__sd">
+              <div class="d-flex align-items-center">
+                <div class="oh-avatar oh-avatar--small me-2" style="margin-right: 8px;">
+                  <img src="{{ employee.get_avatar }}" class="oh-avatar__img" alt="" style="width: 32px; height: 32px; border-radius: 50%;">
+                </div>
+                <span>{{ employee.get_full_name }}</span>
+              </div>
+            </div>
+            <div class="oh-sticky-table__td">
+              {{ employee.employee_work_info.department_id.department|default:"—" }}
+            </div>
+            <div class="oh-sticky-table__td">
+              {% for geo in employee.assigned_geofences.all %}
+                <span class="oh-badge oh-badge--info me-1">{{ geo }}</span>
+              {% empty %}
+                <span class="oh-badge oh-badge--success-light" style="color: #2e7d32; background-color: #e8f5e9;">No Restrictions</span>
+              {% endfor %}
+            </div>
+            <div class="oh-sticky-table__td oh-sticky-table__right">
+              <div class="oh-btn-group">
+                {% if perms.geofencing.change_geofencing %}
+                <button class="oh-btn oh-btn--light-bkg w-50"
+                        data-toggle="oh-modal-toggle"
+                        data-target="#objectCreateModal"
+                        hx-get="{% url 'geo-assign-edit' employee.pk %}"
+                        hx-target="#objectCreateModalTarget"
+                        hx-swap="innerHTML"
+                        title="Edit">
+                  <ion-icon name="create-outline"></ion-icon>
+                </button>
+                <button class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-50"
+                        onclick="geoAssignDeleteConfirm({{ employee.pk }}, '{{ employee.get_full_name|escapejs }}')"
+                        title="Remove">
+                  <ion-icon name="trash-outline"></ion-icon>
+                </button>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:200px;">
+      <h5 class="oh-404__subtitle">No active employees found.</h5>
+    </div>
+    {% endif %}
   </div>
-  {% endif %}
+
+  <!-- Tab 2: Geofences List -->
+  <div id="tab-content-geofences" class="oh-general__tab-target oh-profile__info-tab mt-4 mb-4 d-none">
+    {% if geofences %}
+    <div class="oh-sticky-table">
+      <div class="oh-sticky-table__table oh-table--sortable">
+        <div class="oh-sticky-table__thead">
+          <div class="oh-sticky-table__tr">
+            <div class="oh-sticky-table__th">Name</div>
+            <div class="oh-sticky-table__th">Latitude</div>
+            <div class="oh-sticky-table__th">Longitude</div>
+            <div class="oh-sticky-table__th">Radius (m)</div>
+            <div class="oh-sticky-table__th">Status</div>
+            <div class="oh-sticky-table__th oh-sticky-table__right">Actions</div>
+          </div>
+        </div>
+        <div class="oh-sticky-table__tbody">
+          {% for geo in geofences %}
+          <div class="oh-sticky-table__tr">
+            <div class="oh-sticky-table__sd">
+              <strong>{{ geo.name|default:"Unnamed Geofence" }}</strong>
+            </div>
+            <div class="oh-sticky-table__td">{{ geo.latitude|floatformat:6 }}</div>
+            <div class="oh-sticky-table__td">{{ geo.longitude|floatformat:6 }}</div>
+            <div class="oh-sticky-table__td">{{ geo.radius_in_meters }}</div>
+            <div class="oh-sticky-table__td">
+              {% if geo.start %}
+                <span class="oh-badge oh-badge--success">Active</span>
+              {% else %}
+                <span class="oh-badge oh-badge--danger">Inactive</span>
+              {% endif %}
+            </div>
+            <div class="oh-sticky-table__td oh-sticky-table__right">
+              <div class="oh-btn-group">
+                {% if perms.geofencing.change_geofencing %}
+                <button class="oh-btn oh-btn--light-bkg w-50"
+                        data-toggle="oh-modal-toggle"
+                        data-target="#objectUpdateModal"
+                        hx-get="{% url 'geo-config-edit' geo.pk %}"
+                        hx-target="#objectUpdateModalTarget"
+                        hx-swap="innerHTML"
+                        title="Edit">
+                  <ion-icon name="create-outline"></ion-icon>
+                </button>
+                {% endif %}
+                {% if perms.geofencing.delete_geofencing %}
+                <button class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-50"
+                        onclick="geoDeleteConfirm({{ geo.pk }}, '{{ geo|escapejs }}')"
+                        title="Remove">
+                  <ion-icon name="trash-outline"></ion-icon>
+                </button>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:200px;">
+      <h5 class="oh-404__subtitle">No geofences configured yet.</h5>
+    </div>
+    {% endif %}
+  </div>
 </div>
 
 <script>
-function geoDeleteConfirm(pk, branchName) {
-  if (!confirm('Delete the geofence for "' + branchName + '"?')) return;
+function switchGeoTab(tabName) {
+  if (tabName === 'assignments') {
+    $('#btn-tab-assignments').addClass('oh-general__tab-link--active');
+    $('#btn-tab-geofences').removeClass('oh-general__tab-link--active');
+    $('#tab-content-assignments').removeClass('d-none');
+    $('#tab-content-geofences').addClass('d-none');
+    $('#assign-geofence-btn').removeClass('d-none');
+    $('#add-geofence-btn').addClass('d-none');
+    localStorage.setItem('geoActiveTab', 'assignments');
+  } else {
+    $('#btn-tab-geofences').addClass('oh-general__tab-link--active');
+    $('#btn-tab-assignments').removeClass('oh-general__tab-link--active');
+    $('#tab-content-geofences').removeClass('d-none');
+    $('#tab-content-assignments').addClass('d-none');
+    $('#add-geofence-btn').removeClass('d-none');
+    $('#assign-geofence-btn').addClass('d-none');
+    localStorage.setItem('geoActiveTab', 'geofences');
+  }
+}
+
+// Restore tab on reload
+$(document).ready(function() {
+  var activeTab = localStorage.getItem('geoActiveTab');
+  if (activeTab === 'geofences') {
+    switchGeoTab('geofences');
+  } else {
+    switchGeoTab('assignments');
+  }
+});
+
+function geoDeleteConfirm(pk, name) {
+  if (!confirm('Delete geofence "' + name + '"?')) return;
   fetch("{% url 'geo-config' %}?action=delete&pk=" + pk, {
+    method: "POST",
+    headers: { "X-CSRFToken": document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "" },
+  }).then(() => htmx.ajax("GET", "{% url 'geo-config' %}", { target: "#geo", swap: "innerHTML" }));
+}
+
+function geoAssignDeleteConfirm(pk, empName) {
+  if (!confirm('Clear all geofence assignments for "' + empName + '"?')) return;
+  fetch("{% url 'geo-assign-delete' 99999 %}".replace('99999', pk), {
     method: "POST",
     headers: { "X-CSRFToken": document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "" },
   }).then(() => htmx.ajax("GET", "{% url 'geo-config' %}", { target: "#geo", swap: "innerHTML" }));

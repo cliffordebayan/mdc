@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from base.models import Branch
 from employee.models import Employee
 
-from .forms import GeoFencingSetupForm
+from .forms import GeoFencingSetupForm, EmployeeGeofenceForm, QuickGeoFenceForm
 from .models import GeoFencing
 from .serializers import EmployeeLocationSerializer, GeoFencingSetupSerializer
 
@@ -85,28 +85,27 @@ class GeoFencingEmployeeLocationCheckAPIView(APIView):
 
         employee_id = request.data.get("employee_id")
         try:
-            employee = Employee.objects.select_related("employee_work_info__branch_id").get(pk=employee_id)
+            employee = Employee.objects.get(pk=employee_id)
         except Employee.DoesNotExist:
             return Response({"message": "Employee not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        work_info = getattr(employee, "employee_work_info", None)
-        branch = work_info.branch_id if work_info else None
-
-        try:
-            geo = GeoFencing.objects.get(branch_id=branch, start=True)
-        except GeoFencing.DoesNotExist:
-            return Response({"message": "No active geofence for this branch"}, status=status.HTTP_200_OK)
-
-        if geo.excluded_employees.filter(pk=employee.pk).exists():
-            return Response({"message": "Excluded from geofence"}, status=status.HTTP_200_OK)
-
         lat = serializer.validated_data["latitude"]
         lng = serializer.validated_data["longitude"]
-        distance = geodesic((geo.latitude, geo.longitude), (lat, lng)).meters
 
-        if distance <= geo.radius_in_meters:
-            return Response({"message": "Inside the geofence"}, status=status.HTTP_200_OK)
-        return Response({"message": "Outside the geofence"}, status=status.HTTP_400_BAD_REQUEST)
+        # Check assigned geofences
+        assigned_geos = employee.assigned_geofences.filter(start=True)
+        if assigned_geos.exists():
+            inside = False
+            for geo in assigned_geos:
+                distance = geodesic((geo.latitude, geo.longitude), (lat, lng)).meters
+                if distance <= geo.radius_in_meters:
+                    inside = True
+                    break
+            if inside:
+                return Response({"message": "Inside the geofence"}, status=status.HTTP_200_OK)
+            return Response({"message": "Outside the geofence"}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({"message": "No geofence assigned"}, status=status.HTTP_200_OK)
 
 
 class GeoFencingSetUpPermissionCheck(APIView):
@@ -121,12 +120,18 @@ class GeoFencingSetUpPermissionCheck(APIView):
 
 
 def _geo_config_context():
-    geofences = GeoFencing.objects.select_related("branch_id").prefetch_related("excluded_employees").all()
-    branches_with_fence = {g.branch_id_id for g in geofences if g.branch_id_id}
-    available_branches = Branch.objects.filter(is_active=True).exclude(id__in=branches_with_fence)
+    geofences = GeoFencing.objects.all()
     add_form = GeoFencingSetupForm()
-    add_form.fields["branch_id"].queryset = available_branches
-    return {"geofences": geofences, "add_form": add_form}
+    employees = Employee.objects.filter(is_active=True).prefetch_related(
+        "assigned_geofences",
+        "employee_work_info__department_id"
+    )
+
+    return {
+        "geofences": geofences,
+        "add_form": add_form,
+        "employees": employees,
+    }
 
 
 @login_required
@@ -173,6 +178,72 @@ def geo_location_add_form(request):
 def geo_location_edit(request, pk):
     geo = get_object_or_404(GeoFencing, pk=pk)
     form = GeoFencingSetupForm(instance=geo)
-    taken = GeoFencing.objects.exclude(pk=pk).values_list("branch_id_id", flat=True)
-    form.fields["branch_id"].queryset = Branch.objects.filter(is_active=True).exclude(id__in=taken)
     return render(request, "geo_edit_form.html", {"form": form, "geo": geo})
+
+
+@login_required
+@permission_required("geofencing.change_geofencing")
+def geo_assign_add(request):
+    form = EmployeeGeofenceForm()
+    form.fields["employee"].queryset = Employee.objects.filter(is_active=True)
+    return render(request, "geo_assign_form.html", {"form": form, "edit_mode": False})
+
+
+@login_required
+@permission_required("geofencing.change_geofencing")
+def geo_assign_save(request):
+    if request.method == "POST":
+        emp_id = request.POST.get("employee")
+        employee = get_object_or_404(Employee, pk=emp_id)
+        geofence_ids = request.POST.getlist("geofences")
+        
+        geofences = GeoFencing.objects.filter(id__in=geofence_ids)
+        employee.assigned_geofences.set(geofences)
+        messages.success(request, _("Employee geofences assigned successfully."))
+    return render(request, "geo_config.html", _geo_config_context())
+
+
+@login_required
+@permission_required("geofencing.change_geofencing")
+def geo_assign_edit(request, emp_id):
+    employee = get_object_or_404(Employee, pk=emp_id)
+    current_geos = employee.assigned_geofences.all()
+    form = EmployeeGeofenceForm(initial={
+        "employee": employee.id,
+        "geofences": current_geos
+    })
+    return render(request, "geo_assign_form.html", {
+        "form": form,
+        "employee": employee,
+        "edit_mode": True
+    })
+
+
+@login_required
+@permission_required("geofencing.change_geofencing")
+def geo_assign_delete(request, emp_id):
+    if request.method == "POST":
+        employee = get_object_or_404(Employee, pk=emp_id)
+        employee.assigned_geofences.clear()
+        messages.success(request, _("Geofence assignments cleared successfully."))
+    return render(request, "geo_config.html", _geo_config_context())
+
+
+@login_required
+@permission_required("geofencing.add_geofencing")
+def geo_quick_add(request):
+    if request.method == "POST":
+        form = QuickGeoFenceForm(request.POST)
+        if form.is_valid():
+            geo = form.save()
+            return JsonResponse({
+                "success": True,
+                "id": geo.id,
+                "name": str(geo)
+            })
+        else:
+            return JsonResponse({
+                "success": False,
+                "errors": form.errors
+            })
+    return JsonResponse({"success": False, "errors": "Invalid method"})
