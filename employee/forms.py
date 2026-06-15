@@ -514,7 +514,7 @@ class EmployeeWorkInformationForm(ModelForm):
                 field.widget.option_template_name = "horilla_widgets/select_option.html"
 
         self.order_fields([
-            "employee_status", "employee_type_id", "company_id", "branch_id",
+            "employee_status", "employee_type_id", "payroll_group_id", "company_id", "branch_id",
             "department_id", "business_unit_id", "cost_center_id",
         ])
 
@@ -559,7 +559,7 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
         if not self.instance.pk and not self.data.get("pin"):
             self.initial["pin"] = f"{random.randint(0, 999999):06d}"
         self.order_fields([
-            "employee_status", "employee_type_id", "company_id", "branch_id",
+            "employee_status", "employee_type_id", "payroll_group_id", "company_id", "branch_id",
             "department_id", "business_unit_id", "cost_center_id",
         ])
 
@@ -689,6 +689,7 @@ excel_columns = [
     ("employee_work_info__job_position_id", trans("Job Position")),
     ("employee_work_info__job_role_id", trans("Job Role")),
     ("employee_work_info__employee_type_id", trans("Employee Type")),
+    ("employee_work_info__payroll_group_id", trans("Payroll Group")),
     ("employee_work_info__employee_status", trans("Employee Status")),
     ("employee_work_info__location", trans("Work Location")),
     ("employee_work_info__work_type_id", trans("Work Type")),

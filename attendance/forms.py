@@ -912,8 +912,11 @@ class AttendanceActivityExportForm(forms.Form):
 
     default_fields = [
         "employee_id",
+        "employee_number",
+        "employee_id__employee_work_info__business_unit_id",
         "employee_id__employee_work_info__branch_id",
         "employee_id__employee_work_info__department_id",
+        "employee_id__employee_work_info__payroll_group_id",
         "attendance_date",
         "daily_clock_in",
         "daily_clock_out",
@@ -937,12 +940,17 @@ class AttendanceActivityExportForm(forms.Form):
         "daily_break_hours",
         "daily_lunch_hours",
         "daily_overtime",
+        "daily_leave",
+        "daily_holiday",
     ]
 
     field_choices = [
         ("employee_id", _("Employee")),
+        ("employee_number", _("Employee No.")),
+        ("employee_id__employee_work_info__business_unit_id", _("Business Unit")),
         ("employee_id__employee_work_info__branch_id", _("Branch")),
         ("employee_id__employee_work_info__department_id", _("Department")),
+        ("employee_id__employee_work_info__payroll_group_id", _("Payroll Group")),
         ("attendance_date", _("Attendance Date")),
         ("daily_clock_in", _("Clock In")),
         ("daily_clock_out", _("Clock Out")),
@@ -966,6 +974,8 @@ class AttendanceActivityExportForm(forms.Form):
         ("daily_break_hours", _("Break Hours")),
         ("daily_lunch_hours", _("Lunch Hours")),
         ("daily_overtime", _("Overtime")),
+        ("daily_leave", _("Leave")),
+        ("daily_holiday", _("Holiday")),
     ]
     selected_fields = forms.MultipleChoiceField(
         choices=field_choices,

@@ -50,6 +50,7 @@ from base.models import (
     CostCenter,
     CompanyLeaves,
     Department,
+    PayrollGroup,
     DriverViewed,
     DynamicEmailConfiguration,
     DynamicPagination,
@@ -573,6 +574,36 @@ class DepartmentForm(ModelForm):
         model = Department
         fields = "__all__"
         exclude = ["is_active"]
+
+
+class PayrollGroupForm(ModelForm):
+    """
+    PayrollGroup model's form
+    """
+
+    start_day = forms.ChoiceField(
+        choices=[("", "---------")] + PayrollGroup.PAYROLL_DAY_CHOICES,
+        required=False,
+        label=_("Start Day"),
+    )
+    end_day = forms.ChoiceField(
+        choices=[("", "---------")] + PayrollGroup.PAYROLL_DAY_CHOICES,
+        required=False,
+        label=_("End Day"),
+    )
+
+    class Meta:
+        model = PayrollGroup
+        fields = "__all__"
+        exclude = ["is_active"]
+
+    def clean_start_day(self):
+        val = self.cleaned_data.get("start_day")
+        return int(val) if val not in (None, "") else None
+
+    def clean_end_day(self):
+        val = self.cleaned_data.get("end_day")
+        return int(val) if val not in (None, "") else None
 
 
 class JobPositionForm(ModelForm):

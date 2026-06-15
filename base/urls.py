@@ -19,6 +19,7 @@ from base.models import (
     Company,
     CostCenter,
     Department,
+    PayrollGroup,
     EmployeeShift,
     EmployeeShiftSchedule,
     EmployeeType,
@@ -272,6 +273,31 @@ urlpatterns = [
         name="department-delete",
         kwargs={
             "model": Department,
+            "HttpResponse": True,
+        },
+    ),
+    path(
+        "settings/payroll-group-view/",
+        views.payroll_group_view,
+        name="payroll-group-view",
+    ),
+    path(
+        "settings/payroll-group-creation/",
+        views.payroll_group_create,
+        name="payroll-group-creation",
+    ),
+    path(
+        "settings/payroll-group-update/<int:id>/",
+        views.payroll_group_update,
+        name="payroll-group-update",
+        kwargs={"model": PayrollGroup},
+    ),
+    path(
+        "payroll-group-delete/<int:obj_id>/",
+        views.object_delete,
+        name="payroll-group-delete",
+        kwargs={
+            "model": PayrollGroup,
             "HttpResponse": True,
         },
     ),

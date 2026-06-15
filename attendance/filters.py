@@ -21,7 +21,7 @@ from attendance.models import (
     strtime_seconds,
 )
 from base.filters import FilterSet
-from base.models import Branch
+from base.models import Branch, PayrollGroup
 from employee.filters import EmployeeFilter
 from employee.models import Employee
 from horilla.filters import filter_by_name
@@ -315,6 +315,12 @@ class AttendanceActivityFilter(FilterSet):
         widget=forms.SelectMultiple(),
     )
 
+    employee_id__employee_work_info__payroll_group_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=PayrollGroup.objects.all(),
+        field_name="employee_id__employee_work_info__payroll_group_id",
+        widget=forms.SelectMultiple(),
+    )
+
     class Meta:
         """
         Meta class to add additional options
@@ -341,6 +347,7 @@ class AttendanceActivityFilter(FilterSet):
             "employee_id__employee_work_info__location",
             "employee_id__employee_work_info__reporting_manager_id",
             "employee_id__employee_work_info__branch_id",
+            "employee_id__employee_work_info__payroll_group_id",
         ]
         model = AttendanceActivity
 
@@ -656,6 +663,7 @@ class AttendanceActivityReGroup:
         ("employee_id__employee_work_info__employee_type_id", "Employment Type"),
         ("employee_id__employee_work_info__company_id", "Company"),
         ("employee_id__employee_work_info__branch_id", "Branch"),
+        ("employee_id__employee_work_info__payroll_group_id", "Payroll Group"),
     ]
 
 

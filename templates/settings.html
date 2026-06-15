@@ -181,6 +181,16 @@
 												{% endif %}
 											</div>
 											<div class="oh-input-group">
+												{% if perms.base.view_payrollgroup %}
+												<a
+													id="payrollGroup"
+													href="{% url 'payroll-group-view' %}"
+													class="oh-inner-sidebar__link oh-dropdown__link"
+													>{% trans "Payroll Group" %}</a
+												>
+												{% endif %}
+											</div>
+											<div class="oh-input-group">
 												{% if perms.base.view_jobposition %}
 													<a
 														id="jobPosition"

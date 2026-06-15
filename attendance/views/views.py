@@ -117,11 +117,14 @@ from base.models import (
     AttendanceAllowedIP,
     EmployeeShiftDay,
     EmployeeShiftSchedule,
+    Holidays,
+    PayrollGroup,
     TrackLateComeEarlyOut,
     WorkType,
 )
 from employee.filters import EmployeeFilter
 from employee.models import Employee, EmployeeWorkInformation
+from leave.models import LeaveRequest
 from horilla.decorators import (
     hx_request_required,
     install_required,
@@ -727,6 +730,39 @@ def build_daily_activity_rows(attendance_activities):
         for attendance in attendances
     }
 
+    leave_by_key = {}
+    holiday_by_date = {}
+    if employee_ids and attendance_dates:
+        min_date = min(attendance_dates)
+        max_date = max(attendance_dates)
+        leave_requests = LeaveRequest.objects.filter(
+            employee_id_id__in=employee_ids,
+            status="approved",
+            start_date__lte=max_date,
+            end_date__gte=min_date,
+        ).select_related("leave_type_id")
+        leave_by_employee = {}
+        for lr in leave_requests:
+            leave_by_employee.setdefault(lr.employee_id_id, []).append(lr)
+        for emp_id, date_val in [(e, d) for e in employee_ids for d in attendance_dates]:
+            for lr in leave_by_employee.get(emp_id, []):
+                end = lr.end_date or lr.start_date
+                if lr.start_date <= date_val <= end:
+                    leave_by_key[(emp_id, date_val)] = lr.leave_type_id.name
+                    break
+
+        holidays = Holidays.objects.filter(
+            start_date__lte=max_date,
+            end_date__gte=min_date,
+        )
+        for holiday in holidays:
+            current = holiday.start_date
+            end = holiday.end_date or holiday.start_date
+            while current <= end:
+                if current in attendance_dates and current not in holiday_by_date:
+                    holiday_by_date[current] = holiday.name
+                current += timedelta(days=1)
+
     row_contexts = []
     schedule_keys = set()
     for (employee_id, attendance_date), row_data in grouped.items():
@@ -865,6 +901,8 @@ def build_daily_activity_rows(attendance_activities):
                     work_activities,
                     attendance_date,
                 ),
+                leave=leave_by_key.get((employee_id, attendance_date)),
+                holiday=holiday_by_date.get(attendance_date),
             )
         )
     return rows
@@ -893,6 +931,8 @@ ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS = {
     "daily_break_hours",
     "daily_lunch_hours",
     "daily_overtime",
+    "daily_leave",
+    "daily_holiday",
 }
 
 
@@ -1045,6 +1085,10 @@ def _attendance_activity_daily_export_value(row, field_name, employee):
         return _format_attendance_activity_export_value(row.lunch_hours, employee)
     if field_name == "daily_overtime":
         return _format_attendance_activity_export_value(row.overtime, employee)
+    if field_name == "daily_leave":
+        return row.leave or ""
+    if field_name == "daily_holiday":
+        return row.holiday or ""
 
     return ""
 
@@ -1053,13 +1097,21 @@ def _attendance_activity_export_row_value(row, field_name, employee):
     if field_name in ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS:
         return _attendance_activity_daily_export_value(row, field_name, employee)
 
+    work_info = getattr(row.employee, "employee_work_info", None)
     row_values = {
-        "employee_id": row.employee,
+        "employee_id": row.employee.get_full_name(),
+        "employee_number": getattr(row.employee, "employee_no", None) or "",
+        "employee_id__employee_work_info__business_unit_id": getattr(
+            getattr(work_info, "business_unit_id", None), "code", None
+        ),
         "employee_id__employee_work_info__branch_id": getattr(
-            getattr(row.employee, "employee_work_info", None), "branch_id", None
+            work_info, "branch_id", None
         ),
         "employee_id__employee_work_info__department_id": getattr(
-            getattr(row.employee, "employee_work_info", None), "department_id", None
+            work_info, "department_id", None
+        ),
+        "employee_id__employee_work_info__payroll_group_id": getattr(
+            work_info, "payroll_group_id", None
         ),
         "attendance_date": row.attendance_date,
     }
@@ -1083,11 +1135,17 @@ def _attendance_activity_export_daily_rows(activities):
         attendance_date__in=attendance_dates,
     )
     rows = build_daily_activity_rows(daily_activities)
-    return [
-        row
-        for row in rows
+    filtered_rows = [
+        row for row in rows
         if (row.employee.id, row.attendance_date) in row_keys
     ]
+    filtered_rows.sort(
+        key=lambda r: (
+            getattr(r.employee, "employee_no", None) or "",
+            r.attendance_date or date.min,
+        )
+    )
+    return filtered_rows
 
 
 def _attendance_activity_export_columns(form, selected_fields):
@@ -1103,8 +1161,10 @@ def _attendance_activity_export_data(export_objects, selected_columns, employee)
         export_objects.select_related(
             "employee_id",
             "employee_id__employee_work_info",
+            "employee_id__employee_work_info__business_unit_id",
             "employee_id__employee_work_info__branch_id",
             "employee_id__employee_work_info__department_id",
+            "employee_id__employee_work_info__payroll_group_id",
             "shift_day",
         )
     )
@@ -1120,6 +1180,31 @@ def _attendance_activity_export_data(export_objects, selected_columns, employee)
     return data_export
 
 
+def _get_payroll_period_dates(start_day, end_day):
+    today = date.today()
+    day, year, month = today.day, today.year, today.month
+
+    def safe_date(y, m, d):
+        if d == 0:
+            last_of_prev = date(y, m, 1) - timedelta(days=1)
+            return last_of_prev
+        return date(y, m, d)
+
+    if day >= start_day and day < end_day:
+        date_from = date(year, month, start_day)
+        date_to = safe_date(year, month, end_day - 1)
+    elif day >= end_day:
+        date_from = date(year, month, end_day)
+        next_month_first = (date(year, month, 1) + timedelta(days=32)).replace(day=1)
+        date_to = safe_date(next_month_first.year, next_month_first.month, start_day - 1)
+    else:
+        prev_month_first = (date(year, month, 1) - timedelta(days=1)).replace(day=1)
+        date_from = date(prev_month_first.year, prev_month_first.month, end_day)
+        date_to = safe_date(year, month, start_day - 1)
+
+    return date_from, date_to
+
+
 def export_attendance_activity_data(request):
     employee = request.user.employee_get
     form = AttendanceActivityExportForm()
@@ -1132,6 +1217,21 @@ def export_attendance_activity_data(request):
         if ids:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
                 export_objects = AttendanceActivity.objects.filter(id__in=json.loads(ids))
+
+    payroll_group_ids = request.GET.getlist(
+        "employee_id__employee_work_info__payroll_group_id"
+    )
+    has_date_range = request.GET.get("attendance_date_from") or request.GET.get(
+        "attendance_date_till"
+    )
+    if payroll_group_ids and not has_date_range:
+        group = PayrollGroup.objects.filter(id=payroll_group_ids[0]).first()
+        if group and group.start_day and group.end_day:
+            date_from, date_to = _get_payroll_period_dates(group.start_day, group.end_day)
+            export_objects = export_objects.filter(
+                attendance_date__gte=date_from,
+                attendance_date__lte=date_to,
+            )
 
     selected_columns = _attendance_activity_export_columns(form, selected_fields)
     data_export = _attendance_activity_export_data(
@@ -1187,6 +1287,9 @@ def _daily_row_group_value(row, field):
         ),
         "employee_id__employee_work_info__branch_id": getattr(
             work_info, "branch_id", None
+        ),
+        "employee_id__employee_work_info__payroll_group_id": getattr(
+            work_info, "payroll_group_id", None
         ),
     }
     return values.get(field) or _("Unknown")

@@ -74,6 +74,7 @@ from base.forms import (
     CompanyLeaveForm,
     CostCenterForm,
     DepartmentForm,
+    PayrollGroupForm,
     DriverForm,
     DynamicMailConfForm,
     DynamicMailTestForm,
@@ -139,6 +140,7 @@ from base.models import (
     CompanyLeaves,
     DashboardEmployeeCharts,
     Department,
+    PayrollGroup,
     DynamicEmailConfiguration,
     DynamicPagination,
     EmployeeShift,
@@ -2080,6 +2082,66 @@ def department_update(request, id, **kwargs):
         request,
         "base/department/department_form.html",
         {"form": form, "department": department},
+    )
+
+
+@login_required
+@hx_request_required
+@permission_required("base.add_payrollgroup")
+def payroll_group_create(request):
+    """
+    This method renders form and template to create payroll group
+    """
+    form = PayrollGroupForm()
+    if request.method == "POST":
+        form = PayrollGroupForm(request.POST)
+        if form.is_valid():
+            form.save()
+            form = PayrollGroupForm()
+            messages.success(request, _("Payroll Group has been created successfully!"))
+            return HorillaRedirect(request)
+    return render(
+        request,
+        "base/payroll_group/payroll_group_form.html",
+        {"form": form},
+    )
+
+
+@login_required
+@permission_required("base.view_payrollgroup")
+def payroll_group_view(request):
+    """
+    This method views payroll groups
+    """
+    payroll_groups = PayrollGroup.objects.all()
+    return render(
+        request,
+        "base/payroll_group/payroll_group.html",
+        {"payroll_groups": payroll_groups},
+    )
+
+
+@login_required
+@hx_request_required
+@permission_required("base.change_payrollgroup")
+def payroll_group_update(request, id, **kwargs):
+    """
+    This method is used to update payroll group
+    args:
+        id : payroll group instance id
+    """
+    payroll_group = PayrollGroup.find(id)
+    form = PayrollGroupForm(instance=payroll_group)
+    if request.method == "POST":
+        form = PayrollGroupForm(request.POST, instance=payroll_group)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Payroll Group updated."))
+            return HorillaRedirect(request)
+    return render(
+        request,
+        "base/payroll_group/payroll_group_form.html",
+        {"form": form, "payroll_group": payroll_group},
     )
 
 

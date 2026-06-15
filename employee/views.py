@@ -3511,6 +3511,7 @@ def work_info_export(request):
         "employee_work_info__work_type_id": "employee_work_info__work_type_id__work_type",
         "employee_work_info__reporting_manager_id": "employee_work_info__reporting_manager_id__get_full_name",
         "employee_work_info__employee_type_id": "employee_work_info__employee_type_id__employee_type",
+        "employee_work_info__payroll_group_id": "employee_work_info__payroll_group_id__name",
         "employee_work_info__branch_id": "employee_work_info__branch_id__branch",
         "employee_work_info__cost_center_id": "employee_work_info__cost_center_id__name",
         "employee_work_info__business_unit_id": "employee_work_info__business_unit_id__name",

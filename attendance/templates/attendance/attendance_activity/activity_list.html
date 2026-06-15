@@ -80,9 +80,12 @@
                             hx-target='#activity-table' hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=employee_id__employee_first_name">
                             {% trans "Employee" %}
                         </div>
-                        <div data-cell-index="0" data-cell-title="{% trans 'Branch' %}" class='oh-sticky-table__th'>{% trans "Branch" %}</div>
-                        <div data-cell-index="1" data-cell-title="{% trans 'Department' %}" class='oh-sticky-table__th'>{% trans "Department" %}</div>
-                        <div data-cell-index="2" data-cell-title="{% trans 'Attendance Date' %}"
+                        <div data-cell-index="0" data-cell-title="{% trans 'Employee No.' %}" class='oh-sticky-table__th'>{% trans "Employee No." %}</div>
+                        <div data-cell-index="1" data-cell-title="{% trans 'Business Unit' %}" class='oh-sticky-table__th'>{% trans "Business Unit" %}</div>
+                        <div data-cell-index="2" data-cell-title="{% trans 'Branch' %}" class='oh-sticky-table__th'>{% trans "Branch" %}</div>
+                        <div data-cell-index="3" data-cell-title="{% trans 'Department' %}" class='oh-sticky-table__th'>{% trans "Department" %}</div>
+                        <div data-cell-index="4" data-cell-title="{% trans 'Payroll Group' %}" class='oh-sticky-table__th'>{% trans "Payroll Group" %}</div>
+                        <div data-cell-index="5" data-cell-title="{% trans 'Attendance Date' %}"
                             class="oh-sticky-table__th
                             {% if request.sort_option.order == '-attendance_date' %}arrow-up
                             {% elif request.sort_option.order == 'attendance_date' %}arrow-down
@@ -90,19 +93,21 @@
                             hx-target='#activity-table' hx-get="{% url 'attendance-activity-search' %}?{{pd}}&orderby=attendance_date">
                             {% trans "Attendance Date" %}
                         </div>
-                        <div data-cell-index="3" data-cell-title="{% trans 'Clock In/Out' %}" class='oh-sticky-table__th'>{% trans "Clock In/Out" %}</div>
-                        <div data-cell-index="4" data-cell-title="{% trans 'Break In/Out' %}" class='oh-sticky-table__th'>{% trans "Break In/Out" %}</div>
-                        <div data-cell-index="5" data-cell-title="{% trans 'Lunch In/Out' %}" class='oh-sticky-table__th'>{% trans "Lunch In/Out" %}</div>
-                        <div data-cell-index="6" data-cell-title="{% trans 'Clock Image' %}" class='oh-sticky-table__th'>{% trans "Clock Image" %}</div>
-                        <div data-cell-index="7" data-cell-title="{% trans 'Break Image' %}" class='oh-sticky-table__th'>{% trans "Break Image" %}</div>
-                        <div data-cell-index="8" data-cell-title="{% trans 'Lunch Image' %}" class='oh-sticky-table__th'>{% trans "Lunch Image" %}</div>
-                        <div data-cell-index="9" data-cell-title="{% trans 'Shift' %}" class='oh-sticky-table__th'>{% trans "Shift" %}</div>
-                        <div data-cell-index="10" data-cell-title="{% trans 'Late Come' %}" class='oh-sticky-table__th'>{% trans "Late Come" %}</div>
-                        <div data-cell-index="11" data-cell-title="{% trans 'Early Out' %}" class='oh-sticky-table__th'>{% trans "Early Out" %}</div>
-                        <div data-cell-index="12" data-cell-title="{% trans 'Work Hours' %}" class='oh-sticky-table__th'>{% trans "Work Hours" %}</div>
-                        <div data-cell-index="13" data-cell-title="{% trans 'Break Hours' %}" class='oh-sticky-table__th'>{% trans "Break Hours" %}</div>
-                        <div data-cell-index="14" data-cell-title="{% trans 'Lunch Hours' %}" class='oh-sticky-table__th'>{% trans "Lunch Hours" %}</div>
-                        <div data-cell-index="15" data-cell-title="{% trans 'Overtime' %}" class='oh-sticky-table__th'>{% trans "Overtime" %}</div>
+                        <div data-cell-index="6" data-cell-title="{% trans 'Clock In/Out' %}" class='oh-sticky-table__th'>{% trans "Clock In/Out" %}</div>
+                        <div data-cell-index="7" data-cell-title="{% trans 'Break In/Out' %}" class='oh-sticky-table__th'>{% trans "Break In/Out" %}</div>
+                        <div data-cell-index="8" data-cell-title="{% trans 'Lunch In/Out' %}" class='oh-sticky-table__th'>{% trans "Lunch In/Out" %}</div>
+                        <div data-cell-index="9" data-cell-title="{% trans 'Clock Image' %}" class='oh-sticky-table__th'>{% trans "Clock Image" %}</div>
+                        <div data-cell-index="10" data-cell-title="{% trans 'Break Image' %}" class='oh-sticky-table__th'>{% trans "Break Image" %}</div>
+                        <div data-cell-index="11" data-cell-title="{% trans 'Lunch Image' %}" class='oh-sticky-table__th'>{% trans "Lunch Image" %}</div>
+                        <div data-cell-index="12" data-cell-title="{% trans 'Shift' %}" class='oh-sticky-table__th'>{% trans "Shift" %}</div>
+                        <div data-cell-index="13" data-cell-title="{% trans 'Late Come' %}" class='oh-sticky-table__th'>{% trans "Late Come" %}</div>
+                        <div data-cell-index="14" data-cell-title="{% trans 'Early Out' %}" class='oh-sticky-table__th'>{% trans "Early Out" %}</div>
+                        <div data-cell-index="15" data-cell-title="{% trans 'Work Hours' %}" class='oh-sticky-table__th'>{% trans "Work Hours" %}</div>
+                        <div data-cell-index="16" data-cell-title="{% trans 'Break Hours' %}" class='oh-sticky-table__th'>{% trans "Break Hours" %}</div>
+                        <div data-cell-index="17" data-cell-title="{% trans 'Lunch Hours' %}" class='oh-sticky-table__th'>{% trans "Lunch Hours" %}</div>
+                        <div data-cell-index="18" data-cell-title="{% trans 'Overtime' %}" class='oh-sticky-table__th'>{% trans "Overtime" %}</div>
+                        <div data-cell-index="19" data-cell-title="{% trans 'Leave' %}" class='oh-sticky-table__th'>{% trans "Leave" %}</div>
+                        <div data-cell-index="20" data-cell-title="{% trans 'Holiday' %}" class='oh-sticky-table__th'>{% trans "Holiday" %}</div>
                         {% if perms.attendance.delete_attendanceactivity %}
                             <div class='oh-sticky-table__th oh-sticky-table__right' scope="col" style="width: 86px;">{% trans "Actions" %}</div>
                         {% endif %}

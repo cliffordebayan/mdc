@@ -35,6 +35,7 @@ from base.models import (
     EmployeeType,
     JobPosition,
     JobRole,
+    PayrollGroup,
     WorkType,
     validate_time_format,
 )
@@ -702,6 +703,13 @@ class EmployeeWorkInformation(models.Model):
         null=True,
         blank=True,
         verbose_name=_("Employee Type"),
+    )
+    payroll_group_id = models.ForeignKey(
+        PayrollGroup,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        verbose_name=_("Payroll Group"),
     )
     tags = models.ManyToManyField(
         EmployeeTag, blank=True, verbose_name=_("Employee tag")

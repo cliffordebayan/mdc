@@ -218,6 +218,33 @@ class Department(HorillaModel):
         return str(self.department)
 
 
+class PayrollGroup(HorillaModel):
+    """
+    PayrollGroup model
+    """
+
+    PAYROLL_DAY_CHOICES = [(0, _("End of Month"))] + [(i, str(i)) for i in range(1, 32)]
+
+    name = models.CharField(max_length=100, verbose_name=_("Name"))
+    description = models.TextField(null=True, blank=True, verbose_name=_("Description"))
+    start_day = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Start Day")
+    )
+    end_day = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("End Day")
+    )
+    company_id = models.ManyToManyField(Company, blank=True, verbose_name=_("Company"))
+
+    objects = HorillaCompanyManager()
+
+    class Meta:
+        verbose_name = _("Payroll Group")
+        verbose_name_plural = _("Payroll Groups")
+
+    def __str__(self):
+        return str(self.name)
+
+
 class JobPosition(HorillaModel):
     """
     JobPosition model
