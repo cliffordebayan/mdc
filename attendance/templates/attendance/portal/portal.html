@@ -3327,13 +3327,15 @@
 
         // Returns the responsive guide box geometry (used by both drawing and detection)
         function getFaceGuideBox(vw, vh) {
-            const maxW = Math.min(vw * 0.66, 340);
-            const maxH = Math.min(vh * 0.70, 420);
+            const mobile = isMobilePortalView();
+            const maxW = mobile ? Math.min(vw * 0.82, 380) : Math.min(vw * 0.66, 340);
+            const maxH = mobile ? Math.min(vh * 0.78, 500) : Math.min(vh * 0.70, 420);
             // 3:4 portrait ratio for face framing
             let bw = maxW, bh = bw * (4 / 3);
             if (bh > maxH) { bh = maxH; bw = bh * (3 / 4); }
             const bx = (vw - bw) / 2;
-            const by = Math.max(10, (vh - bh) / 2 - vh * 0.03);
+            const offset = mobile ? vh * 0.14 : 0;
+            const by = Math.max(10, (vh - bh) / 2 - offset);
             return { x: Math.max(10, bx), y: by, w: bw, h: bh };
         }
 

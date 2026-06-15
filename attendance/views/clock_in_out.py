@@ -257,7 +257,7 @@ def clock_in(request):
                 date_today = request.date
             attendance_date = date_today
             day = date_today.strftime("%A").lower()
-            day = EmployeeShiftDay.objects.get(day=day)
+            day = EmployeeShiftDay.objects.filter(day=day).first()
             now = datetime.now().strftime("%H:%M")
             if request.__dict__.get("time"):
                 now = request.time.strftime("%H:%M")
@@ -277,7 +277,7 @@ def clock_in(request):
 
                     date_yesterday = date_today - timedelta(days=1)
                     day_yesterday = date_yesterday.strftime("%A").lower()
-                    day_yesterday = EmployeeShiftDay.objects.get(day=day_yesterday)
+                    day_yesterday = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
                     minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
                         day=day_yesterday, shift=shift
                     )
@@ -500,7 +500,7 @@ def clock_out(request):
         if request.__dict__.get("date"):
             date_today = request.date
         day = date_today.strftime("%A").lower()
-        day = EmployeeShiftDay.objects.get(day=day)
+        day = EmployeeShiftDay.objects.filter(day=day).first()
         attendance = (
             Attendance.objects.filter(employee_id=employee)
             .order_by("id", "attendance_date")
@@ -509,7 +509,7 @@ def clock_out(request):
         if attendance is not None:
             if not attendance.attendance_day:
                 day_name = attendance.attendance_date.strftime("%A").lower()
-                attendance.attendance_day = EmployeeShiftDay.objects.get(day=day_name)
+                attendance.attendance_day = EmployeeShiftDay.objects.filter(day=day_name).first()
                 attendance.save(update_fields=["attendance_day"])
             day = attendance.attendance_day
         now = datetime.now().strftime("%H:%M")

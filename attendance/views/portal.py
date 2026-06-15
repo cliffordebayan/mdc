@@ -691,11 +691,10 @@ def _maybe_auto_checkout_employee(employee, current_time=None):
         or getattr(open_activity, "shift_day", None)
     )
     if not shift_day:
-        try:
-            shift_day = EmployeeShiftDay.objects.get(
-                day=attendance_date.strftime("%A").lower()
-            )
-        except EmployeeShiftDay.DoesNotExist:
+        shift_day = EmployeeShiftDay.objects.filter(
+            day=attendance_date.strftime("%A").lower()
+        ).first()
+        if not shift_day:
             return None
 
     schedule = EmployeeShiftSchedule.objects.filter(
@@ -1649,9 +1648,8 @@ def public_clock_in(request):
         date_today = datetime_now.date()
         day_name = date_today.strftime("%A").lower()
 
-        try:
-            day = EmployeeShiftDay.objects.get(day=day_name)
-        except EmployeeShiftDay.DoesNotExist:
+        day = EmployeeShiftDay.objects.filter(day=day_name).first()
+        if not day:
             logger.error(f"Shift day configuration error for {day_name}")
             return JsonResponse(
                 {"success": False, "message": "Shift day configuration error"}, status=200
@@ -1673,9 +1671,8 @@ def public_clock_in(request):
                 date_yesterday = date_today - timedelta(days=1)
                 day_yesterday = date_yesterday.strftime("%A").lower()
 
-                try:
-                    day = EmployeeShiftDay.objects.get(day=day_yesterday)
-                except EmployeeShiftDay.DoesNotExist:
+                day = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
+                if not day:
                     logger.error(f"Shift day configuration error for {day_yesterday}")
                     return JsonResponse(
                         {"success": False, "message": "Shift day configuration error"},

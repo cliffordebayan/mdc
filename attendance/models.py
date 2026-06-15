@@ -666,9 +666,9 @@ class Attendance(HorillaModel):
 
     def save(self, *args, **kwargs):
         self.update_attendance_overtime()
-        self.attendance_day = EmployeeShiftDay.objects.get(
+        self.attendance_day = EmployeeShiftDay.objects.filter(
             day=self.attendance_date.strftime("%A").lower()
-        )
+        ).first()
         prev_attendance_approved = False
         self.adjust_minimum_hour()
 
