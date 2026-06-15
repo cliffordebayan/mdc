@@ -748,7 +748,7 @@
             /* transform: scaleX(-1); - moved inline to avoid Safari blank frame issue */
         }
 
-        .clock-camera-panel canvas {
+        .clock-camera-panel #canvas {
             display: none;
         }
 
@@ -823,6 +823,32 @@
             font-family: monospace;
             word-wrap: break-word;
             overflow-wrap: break-word;
+        }
+
+        /* ── Face detection overlay ── */
+        #face-overlay-canvas {
+            display: block;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 3;
+        }
+        .face-status-label {
+            position: absolute;
+            bottom: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.60);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 5px 16px;
+            border-radius: 20px;
+            white-space: nowrap;
+            z-index: 4;
+            pointer-events: none;
+            backdrop-filter: blur(4px);
         }
 
         /* Right: info panel */
@@ -1889,6 +1915,9 @@
                             <img id="captured-photo" class="captured-photo-full" src="" style="display:none;" />
                             <canvas id="canvas"></canvas>
 
+                            <!-- Face detection oval guide — SEPARATE from #canvas so captured selfies stay clean -->
+                            <canvas id="face-overlay-canvas"></canvas>
+
                             <!-- Location overlay on photo -->
                             <div class="location-overlay" id="location-overlay" style="display:none;">
                                 <div class="location-overlay-label">📍 {% trans "Location" %}</div>
@@ -2022,6 +2051,7 @@
     <script type="module" src="{% static 'images/ionicons/ui_icons/ionicons/ionicons.esm.js' %}"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 
     <script>
         const CSRF_TOKEN = '{{ csrf_token }}';
@@ -2037,6 +2067,13 @@
         let pinInput = '';
         const PIN_LENGTH = 6;
         let geofenceMap = null;
+
+        // ── Face Detection ───────────────────────────────────────────────
+        let faceApiModelsLoaded = false;
+        let faceApiModelsLoading = false;
+        let faceDetected = false;          // true when a face is inside the oval this frame
+        let faceDetectionLoopId = null;
+        const FACE_MODELS_CDN = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
         let clockPreviewMap = null;
         let employeeDataById = {};
         const EMPLOYEE_LOCATION_MARKER_COLOR = '#dc3545';
@@ -2283,7 +2320,7 @@
                         $('#location-coordinates').text('');
                         $('#retry-location-btn').hide();
                         $('#location-status').removeClass('warning').addClass('success');
-                        enableClockButtons();
+                        updateFaceGatedButtons();
                         initClockPreviewMap();
 
                         // Get address immediately and display it
@@ -2797,6 +2834,7 @@
         }
 
         function stopClockCapturePreview() {
+            resetFaceDetectionState();
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
             $('#clock-preview-map').removeClass('is-placeholder').hide();
             cameraReady = false;
@@ -3272,6 +3310,229 @@
             }, 100);
         }
 
+        // ── Face Detection Functions ─────────────────────────────────────
+
+        async function loadFaceApiModels() {
+            if (faceApiModelsLoaded || faceApiModelsLoading) return;
+            faceApiModelsLoading = true;
+            try {
+                await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS_CDN);
+                faceApiModelsLoaded = true;
+            } catch (err) {
+                console.error('face-api model load failed:', err);
+            } finally {
+                faceApiModelsLoading = false;
+            }
+        }
+
+        // Returns the responsive guide box geometry (used by both drawing and detection)
+        function getFaceGuideBox(vw, vh) {
+            const maxW = Math.min(vw * 0.66, 340);
+            const maxH = Math.min(vh * 0.70, 420);
+            // 3:4 portrait ratio for face framing
+            let bw = maxW, bh = bw * (4 / 3);
+            if (bh > maxH) { bh = maxH; bw = bh * (3 / 4); }
+            const bx = (vw - bw) / 2;
+            const by = Math.max(10, (vh - bh) / 2 - vh * 0.03);
+            return { x: Math.max(10, bx), y: by, w: bw, h: bh };
+        }
+
+        function drawFaceOvalGuide(ctx, vw, vh, detected) {
+            ctx.clearRect(0, 0, vw, vh);
+            const { x: bx, y: by, w: bw, h: bh } = getFaceGuideBox(vw, vh);
+
+            // 1. Dark vignette over the 4 regions outside the guide box
+            ctx.fillStyle = 'rgba(0,0,0,0.52)';
+            ctx.fillRect(0, 0, vw, by);
+            ctx.fillRect(0, by, bx, bh);
+            ctx.fillRect(bx + bw, by, vw - (bx + bw), bh);
+            ctx.fillRect(0, by + bh, vw, vh - (by + bh));
+
+            // 2. Subtle green fill tint inside box when detected
+            if (detected) {
+                ctx.save();
+                ctx.globalAlpha = 0.07;
+                ctx.fillStyle = '#22c55e';
+                ctx.fillRect(bx, by, bw, bh);
+                ctx.restore();
+            }
+
+            // 3. Corner L-brackets
+            const arm = Math.min(bw, bh) * 0.20;
+            const lw  = Math.max(3, Math.min(bw, bh) * 0.022);
+            const r   = Math.min(10, arm * 0.45);
+            const bracketColor = detected ? '#22c55e' : 'rgba(255,255,255,0.86)';
+
+            ctx.save();
+            if (detected) {
+                ctx.shadowColor = 'rgba(34,197,94,0.60)';
+                ctx.shadowBlur = 18;
+            }
+            ctx.strokeStyle = bracketColor;
+            ctx.lineWidth = lw;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // Top-left
+            ctx.beginPath();
+            ctx.moveTo(bx, by + arm);
+            ctx.lineTo(bx, by + r);
+            ctx.quadraticCurveTo(bx, by, bx + r, by);
+            ctx.lineTo(bx + arm, by);
+            ctx.stroke();
+
+            // Top-right
+            ctx.beginPath();
+            ctx.moveTo(bx + bw - arm, by);
+            ctx.lineTo(bx + bw - r, by);
+            ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+            ctx.lineTo(bx + bw, by + arm);
+            ctx.stroke();
+
+            // Bottom-left
+            ctx.beginPath();
+            ctx.moveTo(bx, by + bh - arm);
+            ctx.lineTo(bx, by + bh - r);
+            ctx.quadraticCurveTo(bx, by + bh, bx + r, by + bh);
+            ctx.lineTo(bx + arm, by + bh);
+            ctx.stroke();
+
+            // Bottom-right
+            ctx.beginPath();
+            ctx.moveTo(bx + bw - arm, by + bh);
+            ctx.lineTo(bx + bw - r, by + bh);
+            ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw, by + bh - r);
+            ctx.lineTo(bx + bw, by + bh - arm);
+            ctx.stroke();
+
+            ctx.restore();
+
+            // 4. Animated scan line (only while waiting for face)
+            if (faceApiModelsLoaded && !detected) {
+                const t = (Date.now() % 2200) / 2200;
+                const scanY = by + bh * 0.08 + t * bh * 0.84;
+                const grad = ctx.createLinearGradient(bx, scanY - 14, bx, scanY + 14);
+                grad.addColorStop(0,   'rgba(255,255,255,0)');
+                grad.addColorStop(0.5, 'rgba(255,255,255,0.32)');
+                grad.addColorStop(1,   'rgba(255,255,255,0)');
+                ctx.fillStyle = grad;
+                ctx.fillRect(bx, scanY - 14, bw, 28);
+            }
+
+            // 5. Status pill label below the guide box
+            const fontSize = Math.max(11, Math.min(14, vw * 0.030));
+            const label = !faceApiModelsLoaded
+                ? '{% trans "Initializing face scan..." %}'
+                : detected
+                    ? '{% trans "Face detected  ✓" %}'
+                    : '{% trans "Position your face in the frame" %}';
+
+            ctx.save();
+            ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center';
+
+            const tw      = ctx.measureText(label).width;
+            const pH      = fontSize + 14;
+            const pW      = tw + 28;
+            const pX      = vw / 2 - pW / 2;
+            const pY      = by + bh + 12;
+            const pRadius = pH / 2;
+
+            // Pill fill
+            ctx.fillStyle = detected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.58)';
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(pX, pY, pW, pH, pRadius);
+            } else {
+                ctx.rect(pX, pY, pW, pH);
+            }
+            ctx.fill();
+
+            // Pill border when detected
+            if (detected) {
+                ctx.strokeStyle = 'rgba(34,197,94,0.55)';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+
+            // Pill text
+            ctx.fillStyle = detected ? '#4ade80' : 'rgba(255,255,255,0.90)';
+            ctx.fillText(label, vw / 2, pY + pH / 2);
+            ctx.restore();
+        }
+
+        function startFaceDetectionLoop() {
+            if (faceDetectionLoopId) cancelAnimationFrame(faceDetectionLoopId);
+            const video = document.getElementById('video-preview');
+            const oc = document.getElementById('face-overlay-canvas');
+            if (!video || !oc) return;
+
+            async function loop() {
+                if (!$('#step-clock').hasClass('active') || !videoStream) {
+                    faceDetectionLoopId = null; faceDetected = false; return;
+                }
+                // Size overlay canvas to match displayed camera panel
+                const panel = oc.parentElement;
+                const dw = panel.clientWidth || video.clientWidth || 640;
+                const dh = panel.clientHeight || video.clientHeight || 480;
+                if (oc.width !== dw || oc.height !== dh) { oc.width = dw; oc.height = dh; }
+                const ctx = oc.getContext('2d');
+
+                if (!faceApiModelsLoaded) {
+                    drawFaceOvalGuide(ctx, dw, dh, false);
+                    faceDetectionLoopId = requestAnimationFrame(loop); return;
+                }
+
+                try {
+                    const det = await faceapi.detectSingleFace(
+                        video,
+                        new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
+                    );
+
+                    let inOval = false;
+                    if (det) {
+                        const box = det.box;
+                        const sx = dw / (video.videoWidth || dw);
+                        const sy = dh / (video.videoHeight || dh);
+                        // Mirror-flip X to match CSS scaleX(-1) applied to #video-preview
+                        const fcx = dw - (box.x + box.width / 2) * sx;
+                        const fcy = (box.y + box.height / 2) * sy;
+                        const g = getFaceGuideBox(dw, dh);
+                        inOval = fcx >= g.x && fcx <= g.x + g.w &&
+                                 fcy >= g.y && fcy <= g.y + g.h;
+                    }
+                    faceDetected = inOval;
+                } catch (e) {
+                    faceDetected = false;
+                }
+
+                drawFaceOvalGuide(ctx, dw, dh, faceDetected);
+                updateFaceGatedButtons();
+                faceDetectionLoopId = requestAnimationFrame(loop);
+            }
+            faceDetectionLoopId = requestAnimationFrame(loop);
+        }
+
+        function stopFaceDetectionLoop() {
+            if (faceDetectionLoopId) { cancelAnimationFrame(faceDetectionLoopId); faceDetectionLoopId = null; }
+            faceDetected = false;
+            const oc = document.getElementById('face-overlay-canvas');
+            if (oc) oc.getContext('2d').clearRect(0, 0, oc.width, oc.height);
+        }
+
+        function resetFaceDetectionState() {
+            stopFaceDetectionLoop();
+            // faceApiModelsLoaded stays true — model persists in memory for the session
+        }
+
+        function updateFaceGatedButtons() {
+            if (!cameraReady || !latitude || !longitude) { disableClockButtons(); return; }
+            // Only gate on face when models have loaded; if CDN is slow/offline, fall through
+            if (faceApiModelsLoaded && !faceDetected) { disableClockButtons(); return; }
+            enableClockButtons();
+        }
+
         // Start camera
         function startCamera() {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -3300,12 +3561,13 @@
                             $('#action-buttons').css('display', 'flex');
                             applySelectedClockActionVisibility();
 
-                            // Enable buttons only if location is also already acquired
-                            if (latitude && longitude) {
-                                enableClockButtons();
-                            } else {
-                                disableClockButtons();
-                            }
+                            // Load face detection models then start the detection loop
+                            (async function() {
+                                if (!faceApiModelsLoaded) await loadFaceApiModels();
+                                startFaceDetectionLoop();
+                                updateFaceGatedButtons();
+                            })();
+                            updateFaceGatedButtons();   // initial state while models load
                         };
                         video.addEventListener('playing', onPlaying);
 
@@ -4226,6 +4488,7 @@
         // Reset form
         function resetForm() {
             stopAttendanceSummaryTimer();
+            resetFaceDetectionState();
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
             $('#clock-preview-map').removeClass('is-placeholder').hide();
             $('#employee-branch').hide().text('');
@@ -4279,6 +4542,7 @@
                     video.srcObject = null;
                 }
                 cameraReady = false;
+                stopFaceDetectionLoop();
             } else {
                 // When page becomes visible again, restart camera if we are on the clock step
                 if ($('#step-clock').hasClass('active')) {
