@@ -1,0 +1,223 @@
+{% load static %} {% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>{{ white_label_company_name|default:"HRMS" }}</title>
+    <link rel="apple-touch-icon" sizes="180x180"
+        href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}">
+    <link rel="icon" type="image/png" sizes="32x32"
+        href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/favicon-32x32.png' %}{% endif %}">
+    <link rel="manifest" href="{% url 'pwa-manifest' %}" />
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f0f4f8;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: env(safe-area-inset-top, 24px) env(safe-area-inset-right, 20px) env(safe-area-inset-bottom, 24px) env(safe-area-inset-left, 20px);
+        }
+
+        .lp-wrapper {
+            width: 100%;
+            max-width: 420px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 32px;
+        }
+
+        /* ── Brand ── */
+        .lp-brand {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            text-align: center;
+        }
+
+        .lp-brand img {
+            height: 72px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .lp-brand__name {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1a202c;
+            letter-spacing: -0.3px;
+        }
+
+        .lp-brand__sub {
+            font-size: 14px;
+            color: #718096;
+        }
+
+        /* ── Cards ── */
+        .lp-cards {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .lp-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            width: 85%;
+            min-height: 72px;
+            padding: 16px 18px;
+            border-radius: 16px;
+            border: none;
+            text-decoration: none;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .lp-card:active {
+            transform: scale(0.97);
+        }
+
+        /* Employee Portal — orange */
+        .lp-card--portal {
+            background: linear-gradient(135deg, #EA5438 0%, #ea580c 100%);
+            box-shadow: 0 8px 24px rgba(234, 84, 56, 0.35);
+        }
+
+        .lp-card--portal:hover {
+            box-shadow: 0 12px 32px rgba(234, 84, 56, 0.45);
+        }
+
+        /* Sign In — dark/neutral */
+        .lp-card--signin {
+            background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+            box-shadow: 0 8px 24px rgba(26, 32, 44, 0.30);
+        }
+
+        .lp-card--signin:hover {
+            box-shadow: 0 12px 32px rgba(26, 32, 44, 0.40);
+        }
+
+        .lp-card__icon-wrap {
+            flex-shrink: 0;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.18);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .lp-card__icon-wrap ion-icon {
+            font-size: 22px;
+            color: #ffffff;
+        }
+
+        .lp-card__text {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .lp-card__title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #ffffff;
+            line-height: 1.2;
+        }
+
+        .lp-card__sub {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.72);
+            font-weight: 400;
+        }
+
+        .lp-card__arrow {
+            margin-left: auto;
+            flex-shrink: 0;
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 20px;
+        }
+
+        /* ── Footer ── */
+        .lp-footer {
+            font-size: 12px;
+            color: #a0aec0;
+            text-align: center;
+        }
+
+        /* ── Tablet / Desktop ── */
+        @media (min-width: 600px) {
+            .lp-card { min-height: 96px; padding: 22px 24px; }
+            .lp-card__title { font-size: 18px; }
+            .lp-card__icon-wrap { width: 52px; height: 52px; }
+            .lp-card__icon-wrap ion-icon { font-size: 26px; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="lp-wrapper">
+
+        <!-- Brand -->
+        <div class="lp-brand">
+            <img src="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'images/ui/auth-logo.png' %}{% endif %}"
+                 alt="{{ white_label_company_name|default:'HRMS' }}" />
+            {% if white_label_company %}
+            <span class="lp-brand__name">{{ white_label_company }}</span>
+            {% endif %}
+            <span class="lp-brand__sub">{% trans "Human Resource Management System" %}</span>
+        </div>
+
+        <!-- Choice cards -->
+        <div class="lp-cards">
+
+            <!-- Employee Portal -->
+            <a href="{% url 'public-portal' %}" class="lp-card lp-card--portal">
+                <div class="lp-card__icon-wrap">
+                    <ion-icon name="finger-print-outline"></ion-icon>
+                </div>
+                <div class="lp-card__text">
+                    <span class="lp-card__title">{% trans "Employee Portal" %}</span>
+                    <span class="lp-card__sub">{% trans "Attendance · Leave · Requests" %}</span>
+                </div>
+                <ion-icon class="lp-card__arrow" name="chevron-forward-outline"></ion-icon>
+            </a>
+
+            <!-- Sign In (HR / Admin) -->
+            <a href="{% url 'login' %}" class="lp-card lp-card--signin">
+                <div class="lp-card__icon-wrap">
+                    <ion-icon name="lock-closed-outline"></ion-icon>
+                </div>
+                <div class="lp-card__text">
+                    <span class="lp-card__title">{% trans "Sign In" %}</span>
+                    <span class="lp-card__sub">{% trans "Access Dashboard" %}</span>
+                </div>
+                <ion-icon class="lp-card__arrow" name="chevron-forward-outline"></ion-icon>
+            </a>
+
+        </div>
+
+        <p class="lp-footer">{{ white_label_company_name|default:"HRMS" }} &copy; {% now "Y" %}</p>
+    </div>
+
+    <script type="module" src="{% static 'images/ionicons/ui_icons/ionicons/ionicons.esm.js' %}"></script>
+</body>
+
+</html>

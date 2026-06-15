@@ -638,6 +638,12 @@ def initialize_job_position_delete(request, obj_id):
     )
 
 
+def landing(request):
+    if request.user.is_authenticated:
+        return redirect("home-page")
+    return render(request, "landing.html")
+
+
 def login_user(request):
     """
     Handles user login and authentication.
