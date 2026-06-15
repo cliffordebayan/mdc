@@ -4911,6 +4911,224 @@ def send_bulk_pin_to_email(request):
     return HttpResponse(status=200)
 
 
+@login_required
+@permission_required(["employee.add_employee"])
+def check_bulk_email_status(request):
+    """Return which employees have already received a given email type."""
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    ids = json.loads(request.POST.get("ids", "[]"))
+    email_type = request.POST.get("type", "")
+
+    already_sent = []
+    not_sent = []
+
+    for emp_id in ids:
+        employee = Employee.objects.filter(id=emp_id).first()
+        if not employee:
+            continue
+
+        sent = False
+        if email_type == "portal":
+            sent = EmployeeOnboardingPortal.objects.filter(
+                employee_id_id=emp_id
+            ).exists()
+        elif email_type == "password":
+            email_addr = (
+                getattr(getattr(employee, "employee_work_info", None), "email", None)
+                or employee.email
+            )
+            if email_addr:
+                sent = EmailLog.objects.filter(
+                    to__iexact=email_addr, subject__icontains="password"
+                ).exists()
+        elif email_type == "pin":
+            work_info = getattr(employee, "employee_work_info", None)
+            email_addr = (
+                work_info.email if work_info and work_info.email else employee.email
+            )
+            if email_addr:
+                sent = EmailLog.objects.filter(
+                    to__iexact=email_addr, subject__icontains="ATTENDANCE PIN"
+                ).exists()
+
+        entry = {"id": emp_id, "name": employee.get_full_name()}
+        if sent:
+            already_sent.append(entry)
+        else:
+            not_sent.append(entry)
+
+    return JsonResponse({"already_sent": already_sent, "not_sent": not_sent})
+
+
+@login_required
+@permission_required(["employee.add_employee"])
+def send_single_bulk_email(request):
+    """Send one bulk email (portal / password-reset / pin) to a single employee."""
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    emp_id = request.POST.get("emp_id")
+    email_type = request.POST.get("type", "")
+
+    employee = Employee.objects.filter(id=emp_id).first()
+    if not employee:
+        return JsonResponse({"success": False, "message": "Employee not found."})
+
+    employee_name = employee.get_full_name()
+
+    try:
+        if email_type == "portal":
+            token = secrets.token_hex(15)
+            portal, created = EmployeeOnboardingPortal.objects.get_or_create(
+                employee_id=employee,
+                defaults={"token": token},
+            )
+            if not created:
+                portal.token = token
+                portal.used = False
+                portal.count = 0
+                portal.save()
+
+            protocol = "https" if request.is_secure() else "http"
+            host = request.get_host()
+            portal_url = (
+                f"{protocol}://{host}/employee/employee-portal/set-password/{token}"
+            )
+
+            send_to = (
+                getattr(
+                    getattr(employee, "employee_work_info", None), "email", None
+                )
+                or employee.email
+            )
+            if not send_to:
+                return JsonResponse(
+                    {"success": False, "employee_name": employee_name,
+                     "message": "No email address."}
+                )
+
+            html_message = render_to_string(
+                "employee/portal/email_template.html",
+                {
+                    "employee": employee,
+                    "portal_url": portal_url,
+                    "host": host,
+                    "protocol": protocol,
+                },
+                request=request,
+            )
+            subject = str(_("Complete Your Employee Profile"))
+            email_msg = EmailMessage(subject=subject, body=html_message, to=[send_to])
+            email_msg.content_subtype = "html"
+            email_msg.send()
+            EmailLog.objects.create(
+                subject=subject,
+                body=html_message[:255],
+                from_email="",
+                to=send_to,
+                status="sent",
+            )
+            return JsonResponse(
+                {"success": True, "employee_name": employee_name,
+                 "message": "Portal link sent."}
+            )
+
+        elif email_type == "password":
+            from base.backends import ConfiguredEmailBackend
+            from django.contrib.auth.forms import PasswordResetForm
+
+            user = getattr(employee, "employee_user_id", None)
+            if not user:
+                return JsonResponse(
+                    {"success": False, "employee_name": employee_name,
+                     "message": "No user account."}
+                )
+
+            email_backend = ConfiguredEmailBackend()
+            from_email = getattr(
+                email_backend, "dynamic_from_email_with_display_name", None
+            )
+            form = PasswordResetForm({"email": user.username})
+            if form.is_valid():
+                opts = {"use_https": request.is_secure(), "request": request}
+                if from_email:
+                    opts["from_email"] = from_email
+                form.save(**opts)
+                send_to = user.username
+                subject = "Password Reset"
+                EmailLog.objects.create(
+                    subject=subject,
+                    body="",
+                    from_email="",
+                    to=send_to,
+                    status="sent",
+                )
+                return JsonResponse(
+                    {"success": True, "employee_name": employee_name,
+                     "message": "Password reset link sent."}
+                )
+            return JsonResponse(
+                {"success": False, "employee_name": employee_name,
+                 "message": "Invalid email."}
+            )
+
+        elif email_type == "pin":
+            portal_url = request.build_absolute_uri(reverse("public-portal"))
+            work_info = getattr(employee, "employee_work_info", None)
+            pin = getattr(work_info, "pin", None) if work_info else None
+            if not pin:
+                return JsonResponse(
+                    {"success": False, "employee_name": employee_name,
+                     "message": "No PIN set."}
+                )
+
+            send_to_mail = (
+                work_info.email
+                if work_info and work_info.email
+                else employee.email
+            )
+            if not send_to_mail:
+                return JsonResponse(
+                    {"success": False, "employee_name": employee_name,
+                     "message": "No email address."}
+                )
+
+            subject = str(_("MDC ATTENDANCE PIN"))
+            body = (
+                f"<p>Hello {employee.get_full_name()},</p>"
+                f"<p>Your 6-digit PIN is: <strong>{pin}</strong></p>"
+                f"<p>Attendance Portal: <a href='{portal_url}'>{portal_url}</a></p>"
+                f"<p>Please keep this PIN confidential.</p>"
+            )
+            email_msg = EmailMessage(
+                subject=subject, body=body, to=[send_to_mail]
+            )
+            email_msg.content_subtype = "html"
+            email_msg.send()
+            EmailLog.objects.create(
+                subject=subject,
+                body=body[:255],
+                from_email="",
+                to=send_to_mail,
+                status="sent",
+            )
+            return JsonResponse(
+                {"success": True, "employee_name": employee_name,
+                 "message": "PIN sent."}
+            )
+
+        return JsonResponse({"success": False, "message": "Unknown email type."})
+
+    except Exception as exc:
+        logger.error(exc)
+        return JsonResponse(
+            {"success": False, "employee_name": employee_name,
+             "message": str(exc)}
+        )
+
+
 def employee_portal_set_password(request, token):
     """Step 1 — Employee sets their own password via the portal link."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()

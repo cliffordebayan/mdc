@@ -543,104 +543,263 @@ $("#select-all-fields").change(function () {
     $('[name="selected_fields"]').prop("checked", isChecked);
 });
 
-$("#sendBulkPortalLink").click(function (e) {
-    e.preventDefault();
+// ── Bulk email helpers ────────────────────────────────────────────────────────
+
+function sleepMs(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+function getInitials(name) {
+    var parts = (name || "?").trim().split(/\s+/);
+    var first = parts[0][0] || "?";
+    var last  = parts.length > 1 ? parts[parts.length - 1][0] : "";
+    return (first + last).toUpperCase();
+}
+
+function buildEmpRows(employees, avatarBg, rowBorder) {
+    return employees.map(function (e) {
+        var ini = getInitials(e.name);
+        return (
+            "<div style='display:flex;align-items:center;gap:10px;padding:8px 12px;" +
+            "border-bottom:1px solid " + rowBorder + "'>" +
+            "<span style='width:32px;height:32px;border-radius:50%;background:" + avatarBg + ";" +
+            "color:#fff;display:inline-flex;align-items:center;justify-content:center;" +
+            "font-size:11px;font-weight:700;flex-shrink:0'>" + ini + "</span>" +
+            "<span style='font-size:13px;text-align:left;line-height:1.3'>" + e.name + "</span>" +
+            "</div>"
+        );
+    }).join("");
+}
+
+function ajaxPost(url, data) {
+    return new Promise(function (resolve, reject) {
+        $.ajax({
+            type: "POST",
+            url: url,
+            data: data,
+            success: function (resp) { resolve(resp); },
+            error: function (xhr, status, err) { reject(err || status); },
+        });
+    });
+}
+
+/**
+ * Shared flow for all three bulk email actions.
+ * @param {string} type    - "portal" | "password" | "pin"
+ * @param {string} label   - Human-readable action label shown in dialogs
+ */
+async function bulkEmailSendFlow(type, label) {
     var ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
     if (ids.length === 0) {
         Swal.fire({ text: "No employees selected.", icon: "warning", confirmButtonText: "Close" });
+        return;
+    }
+
+    // ── Step 1: check who already received this email ──────────────────────
+    var checkResp;
+    try {
+        checkResp = await ajaxPost("/employee/employee-bulk-email-check", {
+            csrfmiddlewaretoken: getCookie("csrftoken"),
+            ids: JSON.stringify(ids),
+            type: type,
+        });
+    } catch (err) {
+        Swal.fire({ text: "Failed to check email status. Please try again.", icon: "error", confirmButtonText: "Close" });
+        return;
+    }
+
+    var alreadySent = checkResp.already_sent || [];
+    var notSent     = checkResp.not_sent     || [];
+    var finalIds    = ids.slice(); // copy — default: send to all
+
+    // ── Step 2: prompt about already-sent employees ────────────────────────
+    if (alreadySent.length > 0) {
+        // ── already-sent section ──
+        var alreadyRows = buildEmpRows(alreadySent, "#e6a817", "#fff3cd");
+        var alreadySection =
+            "<div style='margin-bottom:14px'>" +
+            "  <div style='display:flex;align-items:center;gap:8px;margin-bottom:8px'>" +
+            "    <span style='background:#ffc107;color:#fff;border-radius:50%;width:22px;height:22px;" +
+            "          display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0'>!</span>" +
+            "    <span style='font-weight:600;font-size:14px'>Already sent — " + alreadySent.length + " employee(s)</span>" +
+            "  </div>" +
+            "  <div style='max-height:160px;overflow-y:auto;border:1px solid #ffc107;border-radius:8px;background:#fffdf0'>" +
+            alreadyRows +
+            "  </div>" +
+            "</div>";
+
+        // ── new recipients section (only when some exist) ──
+        var newSection = "";
+        if (notSent.length > 0) {
+            var newRows = buildEmpRows(notSent, "#198754", "#d1e7dd");
+            newSection =
+                "<div style='margin-bottom:14px'>" +
+                "  <div style='display:flex;align-items:center;gap:8px;margin-bottom:8px'>" +
+                "    <span style='background:#198754;color:#fff;border-radius:50%;width:22px;height:22px;" +
+                "          display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0'>&#10003;</span>" +
+                "    <span style='font-weight:600;font-size:14px'>New recipients — " + notSent.length + " employee(s)</span>" +
+                "  </div>" +
+                "  <div style='max-height:110px;overflow-y:auto;border:1px solid #198754;border-radius:8px;background:#f0fff4'>" +
+                newRows +
+                "  </div>" +
+                "</div>";
+        }
+
+        var promptHtml =
+            "<div style='text-align:left'>" +
+            alreadySection +
+            newSection +
+            "<p style='font-size:13px;color:#555;margin:0'>What would you like to do?</p>" +
+            "</div>";
+
+        var promptResult = await Swal.fire({
+            title: "<span style='font-size:18px'>&#9888; Already received this email</span>",
+            html: promptHtml,
+            icon: undefined,
+            showConfirmButton: true,
+            showDenyButton: notSent.length > 0,
+            showCancelButton: true,
+            confirmButtonText: "Resend to All (" + ids.length + ")",
+            denyButtonText: "Send to New Only (" + notSent.length + ")",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#008000",
+            denyButtonColor: "#0d6efd",
+            cancelButtonColor: "#d33",
+            width: "520px",
+            customClass: { popup: "already-sent-popup" },
+        });
+
+        if (promptResult.isConfirmed) {
+            finalIds = ids.slice();
+        } else if (promptResult.isDenied) {
+            if (notSent.length === 0) {
+                Swal.fire({ text: "All selected employees have already been sent this email.", icon: "info", confirmButtonText: "Close" });
+                return;
+            }
+            finalIds = notSent.map(function (e) { return e.id; });
+        } else {
+            return; // cancelled
+        }
     } else {
-        Swal.fire({
-            text: "Send Profile Portal Link to " + ids.length + " employee(s)?",
+        var confirmResult = await Swal.fire({
+            text: "Send \"" + label + "\" to " + ids.length + " employee(s)?",
             icon: "info",
             showCancelButton: true,
             confirmButtonColor: "#008000",
             cancelButtonColor: "#d33",
             confirmButtonText: "Confirm",
-        }).then(function (result) {
-            if (result.isConfirmed) {
-                ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
-                $.ajax({
-                    type: "POST",
-                    url: "/employee/employee-bulk-portal-link",
-                    data: {
-                        csrfmiddlewaretoken: getCookie("csrftoken"),
-                        ids: JSON.stringify(ids),
-                    },
-                    success: function (response, textStatus, jqXHR) {
-                        if (jqXHR.status === 200) {
-                            location.reload();
-                        }
-                    },
-                });
-            }
         });
+        if (!confirmResult.isConfirmed) { return; }
     }
+
+    // ── Step 3: build name lookup ──────────────────────────────────────────
+    var total = finalIds.length;
+    var sentCount = 0;
+    var failCount = 0;
+    var nameLookup = {};
+    (checkResp.already_sent || []).concat(checkResp.not_sent || []).forEach(function (e) {
+        nameLookup[String(e.id)] = e.name;
+    });
+
+    // ── Step 4: show progress modal (not awaited — stays open) ────────────
+    var progressHtml =
+        "<div style='text-align:left'>" +
+        "  <p style='font-size:14px;margin-bottom:6px'>Sending to: <strong id='bulk-emp-name' style='color:#0d6efd'>—</strong></p>" +
+        "  <div style='height:20px;border-radius:10px;background:#e9ecef;overflow:hidden;margin-bottom:6px'>" +
+        "    <div id='bulk-pbar' style='height:100%;width:0%;background:#28a745;border-radius:10px;" +
+        "         transition:width 0.3s ease;background-image:linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%," +
+        "         transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);" +
+        "         background-size:1rem 1rem'></div>" +
+        "  </div>" +
+        "  <p style='font-size:13px;margin-bottom:6px'><span id='bulk-sent'>0</span> / " + total + " processed</p>" +
+        "  <div id='bulk-log' style='max-height:150px;overflow-y:auto;font-size:12px;" +
+        "       border:1px solid #dee2e6;border-radius:6px;padding:6px;background:#f8f9fa'></div>" +
+        "</div>";
+
+    Swal.fire({
+        title: "Sending " + label + "…",
+        html: progressHtml,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        customClass: { popup: "bulk-email-progress-popup" },
+    });
+
+    // give the browser one tick to render the Swal before we start
+    await sleepMs(80);
+
+    // ── Step 5: send one by one ────────────────────────────────────────────
+    for (var i = 0; i < finalIds.length; i++) {
+        var empId   = finalIds[i];
+        var empName = nameLookup[String(empId)] || ("Employee #" + empId);
+
+        var nameEl = document.getElementById("bulk-emp-name");
+        if (nameEl) { nameEl.textContent = empName; }
+
+        var resp;
+        try {
+            resp = await ajaxPost("/employee/employee-send-single-email", {
+                csrfmiddlewaretoken: getCookie("csrftoken"),
+                emp_id: empId,
+                type: type,
+            });
+        } catch (err) {
+            resp = { success: false, employee_name: empName, message: "Request failed." };
+        }
+
+        var logEl = document.getElementById("bulk-log");
+        if (logEl) {
+            var line = document.createElement("div");
+            line.style.padding = "2px 0";
+            if (resp && resp.success) {
+                sentCount++;
+                line.innerHTML = "<span style='color:#198754;font-weight:600'>&#10003;</span> " + empName;
+            } else {
+                failCount++;
+                var msg = (resp && resp.message) ? resp.message : "failed";
+                line.innerHTML = "<span style='color:#dc3545;font-weight:600'>&#10007;</span> " + empName +
+                    " <span style='color:#6c757d'>— " + msg + "</span>";
+            }
+            logEl.appendChild(line);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        var pct = Math.round(((i + 1) / total) * 100);
+        var pbarEl = document.getElementById("bulk-pbar");
+        if (pbarEl) { pbarEl.style.width = pct + "%"; }
+        var sentEl = document.getElementById("bulk-sent");
+        if (sentEl) { sentEl.textContent = i + 1; }
+
+        if (i < finalIds.length - 1) {
+            await sleepMs(800);
+        }
+    }
+
+    // ── Step 6: replace progress modal with result ─────────────────────────
+    var icon    = sentCount > 0 ? (failCount > 0 ? "warning" : "success") : "error";
+    var summary = sentCount + " email(s) sent";
+    if (failCount > 0) { summary += ", " + failCount + " failed"; }
+
+    Swal.fire({
+        title: label + " — Done",
+        text: summary,
+        icon: icon,
+        confirmButtonText: "Close",
+        confirmButtonColor: "#008000",
+    });
+}
+
+$("#sendBulkPortalLink").click(function (e) {
+    e.preventDefault();
+    bulkEmailSendFlow("portal", "Profile Portal Link");
 });
 
 $("#sendBulkPasswordReset").click(function (e) {
     e.preventDefault();
-    var ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
-    if (ids.length === 0) {
-        Swal.fire({ text: "No employees selected.", icon: "warning", confirmButtonText: "Close" });
-    } else {
-        Swal.fire({
-            text: "Send Password Reset Link to " + ids.length + " employee(s)?",
-            icon: "info",
-            showCancelButton: true,
-            confirmButtonColor: "#008000",
-            cancelButtonColor: "#d33",
-            confirmButtonText: "Confirm",
-        }).then(function (result) {
-            if (result.isConfirmed) {
-                ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
-                $.ajax({
-                    type: "POST",
-                    url: "/employee/employee-bulk-password-reset",
-                    data: {
-                        csrfmiddlewaretoken: getCookie("csrftoken"),
-                        ids: JSON.stringify(ids),
-                    },
-                    success: function (response, textStatus, jqXHR) {
-                        if (jqXHR.status === 200) {
-                            location.reload();
-                        }
-                    },
-                });
-            }
-        });
-    }
+    bulkEmailSendFlow("password", "Password Reset Link");
 });
 
 $("#sendBulkPinEmail").click(function (e) {
     e.preventDefault();
-    var ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
-    if (ids.length === 0) {
-        Swal.fire({ text: "No employees selected.", icon: "warning", confirmButtonText: "Close" });
-    } else {
-        Swal.fire({
-            text: "Send PIN to Email for " + ids.length + " employee(s)?",
-            icon: "info",
-            showCancelButton: true,
-            confirmButtonColor: "#008000",
-            cancelButtonColor: "#d33",
-            confirmButtonText: "Confirm",
-        }).then(function (result) {
-            if (result.isConfirmed) {
-                ids = JSON.parse($("#selectedInstances").attr("data-ids") || "[]");
-                $.ajax({
-                    type: "POST",
-                    url: "/employee/employee-bulk-pin-email",
-                    data: {
-                        csrfmiddlewaretoken: getCookie("csrftoken"),
-                        ids: JSON.stringify(ids),
-                    },
-                    success: function (response, textStatus, jqXHR) {
-                        if (jqXHR.status === 200) {
-                            location.reload();
-                        }
-                    },
-                });
-            }
-        });
-    }
+    bulkEmailSendFlow("pin", "PIN to Email");
 });

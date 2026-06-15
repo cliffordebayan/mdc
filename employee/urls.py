@@ -161,6 +161,16 @@ urlpatterns = [
         name="employee-bulk-pin-email",
     ),
     path(
+        "employee-bulk-email-check",
+        views.check_bulk_email_status,
+        name="employee-bulk-email-check",
+    ),
+    path(
+        "employee-send-single-email",
+        views.send_single_bulk_email,
+        name="employee-send-single-email",
+    ),
+    path(
         "employee-archive/<int:obj_id>/",
         views.employee_archive,
         name="employee-archive",
