@@ -986,10 +986,6 @@ class EmployeePortalPersonalForm(ModelForm):
             "emergency_contact",
             "emergency_contact_name",
             "emergency_contact_relation",
-            "tin_number",
-            "sss_number",
-            "hdmf_number",
-            "philhealth_number",
         ]
         widgets = {
             "employee_first_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
@@ -1011,10 +1007,6 @@ class EmployeePortalPersonalForm(ModelForm):
             "emergency_contact": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "11", "minlength": "11", "placeholder": "09XXXXXXXXX"}),
             "emergency_contact_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "emergency_contact_relation": forms.TextInput(attrs={"class": "oh-input w-100"}),
-            "tin_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "16", "minlength": "16", "placeholder": "739-614-693-0000"}),
-            "sss_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "12", "minlength": "12", "placeholder": "01-2878550-8"}),
-            "hdmf_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "14", "minlength": "14", "placeholder": "1212-4260-4211"}),
-            "philhealth_number": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "14", "minlength": "14", "placeholder": "05-250048317-2"}),
         }
 
     REQUIRED_FIELDS = [
@@ -1032,10 +1024,6 @@ class EmployeePortalPersonalForm(ModelForm):
         "emergency_contact",
         "emergency_contact_name",
         "emergency_contact_relation",
-        "tin_number",
-        "sss_number",
-        "hdmf_number",
-        "philhealth_number",
     ]
 
     def __init__(self, *args, **kwargs):
@@ -1066,63 +1054,59 @@ class EmployeePortalPersonalForm(ModelForm):
             raise forms.ValidationError("Emergency contact must start with 0.")
         return value
 
-    def _validate_id_format(self, field_name, value, pattern, length, label):
-        import re
-        if value and not re.fullmatch(pattern, value):
-            raise forms.ValidationError(
-                f"Enter a valid {label} in the format shown (e.g. {self.fields[field_name].widget.attrs.get('placeholder', '')})."
-            )
-        return value
-
-    def clean_tin_number(self):
-        return self._validate_id_format(
-            "tin_number", self.cleaned_data.get("tin_number"),
-            r"\d{3}-\d{3}-\d{3}-\d{4}", 16, "TIN Number"
-        )
-
-    def clean_sss_number(self):
-        return self._validate_id_format(
-            "sss_number", self.cleaned_data.get("sss_number"),
-            r"\d{2}-\d{7}-\d", 12, "SSS Number"
-        )
-
-    def clean_hdmf_number(self):
-        return self._validate_id_format(
-            "hdmf_number", self.cleaned_data.get("hdmf_number"),
-            r"\d{4}-\d{4}-\d{4}", 14, "Pag-IBIG Number"
-        )
-
-    def clean_philhealth_number(self):
-        return self._validate_id_format(
-            "philhealth_number", self.cleaned_data.get("philhealth_number"),
-            r"\d{2}-\d{9}-\d", 14, "PhilHealth Number"
-        )
-
 
 class EmployeePortalPINForm(ModelForm):
-    """PIN form used in the employee self-service portal."""
+    """PIN form used in the employee self-service portal (step 4)."""
+
+    confirm_pin = forms.CharField(
+        label="Confirm PIN",
+        required=True,
+        widget=forms.PasswordInput(
+            attrs={
+                "class": "oh-input w-100",
+                "maxlength": "6",
+                "minlength": "6",
+                "placeholder": "••••••",
+                "inputmode": "numeric",
+                "autocomplete": "new-password",
+            }
+        ),
+    )
 
     class Meta:
         model = EmployeeWorkInformation
         fields = ["pin"]
         widgets = {
-            "pin": forms.TextInput(
+            "pin": forms.PasswordInput(
                 attrs={
                     "class": "oh-input w-100",
                     "maxlength": "6",
                     "minlength": "6",
-                    "placeholder": "123456",
-                    "pattern": r"\d{6}",
+                    "placeholder": "••••••",
                     "inputmode": "numeric",
+                    "autocomplete": "new-password",
                 }
             ),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["pin"].required = True
+
     def clean_pin(self):
         value = self.cleaned_data.get("pin")
-        if value:
-            if not value.isdigit():
-                raise forms.ValidationError("PIN must contain digits only.")
-            if len(value) != 6:
-                raise forms.ValidationError("PIN must be exactly 6 digits.")
+        if not value:
+            raise forms.ValidationError("PIN is required.")
+        if not value.isdigit():
+            raise forms.ValidationError("PIN must contain digits only.")
+        if len(value) != 6:
+            raise forms.ValidationError("PIN must be exactly 6 digits.")
         return value
+
+    def clean(self):
+        cleaned_data = super().clean()
+        pin = cleaned_data.get("pin")
+        confirm_pin = cleaned_data.get("confirm_pin")
+        if pin is not None and confirm_pin is not None and pin != confirm_pin:
+            self.add_error("confirm_pin", "PINs do not match.")
+        return cleaned_data

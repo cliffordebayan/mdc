@@ -1,0 +1,126 @@
+{% load static %}
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% trans "Employee Profile Portal" %}</title>
+  {% if company and company.icon %}
+  <link rel="icon" href="{{ company.icon.url }}">
+  <link rel="apple-touch-icon" href="{{ company.icon.url }}">
+  {% else %}
+  <link rel="apple-touch-icon" sizes="180x180" href="{% static 'favicons/apple-touch-icon.png' %}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'favicons/favicon-32x32.png' %}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{% static 'favicons/favicon-16x16.png' %}">
+  {% endif %}
+  <link rel="stylesheet" href="{% static 'build/css/style.min.css' %}" />
+</head>
+<body>
+
+  {% if form.errors %}
+  <div class="oh-wrapper">
+    <div class="oh-alert-container">
+      {% for error in form.non_field_errors %}
+      <div class="oh-alert oh-alert--animated oh-alert--danger">{{ error }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if messages %}
+  <div class="oh-wrapper">
+    {% for message in messages %}
+    <div class="oh-alert-container">
+      <div class="oh-alert oh-alert--animated {{ message.tags }}">{{ message }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div id="main">
+    <main class="oh-onboarding">
+      <div class="oh-onboarding-card">
+        <div class="oh-onboarding-card__header">
+          <span class="oh-onboarding-card__company-name">{{ company }}</span>
+          <ul class="oh-onboarding-card__steps">
+            <li class="oh-onboarding-card__step">
+              <div class="oh-onboarding-card__count">1</div>
+              <span class="oh-onboarding-card__text">{% trans "Set Password" %}</span>
+            </li>
+            <li class="oh-onboarding-card__step">
+              <div class="oh-onboarding-card__count">2</div>
+              <span class="oh-onboarding-card__text">{% trans "Profile Photo" %}</span>
+            </li>
+            <li class="oh-onboarding-card__step">
+              <div class="oh-onboarding-card__count">3</div>
+              <span class="oh-onboarding-card__text">{% trans "Personal Details" %}</span>
+            </li>
+            <li class="oh-onboarding-card__step oh-onboarding-card__step--active">
+              <div class="oh-onboarding-card__count">4</div>
+              <span class="oh-onboarding-card__text">{% trans "Portal PIN" %}</span>
+            </li>
+          </ul>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <div class="oh-onboarding-card__address-group">
+            <h2 class="oh-onboarding-card__section-title">{% trans "Set Your Portal PIN" %}</h2>
+            <p class="oh-onboarding-card__subtitle mb-3">
+              {% trans "Create a 6-digit PIN for the attendance portal. You will use this PIN to clock in and out." %}
+            </p>
+            <div class="row">
+              <div class="col-lg-6">
+                <div class="oh-input__group">
+                  <label class="oh-label required-star" for="id_pin">{% trans "Portal PIN" %}</label>
+                  {{ form.pin }}
+                  {{ form.pin.errors }}
+                </div>
+              </div>
+              <div class="col-lg-6">
+                <div class="oh-input__group">
+                  <label class="oh-label required-star" for="id_confirm_pin">{% trans "Confirm PIN" %}</label>
+                  {{ form.confirm_pin }}
+                  {{ form.confirm_pin.errors }}
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100 mb-2" role="button">
+            {% trans "Finish" %}
+          </button>
+          <a href="{% url 'employee-portal-personal' token %}"
+            class="oh-btn oh-btn--light oh-btn--shadow w-100 mb-4"
+            role="button">
+            <ion-icon class="me-2" name="arrow-back-outline"></ion-icon>
+            {% trans "Back" %}
+          </a>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <link rel="stylesheet" type="text/css" href="{% static 'css/style.css' %}">
+  <script src="{% static 'build/js/web.frontend.min.js' %}"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
+  <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+  <script>
+    (function () {
+      function limitPin(inputId) {
+        var input = document.getElementById(inputId);
+        if (!input) return;
+        input.addEventListener('input', function () {
+          this.value = this.value.replace(/\D/g, '').slice(0, 6);
+        });
+        input.addEventListener('keypress', function (e) {
+          if (!/\d/.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault();
+        });
+      }
+      limitPin('id_pin');
+      limitPin('id_confirm_pin');
+    })();
+  </script>
+</body>
+</html>

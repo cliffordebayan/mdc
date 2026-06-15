@@ -527,9 +527,9 @@ urlpatterns = [
         name="employee-portal-personal",
     ),
     path(
-        "employee-portal/bank/<str:token>/",
-        views.employee_portal_bank,
-        name="employee-portal-bank",
+        "employee-portal/pin/<str:token>/",
+        views.employee_portal_pin,
+        name="employee-portal-pin",
     ),
     path(
         "employee-portal/done/",

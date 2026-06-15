@@ -4656,7 +4656,7 @@ def _employee_portal_step_redirect(portal):
     """Return a redirect to the next incomplete portal step, or None if at step 0."""
     token = portal.token
     if portal.count >= 3:
-        return redirect("employee-portal-bank", token)
+        return redirect("employee-portal-pin", token)
     if portal.count == 2:
         return redirect("employee-portal-personal", token)
     if portal.count == 1:
@@ -5027,61 +5027,53 @@ def employee_portal_personal(request, token):
     employee = portal.employee_id
     work_info, _created = EmployeeWorkInformation.objects.get_or_create(employee_id=employee)
     form = EmployeePortalPersonalForm(instance=employee)
-    pin_form = EmployeePortalPINForm(instance=work_info)
 
     if request.method == "POST":
         form = EmployeePortalPersonalForm(request.POST, instance=employee)
-        pin_form = EmployeePortalPINForm(request.POST, instance=work_info)
-        if form.is_valid() and pin_form.is_valid():
+        if form.is_valid():
             form.save()
-            pin_form.save()
             portal.count = 3
             portal.save()
             messages.success(request, _("Personal details saved successfully."))
-            return redirect("employee-portal-bank", token)
+            return redirect("employee-portal-pin", token)
 
     company = work_info.company_id
 
     return render(
         request,
         "employee/portal/personal_details.html",
-        {"form": form, "pin_form": pin_form, "employee": employee, "company": company, "token": token},
+        {"form": form, "employee": employee, "company": company, "token": token},
     )
 
 
-def employee_portal_bank(request, token):
-    """Step 4 — Employee fills in bank details."""
+def employee_portal_pin(request, token):
+    """Step 4 — Employee sets their attendance portal PIN."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
     if portal is None or portal.used:
         return render(request, "404.html")
 
+    if portal.count < 3:
+        return redirect("employee-portal-personal", token)
+
     employee = portal.employee_id
-    bank_info = EmployeeBankDetails.objects.filter(employee_id=employee).first()
-    form = EmployeeBankDetailsUpdateForm(instance=bank_info)
+    work_info, _created = EmployeeWorkInformation.objects.entire().get_or_create(employee_id=employee)
+    form = EmployeePortalPINForm(instance=work_info)
 
     if request.method == "POST":
-        form = EmployeeBankDetailsUpdateForm(request.POST, instance=bank_info)
+        form = EmployeePortalPINForm(request.POST, instance=work_info)
         if form.is_valid():
-            bank_detail = form.save(commit=False)
-            bank_detail.employee_id = employee
-            bank_detail.save()
-            if bank_detail.is_primary:
-                EmployeeBankDetails.objects.filter(employee_id=employee).exclude(
-                    pk=bank_detail.pk
-                ).update(is_primary=False)
+            form.save()
             portal.count = 4
             portal.used = True
             portal.save()
-            messages.success(request, _("Bank details saved successfully."))
+            messages.success(request, _("Portal PIN set successfully."))
             return redirect("employee-portal-done")
 
-    company = None
-    if hasattr(employee, "employee_work_info") and employee.employee_work_info:
-        company = employee.employee_work_info.company_id
+    company = work_info.company_id
 
     return render(
         request,
-        "employee/portal/bank_details.html",
+        "employee/portal/portal_pin.html",
         {"form": form, "employee": employee, "company": company, "token": token},
     )
 
