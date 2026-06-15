@@ -72,7 +72,7 @@
               {% for geo in employee.assigned_geofences.all %}
                 <span class="oh-badge oh-badge--info me-1">{{ geo }}</span>
               {% empty %}
-                <span class="oh-badge oh-badge--success-light" style="color: #2e7d32; background-color: #e8f5e9;">No Restrictions</span>
+                <span class="oh-badge oh-badge--warning-light" style="color: #795b00; background-color: #fff8e1;" title="Branch-level geofence may still apply">No Assigned Geofences</span>
               {% endfor %}
             </div>
             <div class="oh-sticky-table__td oh-sticky-table__right">

@@ -1303,6 +1303,21 @@ def employee_lookup(request):
                         "geo_center_lng": geo.longitude,
                         "geo_radius_meters": geo.radius_in_meters,
                     })
+                # Fall back to branch geofence when no assigned geofences exist,
+                # mirroring the same fallback logic used in _geofence_check so
+                # the portal map always shows the fence that will actually be enforced.
+                if not geo_data and branch:
+                    try:
+                        branch_geo = GeoFencing.objects.get(branch_id=branch, start=True)
+                        if not branch_geo.excluded_employees.filter(pk=emp.pk).exists():
+                            geo_data.append({
+                                "name": branch_geo.name or "",
+                                "geo_center_lat": branch_geo.latitude,
+                                "geo_center_lng": branch_geo.longitude,
+                                "geo_radius_meters": branch_geo.radius_in_meters,
+                            })
+                    except GeoFencing.DoesNotExist:
+                        pass
             except Exception:
                 pass
 
