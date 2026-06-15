@@ -2252,6 +2252,9 @@
             startLiveClock();
             updatePinUi();
             focusSearchInput();
+            // Pre-load face detection models in the background so they are ready
+            // by the time the user reaches the camera step.
+            loadFaceApiModels();
         });
 
         function focusSearchInput() {
@@ -3363,14 +3366,9 @@
             const arm = Math.min(bw, bh) * 0.20;
             const lw  = Math.max(3, Math.min(bw, bh) * 0.022);
             const r   = Math.min(10, arm * 0.45);
-            const bracketColor = detected ? '#22c55e' : 'rgba(255,255,255,0.86)';
 
             ctx.save();
-            if (detected) {
-                ctx.shadowColor = 'rgba(34,197,94,0.60)';
-                ctx.shadowBlur = 18;
-            }
-            ctx.strokeStyle = bracketColor;
+            ctx.strokeStyle = detected ? '#22c55e' : 'rgba(255,255,255,0.86)';
             ctx.lineWidth = lw;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
@@ -3421,47 +3419,6 @@
                 ctx.fillRect(bx, scanY - 14, bw, 28);
             }
 
-            // 5. Status pill label below the guide box
-            const fontSize = Math.max(11, Math.min(14, vw * 0.030));
-            const label = !faceApiModelsLoaded
-                ? '{% trans "Initializing face scan..." %}'
-                : detected
-                    ? '{% trans "Face detected  ✓" %}'
-                    : '{% trans "Position your face in the frame" %}';
-
-            ctx.save();
-            ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
-            ctx.textBaseline = 'middle';
-            ctx.textAlign = 'center';
-
-            const tw      = ctx.measureText(label).width;
-            const pH      = fontSize + 14;
-            const pW      = tw + 28;
-            const pX      = vw / 2 - pW / 2;
-            const pY      = by + bh + 12;
-            const pRadius = pH / 2;
-
-            // Pill fill
-            ctx.fillStyle = detected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.58)';
-            ctx.beginPath();
-            if (ctx.roundRect) {
-                ctx.roundRect(pX, pY, pW, pH, pRadius);
-            } else {
-                ctx.rect(pX, pY, pW, pH);
-            }
-            ctx.fill();
-
-            // Pill border when detected
-            if (detected) {
-                ctx.strokeStyle = 'rgba(34,197,94,0.55)';
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
-            }
-
-            // Pill text
-            ctx.fillStyle = detected ? '#4ade80' : 'rgba(255,255,255,0.90)';
-            ctx.fillText(label, vw / 2, pY + pH / 2);
-            ctx.restore();
         }
 
         function startFaceDetectionLoop() {
@@ -3612,9 +3569,15 @@
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             context.restore();
 
-            // If geocoding is still in-flight, wait for it so the address is on the image
-            if (!capturedAddress && geocodingPromise) {
-                try { await geocodingPromise; } catch (e) { /* falls back to coordinates */ }
+            // Wait for reverse-geocoding so the address appears on the stamp.
+            // If geocodingPromise is null (GPS just responded but geocoding hasn't kicked off yet),
+            // kick it off now and await it rather than falling back to raw coordinates.
+            if (!capturedAddress) {
+                if (geocodingPromise) {
+                    try { await geocodingPromise; } catch (e) {}
+                } else if (latitude && longitude) {
+                    try { capturedAddress = await reverseGeocode(latitude, longitude); } catch (e) {}
+                }
             }
 
             const addressToStamp = capturedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
@@ -3652,7 +3615,8 @@
                 }
 
                 const img = new Image();
-                img.crossOrigin = 'anonymous';
+                // No crossOrigin attribute: cookies are sent so Django-authenticated media
+                // loads correctly, and same-origin images never taint the canvas.
                 img.onload = function () { resolve(img); };
                 img.onerror = function () { resolve(null); };
                 img.src = src;
@@ -4153,9 +4117,7 @@
 
             const btn = $('#clock-in-btn');
             const originalText = btn.html();
-            btn.html('<span class="loading"></span> {% trans "Getting address..." %}').prop('disabled', true);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            btn.html('<span class="loading"></span> {% trans "Processing..." %}');
+            btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
 
             try {
                 const selfieBlob = await capturePhotoBlobFromLiveVideo();
@@ -4201,9 +4163,7 @@
 
             const btn = $('#clock-out-btn');
             const originalText = btn.html();
-            btn.html('<span class="loading"></span> {% trans "Getting address..." %}').prop('disabled', true);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            btn.html('<span class="loading"></span> {% trans "Processing..." %}');
+            btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
 
             try {
                 const selfieBlob = await capturePhotoBlobFromLiveVideo();
@@ -4255,9 +4215,7 @@
 
             const btn = $('#activity-transition-btn');
             const originalText = btn.html();
-            btn.html('<span class="loading"></span> {% trans "Getting address..." %}').prop('disabled', true);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            btn.html('<span class="loading"></span> {% trans "Processing..." %}');
+            btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
 
             try {
                 const selfieBlob = await capturePhotoBlobFromLiveVideo();
