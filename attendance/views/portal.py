@@ -960,7 +960,6 @@ def _update_attendance_worked_hours(employee, attendance_date):
         attendance.attendance_worked_hour = calculate_worked_hours(
             employee, attendance_date
         )
-        attendance.attendance_validated = False
         attendance.save()
     return attendance
 
@@ -2098,7 +2097,7 @@ def public_clock_out(request):
                 date_today=date_today,
                 now=now_str,
                 out_datetime=datetime_now,
-                auto_validate=False,
+                auto_validate=True,
             )
         except Exception as e:
             logger.error(f"Clock out error for {employee.id}: {str(e)}", exc_info=True)

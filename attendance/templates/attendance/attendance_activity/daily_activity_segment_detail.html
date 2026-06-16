@@ -10,7 +10,7 @@
             <div style="margin-top: 8px;">
                 <img src="{{segment.clock_in_selfie.url}}" alt="{{ title }} {% trans 'In' %}"
                     style="max-width: 120px; max-height: 120px; border-radius: 8px; cursor: pointer;"
-                    onclick="openImageModal(this.src, '{{ title }} {% trans "In Image" %}')" />
+                    onclick="openImageModal(this.src, '{{ title }} {% trans "In Image" %}', '{{ segment.clock_in_map_url|default:"" }}')" />
             </div>
         {% endif %}
         {% if segment.clock_in_location or segment.clock_in_map_url %}
@@ -41,7 +41,7 @@
             <div style="margin-top: 8px;">
                 <img src="{{segment.clock_out_selfie.url}}" alt="{{ title }} {% trans 'Out' %}"
                     style="max-width: 120px; max-height: 120px; border-radius: 8px; cursor: pointer;"
-                    onclick="openImageModal(this.src, '{{ title }} {% trans "Out Image" %}')" />
+                    onclick="openImageModal(this.src, '{{ title }} {% trans "Out Image" %}', '{{ segment.clock_out_map_url|default:"" }}')" />
             </div>
         {% endif %}
         {% if segment.clock_out_location or segment.clock_out_map_url %}

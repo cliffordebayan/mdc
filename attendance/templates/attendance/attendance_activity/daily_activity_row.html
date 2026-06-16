@@ -76,11 +76,11 @@
             {% for segment in row.work_segments %}
                 {% if segment.clock_in_selfie %}
                     <img src="{{segment.clock_in_selfie.url}}" alt="{% trans 'Clock In' %}" title="{% trans 'Clock In' %}"
-                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Clock In Image" %}')" />
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Clock In Image" %}', '{{ segment.clock_in_map_url|default:"" }}')" />
                 {% endif %}
                 {% if segment.clock_out_selfie %}
                     <img src="{{segment.clock_out_selfie.url}}" alt="{% trans 'Clock Out' %}" title="{% trans 'Clock Out' %}"
-                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Clock Out Image" %}')" />
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Clock Out Image" %}', '{{ segment.clock_out_map_url|default:"" }}')" />
                 {% endif %}
             {% endfor %}
             {% if not row.has_work_images %}
@@ -93,11 +93,11 @@
             <div class="oh-daily-activity-images mb-1">
                 {% if segment.clock_in_selfie %}
                     <img src="{{segment.clock_in_selfie.url}}" alt="{% trans 'Break In' %}" title="{% trans 'Break In' %}"
-                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Break In Image" %}')" />
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Break In Image" %}', '{{ segment.clock_in_map_url|default:"" }}')" />
                 {% endif %}
                 {% if segment.clock_out_selfie %}
                     <img src="{{segment.clock_out_selfie.url}}" alt="{% trans 'Break Out' %}" title="{% trans 'Break Out' %}"
-                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Break Out Image" %}')" />
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Break Out Image" %}', '{{ segment.clock_out_map_url|default:"" }}')" />
                 {% endif %}
                 {% if not segment.clock_in_selfie and not segment.clock_out_selfie %}
                     <span class="oh-text--light">&mdash;</span>
@@ -112,11 +112,11 @@
             <div class="oh-daily-activity-images mb-1">
                 {% if segment.clock_in_selfie %}
                     <img src="{{segment.clock_in_selfie.url}}" alt="{% trans 'Lunch In' %}" title="{% trans 'Lunch In' %}"
-                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Lunch In Image" %}')" />
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Lunch In Image" %}', '{{ segment.clock_in_map_url|default:"" }}')" />
                 {% endif %}
                 {% if segment.clock_out_selfie %}
                     <img src="{{segment.clock_out_selfie.url}}" alt="{% trans 'Lunch Out' %}" title="{% trans 'Lunch Out' %}"
-                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Lunch Out Image" %}')" />
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Lunch Out Image" %}', '{{ segment.clock_out_map_url|default:"" }}')" />
                 {% endif %}
                 {% if not segment.clock_in_selfie and not segment.clock_out_selfie %}
                     <span class="oh-text--light">&mdash;</span>

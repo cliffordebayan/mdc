@@ -207,9 +207,17 @@
 
 <script>
     // Function to open image in modal
-    function openImageModal(imageUrl, title) {
+    function openImageModal(imageUrl, title, mapUrl) {
         const modal = document.createElement('div');
         modal.className = 'oh-modal-backdrop oh-modal-backdrop--active';
+        const mapButton = mapUrl ? `
+            <div class="oh-modal__footer" style="text-align:center; padding:12px 16px; border-top:1px solid #e5e7eb;">
+                <a href="${mapUrl}" target="_blank" rel="noopener noreferrer"
+                   style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; background:#4285f4; color:#fff; border-radius:6px; text-decoration:none; font-size:14px; font-weight:500;">
+                    <ion-icon name="map-outline"></ion-icon> View on Map
+                </a>
+            </div>
+        ` : '';
         modal.innerHTML = `
             <div class="oh-modal oh-modal--md oh-modal--active" role="dialog">
                 <div class="oh-modal__header">
@@ -221,6 +229,7 @@
                 <div class="oh-modal__body" style="text-align: center;">
                     <img src="${imageUrl}" alt="${title}" style="max-width: 100%; max-height: 500px; border-radius: 8px;" />
                 </div>
+                ${mapButton}
             </div>
         `;
         modal.onclick = function(e) {
