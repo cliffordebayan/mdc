@@ -56,6 +56,7 @@ from base.methods import (
     choosesubordinates,
     filtersubordinates,
     filtersubordinatesemployeemodel,
+    get_hq_company_logo_url,
     get_key_instances,
     get_pagination,
     sortby,
@@ -4692,6 +4693,16 @@ def send_employee_portal_link(request, obj_id):
             or employee.email
         )
 
+        work_info = getattr(employee, "employee_work_info", None)
+        company_obj = getattr(work_info, "company_id", None)
+        company_name = getattr(company_obj, "company", None) or "HR Portal"
+        logo_url = None
+        if company_obj and company_obj.icon:
+            raw = company_obj.icon.url
+            logo_url = raw if raw.startswith(("http://", "https://")) else f"{protocol}://{host}{raw}"
+        if not logo_url:
+            logo_url = get_hq_company_logo_url(host=host, protocol=protocol)
+
         html_message = render_to_string(
             "employee/portal/email_template.html",
             {
@@ -4699,6 +4710,8 @@ def send_employee_portal_link(request, obj_id):
                 "portal_url": portal_url,
                 "host": host,
                 "protocol": protocol,
+                "logo_url": logo_url,
+                "company_name": company_name,
             },
             request=request,
         )
@@ -4757,6 +4770,16 @@ def send_bulk_portal_link(request):
             error_count += 1
             continue
 
+        work_info = getattr(employee, "employee_work_info", None)
+        company_obj = getattr(work_info, "company_id", None)
+        company_name = getattr(company_obj, "company", None) or "HR Portal"
+        logo_url = None
+        if company_obj and company_obj.icon:
+            raw = company_obj.icon.url
+            logo_url = raw if raw.startswith(("http://", "https://")) else f"{protocol}://{host}{raw}"
+        if not logo_url:
+            logo_url = get_hq_company_logo_url(host=host, protocol=protocol)
+
         html_message = render_to_string(
             "employee/portal/email_template.html",
             {
@@ -4764,6 +4787,8 @@ def send_bulk_portal_link(request):
                 "portal_url": portal_url,
                 "host": host,
                 "protocol": protocol,
+                "logo_url": logo_url,
+                "company_name": company_name,
             },
             request=request,
         )
@@ -4952,6 +4977,15 @@ def check_bulk_email_status(request):
                 sent = EmailLog.objects.filter(
                     to__iexact=email_addr, subject__icontains="ATTENDANCE PIN"
                 ).exists()
+        elif email_type == "website_url":
+            email_addr = (
+                getattr(getattr(employee, "employee_work_info", None), "email", None)
+                or employee.email
+            )
+            if email_addr:
+                sent = EmailLog.objects.filter(
+                    to__iexact=email_addr, subject__icontains="HRIS Portal Link"
+                ).exists()
 
         entry = {"id": emp_id, "name": employee.get_full_name()}
         if sent:
@@ -5009,6 +5043,16 @@ def send_single_bulk_email(request):
                      "message": "No email address."}
                 )
 
+            work_info = getattr(employee, "employee_work_info", None)
+            company_obj = getattr(work_info, "company_id", None)
+            company_name = getattr(company_obj, "company", None) or "HR Portal"
+            logo_url = None
+            if company_obj and company_obj.icon:
+                raw = company_obj.icon.url
+                logo_url = raw if raw.startswith(("http://", "https://")) else f"{protocol}://{host}{raw}"
+            if not logo_url:
+                logo_url = get_hq_company_logo_url(host=host, protocol=protocol)
+
             html_message = render_to_string(
                 "employee/portal/email_template.html",
                 {
@@ -5016,6 +5060,8 @@ def send_single_bulk_email(request):
                     "portal_url": portal_url,
                     "host": host,
                     "protocol": protocol,
+                    "logo_url": logo_url,
+                    "company_name": company_name,
                 },
                 request=request,
             )
@@ -5117,6 +5163,61 @@ def send_single_bulk_email(request):
             return JsonResponse(
                 {"success": True, "employee_name": employee_name,
                  "message": "PIN sent."}
+            )
+
+        elif email_type == "website_url":
+            protocol = "https" if request.is_secure() else "http"
+            host = request.get_host()
+            website_url = f"{protocol}://{host}/"
+
+            send_to = (
+                getattr(
+                    getattr(employee, "employee_work_info", None), "email", None
+                )
+                or employee.email
+            )
+            if not send_to:
+                return JsonResponse(
+                    {"success": False, "employee_name": employee_name,
+                     "message": "No email address."}
+                )
+
+            work_info = getattr(employee, "employee_work_info", None)
+            company_obj = getattr(work_info, "company_id", None)
+            company_name = getattr(company_obj, "company", None) or "HR Portal"
+            logo_url = None
+            if company_obj and company_obj.icon:
+                raw = company_obj.icon.url
+                logo_url = raw if raw.startswith(("http://", "https://")) else f"{protocol}://{host}{raw}"
+            if not logo_url:
+                logo_url = get_hq_company_logo_url(host=host, protocol=protocol)
+
+            subject = str(_("HRIS Portal Link"))
+            body = render_to_string(
+                "employee/portal/website_url_email_template.html",
+                {
+                    "employee": employee,
+                    "website_url": website_url,
+                    "company_name": company_name,
+                    "logo_url": logo_url,
+                    "host": host,
+                    "protocol": protocol,
+                },
+                request=request,
+            )
+            email_msg = EmailMessage(subject=subject, body=body, to=[send_to])
+            email_msg.content_subtype = "html"
+            email_msg.send()
+            EmailLog.objects.create(
+                subject=subject,
+                body=body[:255],
+                from_email="",
+                to=send_to,
+                status="sent",
+            )
+            return JsonResponse(
+                {"success": True, "employee_name": employee_name,
+                 "message": "Portal link sent."}
             )
 
         return JsonResponse({"success": False, "message": "Unknown email type."})

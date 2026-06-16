@@ -138,6 +138,7 @@ function addingIds() {
         $("#sendBulkPortalLink").css("display", "none");
         $("#sendBulkPasswordReset").css("display", "none");
         $("#sendBulkPinEmail").css("display", "none");
+        $("#sendBulkWebsiteUrl").css("display", "none");
         $("#selectedShow").css("display", "none");
     } else {
         $("#unselectAllEmployees").css("display", "inline-flex");
@@ -145,6 +146,7 @@ function addingIds() {
         $("#sendBulkPortalLink").css("display", "inline-flex");
         $("#sendBulkPasswordReset").css("display", "inline-flex");
         $("#sendBulkPinEmail").css("display", "inline-flex");
+        $("#sendBulkWebsiteUrl").css("display", "inline-flex");
         $("#selectedShow").css("display", "inline-flex");
         $("#selectedShow").text(selectedCount + " - " + message);
     }
@@ -173,6 +175,7 @@ function tickCheckboxes() {
         $("#sendBulkPortalLink").css("display", "inline-flex");
         $("#sendBulkPasswordReset").css("display", "inline-flex");
         $("#sendBulkPinEmail").css("display", "inline-flex");
+        $("#sendBulkWebsiteUrl").css("display", "inline-flex");
         $("#selectedShow").css("display", "inline-flex");
         $("#selectedShow").text(selectedCount + " -" + message);
     } else {
@@ -181,6 +184,7 @@ function tickCheckboxes() {
         $("#sendBulkPortalLink").css("display", "none");
         $("#sendBulkPasswordReset").css("display", "none");
         $("#sendBulkPinEmail").css("display", "none");
+        $("#sendBulkWebsiteUrl").css("display", "none");
         $("#selectedShow").css("display", "none");
     }
 }
@@ -802,4 +806,9 @@ $("#sendBulkPasswordReset").click(function (e) {
 $("#sendBulkPinEmail").click(function (e) {
     e.preventDefault();
     bulkEmailSendFlow("pin", "PIN to Email");
+});
+
+$("#sendBulkWebsiteUrl").click(function (e) {
+    e.preventDefault();
+    bulkEmailSendFlow("website_url", "Portal Link");
 });

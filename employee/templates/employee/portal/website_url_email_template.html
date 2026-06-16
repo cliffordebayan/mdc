@@ -36,11 +36,11 @@
                 {% if logo_url %}
                 <img src="{{ logo_url }}" alt="{{ company_name }}" style="height:40px;width:auto;object-fit:contain;display:block;" />
                 {% else %}
-                <strong style="font-size:16px;color:#1c1c1c;">{{ company_name|default:"Company" }}</strong>
+                <strong style="font-size:16px;color:#1c1c1c;">{{ company_name }}</strong>
                 {% endif %}
               </td>
               <td style="width:50%;text-align:right;">
-                <a href="#" class="hr-link">View in browser</a>
+                <a href="{{ website_url }}" class="hr-link">View in browser</a>
               </td>
             </tr>
           </table>
@@ -48,17 +48,17 @@
       </tr>
       <tr>
         <td style="padding:15px 25px 0 25px;font-size:24px;" align="center">
-          <strong>Hello {{ employee.get_full_name }}, please complete your employee profile.</strong>
+          <strong>Hello {{ employee.get_full_name }}, here is your HR Portal link.</strong>
         </td>
       </tr>
       <tr>
         <td align="center" style="padding-top:0px;">
-          <p style="width:90%;">Your HR team has created your employee account. Please use the button below to set your password and fill in your personal details. This link can only be used once.</p>
+          <p style="width:90%;">Your HR team is sharing the link to the company HR Portal. Use the button below to access it anytime.</p>
         </td>
       </tr>
       <tr>
         <td style="padding:15px" align="center">
-          <a href="{{ portal_url }}" style="
+          <a href="{{ website_url }}" style="
             background-color:#e54f37;
             color:#fff;
             border-radius:10px;
@@ -66,7 +66,17 @@
             padding:15px 25px;
             text-decoration:none;
             font-weight:bold;
-          ">Complete Profile</a>
+          ">Access HR Portal</a>
+        </td>
+      </tr>
+      <tr>
+        <td align="center" style="padding:10px 15px 5px 15px;color:#5c5c5c;font-size:12px;">
+          Or copy this link into your browser:
+        </td>
+      </tr>
+      <tr>
+        <td align="center" style="padding:0 15px 15px 15px;">
+          <a href="{{ website_url }}" style="color:#e54f37;font-size:12px;word-break:break-all;">{{ website_url }}</a>
         </td>
       </tr>
       <tr>
