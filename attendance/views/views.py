@@ -115,6 +115,7 @@ from base.methods import (
 )
 from base.models import (
     AttendanceAllowedIP,
+    Branch,
     EmployeeShiftDay,
     EmployeeShiftSchedule,
     Holidays,
@@ -1968,6 +1969,7 @@ def attendance_activity_view(request):
             "f": filter_obj,
             "gp_fields": AttendanceActivityReGroup.fields,
             "activity_ids": activity_ids,
+            "branches": Branch.objects.all(),
         },
     )
 

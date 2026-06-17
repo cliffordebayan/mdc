@@ -6,8 +6,19 @@
         {% trans "Selected Attendance" %}
     </div>
     <div class="oh-wrapper">
+        <select id="activity-branch-filter"
+            class="oh-select mb-2"
+            style="max-width: 200px; cursor: pointer;"
+            hx-get="{% url 'attendance-activity-search' %}"
+            hx-target="#activity-table"
+            hx-trigger="change">
+            <option value="">{% trans "All Branches" %}</option>
+            {% for branch in branches %}
+                <option value="{{ branch.id }}">{{ branch }}</option>
+            {% endfor %}
+        </select>
         {% if perms.attendance.change_attendancelatecomeearlyout or request.user|is_reportingmanager %}
-            <div class="oh-checkpoint-badge text-success mb-2" id="selectAllActivity" style="cursor: pointer">
+            <div class="oh-checkpoint-badge text-success mb-2" id="selectAllActivity" style="cursor: pointer; display: none">
                 {% trans "Select All Attendance" %}
             </div>
             <div class="oh-checkpoint-badge text-secondary mb-2" id="unselectAllActivity"
@@ -24,4 +35,13 @@
         </div>
     </div>
 </div>
+<script>
+    (function () {
+        var params = new URLSearchParams("{{ pd|escapejs }}");
+        var branchId = params.get("employee_id__employee_work_info__branch_id");
+        if (branchId) {
+            document.getElementById("activity-branch-filter").value = branchId;
+        }
+    })();
+</script>
 {% endblock %}

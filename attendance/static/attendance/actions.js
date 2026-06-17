@@ -257,7 +257,7 @@ function tickactivityCheckboxes() {
         $(this).prop("checked", isSelected);
         highlightRow($(this));
     });
-    var selectedCount = uniqueIds.length;
+    var selectedCount = $(".all-attendance-activity-row:checked").length;
     getCurrentLanguageCode(function (code) {
         languageCode = code;
         var message = rowMessages[languageCode];
@@ -503,7 +503,6 @@ function getCookie(name) {
 
 function addingActivityIds() {
     var ids = JSON.parse($("#selectedActivity").attr("data-ids") || "[]");
-    var selectedCount = 0;
 
     $(".all-attendance-activity-row").each(function () {
         var rowIds = getActivityRowIds(this);
@@ -525,7 +524,7 @@ function addingActivityIds() {
     });
 
     ids = makeactivityListUnique(ids);
-    selectedCount = ids.length;
+    var selectedCount = $(".all-attendance-activity-row:checked").length;
 
     getCurrentLanguageCode(function (code) {
         languageCode = code;
@@ -583,6 +582,7 @@ function addinglatecomeIds() {
     });
 }
 function selectAllActivity() {
+    $("#selectAllActivity").hide();
     $("#selectedActivity").attr("data-clicked", 0);
     $("#selectedShowActivity").removeAttr("style");
     var savedFilters = JSON.parse(localStorage.getItem("savedFilters"));
@@ -662,6 +662,7 @@ function selectAllActivity() {
 }
 
 function unselectAllActivity() {
+    $("#selectAllActivity").hide();
     $("#selectedActivity").attr("data-clicked", 0);
     $.ajax({
         url: "/attendance/activity-attendance-select",
@@ -887,12 +888,13 @@ $(".all-latecome").change(function (e) {
     }
 });
 
-$(".all-attendance-activity").change(function (e) {
+$(document).on("change", ".all-attendance-activity", function (e) {
     var is_checked = $(this).is(":checked");
     var closest = $(this)
         .closest(".oh-sticky-table__thead")
         .siblings(".oh-sticky-table__tbody");
     if (is_checked) {
+        $("#selectAllActivity").show();
         $(closest)
             .children()
             .find(".all-attendance-activity-row")
@@ -900,6 +902,7 @@ $(".all-attendance-activity").change(function (e) {
             .closest(".oh-sticky-table__tr")
             .addClass("highlight-selected");
     } else {
+        $("#selectAllActivity").hide();
         $("#selectedActivity").attr("data-clicked", 0);
         $(closest)
             .children()
@@ -908,6 +911,7 @@ $(".all-attendance-activity").change(function (e) {
             .closest(".oh-sticky-table__tr")
             .removeClass("highlight-selected");
     }
+    addingActivityIds();
 });
 
 $("#validateAttendances").click(function (e) {
