@@ -909,6 +909,86 @@ def build_daily_activity_rows(attendance_activities):
     return rows
 
 
+def _empty_daily_attendance_row(attendance):
+    attendance_date = getattr(attendance, "attendance_date", None)
+    employee = getattr(attendance, "employee_id", None)
+    fallback_work_in = None
+    fallback_work_out = None
+    if getattr(attendance, "attendance_clock_in", None):
+        fallback_work_in = SimpleNamespace(clock_in=attendance.attendance_clock_in)
+    if getattr(attendance, "attendance_clock_out", None):
+        fallback_work_out = SimpleNamespace(clock_out=attendance.attendance_clock_out)
+    hours = _attendance_row_hours(attendance)
+    return SimpleNamespace(
+        employee=employee,
+        attendance_date=attendance_date,
+        attendance_date_iso=attendance_date.isoformat() if attendance_date else "",
+        shift_day=getattr(attendance, "attendance_day", None),
+        attendance=attendance,
+        activity_ids=[],
+        activity_ids_json="[]",
+        detail_activity_id=None,
+        row_key=f"attendance-{attendance.id}",
+        work_segments=[],
+        break_segments=[],
+        lunch_segments=[],
+        work_in=fallback_work_in,
+        work_out=fallback_work_out,
+        has_work_images=False,
+        shift=hours.shift,
+        work_type=hours.work_type,
+        min_hour=hours.min_hour,
+        late_come_duration="",
+        early_out_duration="",
+        work_hours=hours.work_hours,
+        break_hours="",
+        lunch_hours="",
+        pending_hour=hours.pending_hour,
+        overtime=hours.overtime,
+        leave=None,
+        holiday=None,
+    )
+
+
+def build_daily_attendance_rows(attendances):
+    """
+    Build activity-table shaped rows for Attendance querysets/pages.
+    Attendance rows without activity records are still shown with attendance data.
+    """
+    attendance_rows = list(getattr(attendances, "object_list", attendances or []))
+    if not attendance_rows:
+        return []
+
+    employee_ids = {
+        attendance.employee_id_id
+        for attendance in attendance_rows
+        if getattr(attendance, "employee_id_id", None)
+    }
+    attendance_dates = {
+        attendance.attendance_date
+        for attendance in attendance_rows
+        if getattr(attendance, "attendance_date", None)
+    }
+    activity_rows_by_key = {}
+    if employee_ids and attendance_dates:
+        activities = AttendanceActivity.objects.filter(
+            employee_id_id__in=employee_ids,
+            attendance_date__in=attendance_dates,
+        ).order_by("clock_in_date", "clock_in", "id")
+        for row in build_daily_activity_rows(activities):
+            employee_id = getattr(getattr(row, "employee", None), "id", None)
+            activity_rows_by_key[(employee_id, row.attendance_date)] = row
+
+    rows = []
+    for attendance in attendance_rows:
+        key = (attendance.employee_id_id, attendance.attendance_date)
+        row = activity_rows_by_key.get(key) or _empty_daily_attendance_row(attendance)
+        row.attendance = attendance
+        row.row_key = f"attendance-{attendance.id}"
+        rows.append(row)
+    return rows
+
+
 ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS = {
     "daily_clock_in",
     "daily_clock_out",
@@ -1600,18 +1680,25 @@ def attendance_view(request):
             ).object_list
         ]
     )
+    validate_attendances = paginator_qry(validate_attendances, request.GET.get("vpage"))
+    ot_attendances = paginator_qry(ot_attendances, request.GET.get("opage"))
+    attendances = paginator_qry(attendances, request.GET.get("page"))
+    build_my_attendance_activity_meta(validate_attendances)
+    build_my_attendance_activity_meta(ot_attendances)
+    build_my_attendance_activity_meta(attendances)
     return render(
         request,
         template,
         {
             "form": form,
-            # "validate_attendances": paginator_qry(
-            #     validate_attendances, request.GET.get("vpage")
-            # ),
-            # "attendances": paginator_qry(attendances, request.GET.get("page")),
-            # "overtime_attendances": paginator_qry(
-            #     ot_attendances, request.GET.get("opage")
-            # ),
+            "validate_attendances": validate_attendances,
+            "attendances": attendances,
+            "overtime_attendances": ot_attendances,
+            "validate_attendance_rows": build_daily_attendance_rows(
+                validate_attendances
+            ),
+            "attendance_rows": build_daily_attendance_rows(attendances),
+            "overtime_attendance_rows": build_daily_attendance_rows(ot_attendances),
             "validate_attendances_ids": validate_attendances_ids,
             "ot_attendances_ids": ot_attendances_ids,
             "attendances_ids": attendances_ids,
@@ -1754,6 +1841,7 @@ def view_my_attendance(request):
         template = "attendance/own_attendance/own_empty.html"
     paginated_attendances = paginator_qry(employee_attendances, request.GET.get("page"))
     activity_meta_by_attendance = build_my_attendance_activity_meta(paginated_attendances)
+    attendance_rows = build_daily_attendance_rows(paginated_attendances)
     attendances_ids = json.dumps(
         [instance.id for instance in paginated_attendances.object_list]
     )
@@ -1762,6 +1850,7 @@ def view_my_attendance(request):
         template,
         {
             "attendances": paginated_attendances,
+            "attendance_rows": attendance_rows,
             "attendances_ids": attendances_ids,
             "activity_meta_by_attendance": activity_meta_by_attendance,
             "f": filter,

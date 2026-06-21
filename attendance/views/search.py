@@ -27,6 +27,7 @@ from attendance.models import (
     AttendanceValidationCondition,
 )
 from attendance.views.views import (
+    build_daily_attendance_rows,
     build_my_attendance_activity_meta,
     build_daily_activity_rows,
     group_daily_activity_rows,
@@ -36,6 +37,11 @@ from attendance.views.views import (
 from base.methods import filtersubordinates, get_key_instances, sortby
 from horilla.decorators import hx_request_required, login_required, manager_can_enter
 from horilla.group_by import group_by_queryset
+
+
+def _attach_daily_rows_to_grouped_attendances(grouped_attendances):
+    for group in getattr(grouped_attendances, "object_list", grouped_attendances or []):
+        group["rows"] = build_daily_attendance_rows(group.get("list", []))
 
 
 @login_required
@@ -112,6 +118,7 @@ def attendance_search(request):
         attendances = group_by_queryset(
             attendances, field, request.GET.get("page"), "page"
         )
+        _attach_daily_rows_to_grouped_attendances(attendances)
         list_values = [entry["list"] for entry in attendances]
         id_list = []
         for value in list_values:
@@ -122,6 +129,7 @@ def attendance_search(request):
         validate_attendances = group_by_queryset(
             validate_attendances, field, request.GET.get("vpage"), "vpage"
         )
+        _attach_daily_rows_to_grouped_attendances(validate_attendances)
         list_values = [entry["list"] for entry in validate_attendances]
         id_list = []
         for value in list_values:
@@ -132,6 +140,7 @@ def attendance_search(request):
         ot_attendances = group_by_queryset(
             ot_attendances, field, request.GET.get("opage"), "opage"
         )
+        _attach_daily_rows_to_grouped_attendances(ot_attendances)
         list_values = [entry["list"] for entry in ot_attendances]
         id_list = []
         for value in list_values:
@@ -149,6 +158,9 @@ def attendance_search(request):
         build_my_attendance_activity_meta(validate_attendances)
         build_my_attendance_activity_meta(ot_attendances)
         build_my_attendance_activity_meta(attendances)
+        validate_attendance_rows = build_daily_attendance_rows(validate_attendances)
+        overtime_attendance_rows = build_daily_attendance_rows(ot_attendances)
+        attendance_rows = build_daily_attendance_rows(attendances)
         validate_attendances_ids = json.dumps(
             [instance.id for instance in validate_attendances.object_list]
         )
@@ -165,6 +177,13 @@ def attendance_search(request):
             "validate_attendances": validate_attendances,
             "attendances": attendances,
             "overtime_attendances": ot_attendances,
+            "validate_attendance_rows": validate_attendance_rows
+            if field == "" or field is None
+            else [],
+            "attendance_rows": attendance_rows if field == "" or field is None else [],
+            "overtime_attendance_rows": overtime_attendance_rows
+            if field == "" or field is None
+            else [],
             "validate_attendances_ids": validate_attendances_ids,
             "ot_attendances_ids": ot_attendances_ids,
             "attendances_ids": attendances_ids,
@@ -377,6 +396,7 @@ def filter_own_attendance(request):
         data_dict.pop(key)
     paginated_attendances = paginator_qry(attendances, request.GET.get("page"))
     activity_meta_by_attendance = build_my_attendance_activity_meta(paginated_attendances)
+    attendance_rows = build_daily_attendance_rows(paginated_attendances)
     attendances_ids = json.dumps(
         [instance.id for instance in paginated_attendances.object_list]
     )
@@ -384,6 +404,7 @@ def filter_own_attendance(request):
         attendances = group_by_queryset(
             attendances, field, request.GET.get("page"), "page"
         )
+        _attach_daily_rows_to_grouped_attendances(attendances)
         template = "attendance/own_attendance/group_by.html"
         attendances_ids = []
         paginated_attendances = paginator_qry(attendances, request.GET.get("page"))
@@ -393,6 +414,7 @@ def filter_own_attendance(request):
         template,
         {
             "attendances": paginated_attendances,
+            "attendance_rows": attendance_rows,
             "filter_dict": data_dict,
             "attendances_ids": attendances_ids,
             "activity_meta_by_attendance": activity_meta_by_attendance,
@@ -413,6 +435,7 @@ def own_attendance_sort(request):
     attendances = sortby(request, attendances, "orderby")
     paginated_attendances = paginator_qry(attendances, request.GET.get("page"))
     activity_meta_by_attendance = build_my_attendance_activity_meta(paginated_attendances)
+    attendance_rows = build_daily_attendance_rows(paginated_attendances)
     attendances_ids = json.dumps(
         [instance.id for instance in paginated_attendances.object_list]
     )
@@ -421,6 +444,7 @@ def own_attendance_sort(request):
         "attendance/own_attendance/attendances.html",
         {
             "attendances": paginated_attendances,
+            "attendance_rows": attendance_rows,
             "activity_meta_by_attendance": activity_meta_by_attendance,
             "attendances_ids": attendances_ids,
             "pd": previous_data,

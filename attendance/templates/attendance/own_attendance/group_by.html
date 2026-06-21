@@ -1,267 +1,89 @@
-{% load attendancefilters %} {% load basefilters %} {% load static %}
-{% load i18n %} {% include 'filter_tags.html' %}
-<div class="oh-card">
-    {% for attendance_list in attendances %}
-    <div class="oh-accordion-meta">
-      <div class="oh-accordion-meta__item">
-        <div class="oh-accordion-meta__header" id="validatedAttendanceGpAccordion{{forloop.counter}}" onclick='$(this).toggleClass("oh-accordion-meta__header--show");localStorage.setItem("validatedAttendanceGpAccordion","validatedAttendanceGpAccordion{{forloop.counter}}")'>
-          <span class="oh-accordion-meta__title pt-3 pb-3">
-            <div class="oh-tabs__input-badge-container">
-              <span
-                class="oh-badge oh-badge--secondary oh-badge--small oh-badge--round mr-1"
-              >
-                {{attendance_list.list.paginator.count}}
-              </span>
-              {{attendance_list.grouper}}
-            </div>
-          </span>
-        </div>
-        <div class="oh-accordion-meta__body d-none">
-          <div class="oh-sticky-table oh-sticky-table--no-overflow mb-5">
-            <div class="oh-sticky-table__table">
-              <div class="oh-sticky-table__thead">
-                <div class="oh-sticky-table__tr">
-                  <div class="oh-sticky-table__th">{% trans "Employee" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Date" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Day" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Check-In" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "In Date" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Check-Out" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Out Date" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Shift" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Work Type" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Min Hour" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "At Work" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Pending Hours" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Overtime" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Check In Location" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Check In Map" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Check Out Location" %}</div>
-                  <div class="oh-sticky-table__th">{% trans "Check Out Map" %}</div>
-                </div>
-              </div>
-              <div class="oh-sticky-table__tbody">
-                {% for attendance in attendance_list.list %}
-                <div
-                  class="oh-sticky-table__tr oh-multiple-table-sort__movable"
-                >
-                  <div class="oh-sticky-table__sd">
-                    <div class="oh-profile oh-profile--md">
-                      <div class="oh-profile__avatar mr-1">
-                        <img
-                          src="{{attendance.employee_id.get_avatar}}"
-                          class="oh-profile__image"
-                          alt="Mary Magdalene"
-                        />
-                      </div>
-                      <span class="oh-profile__name oh-text--dark"
-                        >{{attendance.employee_id.get_full_name}}</span
-                      >
-                    </div>
-                  </div>
-                  <div class="oh-sticky-table__td dateformat_changer">
-                    {{attendance.attendance_date}}
-                  </div>
-                  <div class="oh-sticky-table__td">
-                    {{attendance.attendance_day|title}}
-                  </div>
-                  <div class="oh-sticky-table__td timeformat_changer">
-                    {{attendance.attendance_clock_in}}
-                  </div>
-                  <div class="oh-sticky-table__td dateformat_changer">
-                    {{attendance.attendance_clock_in_date}}
-                  </div>
-                  <div class="oh-sticky-table__td timeformat_changer">
-                    {{attendance.attendance_clock_out}}
-                  </div>
-                  <div class="oh-sticky-table__td dateformat_changer">
-                    {{attendance.attendance_clock_out_date}}
-                  </div>
-                  <div class="oh-sticky-table__td">{{attendance.shift_id}}</div>
-                  <div class="oh-sticky-table__td">
-                    {{attendance.work_type_id}}
-                  </div>
-                  <div class="oh-sticky-table__td">
-                    {{attendance.minimum_hour}}
-                  </div>
-                  <div class="oh-sticky-table__td">
-                    {{attendance.attendance_worked_hour}}
-                  </div>
-                  <div class="oh-sticky-table__td">
-                    {{attendance.hours_pending}}
-                  </div>
-                  <div class="oh-sticky-table__td">
-                    {{attendance.attendance_overtime}}
-                  </div>
-                  <div class="oh-sticky-table__td">{{ attendance.check_in_location|default:"&mdash;" }}</div>
-                  <div class="oh-sticky-table__td">
-                    {% if attendance.check_in_maps %}
-                    <a href="{{ attendance.check_in_maps }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
-                      {% trans "View Map" %}
-                    </a>
-                    {% else %}
-                    <span class="oh-text--light">&mdash;</span>
-                    {% endif %}
-                  </div>
-                  <div class="oh-sticky-table__td">{{ attendance.check_out_location|default:"&mdash;" }}</div>
-                  <div class="oh-sticky-table__td">
-                    {% if attendance.check_out_maps %}
-                    <a href="{{ attendance.check_out_maps }}" target="_blank" rel="noopener noreferrer" class="oh-btn oh-btn--primary-outline oh-btn--sm">
-                      {% trans "View Map" %}
-                    </a>
-                    {% else %}
-                    <span class="oh-text--light">&mdash;</span>
-                    {% endif %}
-                  </div>
-                  <div class="oh-sticky-table__td oh-sticky-table__right">
-                    <div class="oh-btn-group">
-                      {% if perms.attendance.change_attendance or request.user|is_reportingmanager %}
-                      <a
-                        hx-get="{% url 'attendance-update' attendance.id %}"
-                        hx-target="#updateAttendanceModalBody"
-                        hx-swap="innerHTML"
-                        data-toggle="oh-modal-toggle"
-                        data-target="#updateAttendanceModal"
-                        class="oh-btn oh-btn--light-bkg w-100"
-                        title="{% trans 'Edit' %}"
-                        ><ion-icon name="create-outline"></ion-icon
-                      ></a>
-                      {% endif %} {% if perms.attendance.delete_attendance %}
-                      <button
-                        data-id="{{attendance.id}}"
-                        class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100 deletebutton"
-                        title="{% trans 'Remove' %}"
-                      >
-                        <ion-icon name="trash-outline"></ion-icon>
-                      </button>
-                      {% endif %}
-                    </div>
-                  </div>
-                </div>
-                {% endfor %}
-              </div>
-            </div>
-          </div>
-          <div class="oh-pagination">
-            <span class="oh-pagination__page">
-              {% trans "Page" %} {{ attendance_list.list.number }} {% trans "of" %} {{ attendance_list.list.paginator.num_pages }}.
-            </span>
-            <nav class="oh-pagination__nav">
-              <div class="oh-pagination__input-container me-3">
-                <span class="oh-pagination__label me-1">{% trans "Page" %}</span>
-                <input
-                  type="number"
-                  name="{{attendance_list.dynamic_name}}"
-                  class="oh-pagination__input"
-                  value="{{attendance_list.list.number}}"
-                  hx-get="{% url 'attendance-search' %}?{{pd}}"
-                  hx-target="#tab_contents"
-                  min="1"
-                />
-                <span class="oh-pagination__label"
-                  >{% trans "of" %} {{attendance_list.list.paginator.num_pages}}</span
-                >
-              </div>
-              <ul class="oh-pagination__items">
-                {% if attendance_list.list.has_previous %}
-                <li class="oh-pagination__item oh-pagination__item--wide">
-                  <a
-                    hx-target="#tab_contents"
-                    hx-get="{% url 'attendance-search' %}?{{pd}}&{{attendance_list.dynamic_name}}=1"
-                    class="oh-pagination__link"
-                    >{% trans "First" %}</a
-                  >
-                </li>
-                <li class="oh-pagination__item oh-pagination__item--wide">
-                  <a
-                    hx-target="#tab_contents"
-                    hx-get="{% url 'attendance-search' %}?{{pd}}&{{attendance_list.dynamic_name}}={{ attendance_list.list.previous_page_number }}"
-                    class="oh-pagination__link"
-                    >{% trans "Previous" %}</a
-                  >
-                </li>
-                {% endif %} {% if attendance_list.list.has_next %}
-                <li class="oh-pagination__item oh-pagination__item--wide">
-                  <a
-                    hx-target="#tab_contents"
-                    hx-get="{% url 'attendance-search' %}?{{pd}}&{{attendance_list.dynamic_name}}={{ attendance_list.list.next_page_number }}"
-                    class="oh-pagination__link"
-                    >{% trans "Next" %}</a
-                  >
-                </li>
-                <li class="oh-pagination__item oh-pagination__item--wide">
-                  <a
-                    hx-target="#tab_contents"
-                    hx-get="{% url 'attendance-search' %}?{{pd}}&{{attendance_list.dynamic_name}}={{ attendance_list.list.paginator.num_pages }}"
-                    class="oh-pagination__link"
-                    >{% trans "Last" %}</a
-                  >
-                </li>
-                {% endif %}
-              </ul>
-            </nav>
-          </div>
-        </div>
-      </div>
-    </div>
-    {% endfor %}
-    <div class="oh-pagination">
-      <span class="oh-pagination__page">
-        {% trans "Page" %} {{ attendances.number }} {% trans "of" %} {{ attendances.paginator.num_pages }}.
-      </span>
-      <nav class="oh-pagination__nav">
-        <div class="oh-pagination__input-container me-3">
-          <span class="oh-pagination__label me-1">{% trans "Page" %}</span>
-          <input
-            type="number"
-            name="page"
-            class="oh-pagination__input"
-            value="{{attendances.number}}"
-            hx-get="{% url 'attendance-search' %}?{{pd}}"
-            hx-target="#tab_contents"
-            min="1"
-          />
-          <span class="oh-pagination__label"
-            >{% trans "of" %} {{attendances.paginator.num_pages}}</span
-          >
-        </div>
-        <ul class="oh-pagination__items">
-          {% if attendances.has_previous %}
-          <li class="oh-pagination__item oh-pagination__item--wide">
-            <a
-              hx-target="#tab_contents"
-              hx-get="{% url 'attendance-search' %}?{{pd}}&page=1"
-              class="oh-pagination__link"
-              >{% trans "First" %}</a
-            >
-          </li>
-          <li class="oh-pagination__item oh-pagination__item--wide">
-            <a
-              hx-target="#tab_contents"
-              hx-get="{% url 'attendance-search' %}?{{pd}}&page={{ attendances.previous_page_number }}"
-              class="oh-pagination__link"
-              >{% trans "Previous" %}</a
-            >
-          </li>
-          {% endif %} {% if attendances.has_next %}
-          <li class="oh-pagination__item oh-pagination__item--wide">
-            <a
-              hx-target="#tab_contents"
-              hx-get="{% url 'attendance-search' %}?{{pd}}&page={{ attendances.next_page_number }}"
-              class="oh-pagination__link"
-              >{% trans "Next" %}</a
-            >
-          </li>
-          <li class="oh-pagination__item oh-pagination__item--wide">
-            <a
-              hx-target="#tab_contents"
-              hx-get="{% url 'attendance-search' %}?{{pd}}&page={{ attendances.paginator.num_pages }}"
-              class="oh-pagination__link"
-              >{% trans "Last" %}</a
-            >
-          </li>
-          {% endif %}
-        </ul>
-      </nav>
+{% load i18n %} {% load static %} {% include 'filter_tags.html' %}
+<style>
+  .row-status--orange {
+    border-left: 4px solid orange;
+    border-radius: 5px;
+  }
+  .row-status--red {
+    border-left: 4px solid rgb(243, 44, 44);
+    border-radius: 5px;
+  }
+  .row-status--green {
+    border-left: 4px solid rgb(2, 190, 2);
+    border-radius: 5px;
+  }
+  .row-status--blue {
+    border-left: 4px solid rgb(16, 56, 235);
+    border-radius: 5px;
+  }
+  .oh-daily-activity-thumb {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-right: 4px;
+  }
+  .oh-daily-activity-images {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .oh-daily-activity-pair {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 2px 8px;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+</style>
+
+{% if attendances %}
+  {% include "attendance/attendance/daily_attendance_grouped_table.html" with grouped_data=attendances page_param="page" show_checkbox=False show_status=True show_actions=False show_confirmation=False detail_query="my_attendance=true" instances_ids=attendances_ids search_url="own-attendance-filter" sort_param="orderby" hx_target="#attendance-container" %}
+{% else %}
+  <div>
+    <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%;">
+      <img style="width: 150px; height: 150px" src="{% static 'images/ui/no-results.png' %}" class="oh-404__image mb-4" />
+      <h5 class="oh-404__subtitle">{% trans "No search result found!" %}</h5>
     </div>
   </div>
+{% endif %}
+
+<script>
+  function openImageModal(imageUrl, title, mapUrl) {
+    const existing = document.getElementById("selfie-preview-overlay");
+    if (existing) existing.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "selfie-preview-overlay";
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 99999;
+      background: rgba(0,0,0,0.75);
+      display: flex; align-items: center; justify-content: center;
+    `;
+    const mapButton = mapUrl ? `
+      <div style="padding:12px 16px; border-top:1px solid #e5e7eb; text-align:center;">
+        <a href="${mapUrl}" target="_blank" rel="noopener noreferrer"
+          style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; background:#4285f4; color:#fff; border-radius:6px; text-decoration:none; font-size:14px; font-weight:500;">
+          <ion-icon name="map-outline"></ion-icon> View on Map
+        </a>
+      </div>
+    ` : "";
+    overlay.innerHTML = `
+      <div style="background:#fff; border-radius:12px; max-width:90vw; max-height:90vh; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.4); display:flex; flex-direction:column;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #e5e7eb;">
+          <span style="font-weight:600; font-size:15px;">${title}</span>
+          <button onclick="document.getElementById('selfie-preview-overlay').remove()" style="background:none; border:none; cursor:pointer; font-size:22px; line-height:1; color:#6b7280;">&times;</button>
+        </div>
+        <div style="padding:16px; overflow:auto; text-align:center;">
+          <img src="${imageUrl}" alt="${title}" style="max-width:100%; max-height:75vh; border-radius:8px; display:block; margin:auto;" />
+        </div>
+        ${mapButton}
+      </div>
+    `;
+    overlay.addEventListener("click", function (event) {
+      if (event.target === this) this.remove();
+    });
+    document.body.appendChild(overlay);
+  }
+</script>

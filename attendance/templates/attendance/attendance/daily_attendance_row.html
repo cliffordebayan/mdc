@@ -1,0 +1,205 @@
+{% load i18n %}
+{% load basefilters %}
+{% with attendance=row.attendance %}
+<div class="oh-sticky-table__tr" draggable="false" data-toggle="oh-modal-toggle"
+    data-target="#objectDetailsModalW25" hx-target="#objectDetailsModalW25Target"
+    hx-get="{% url 'user-request-one-view' attendance.id %}?{{ detail_query }}{% if detail_query %}&{% endif %}instances_ids={{ instances_ids }}">
+    {% if show_checkbox %}
+        <div class="oh-sticky-table__sd" onclick="event.stopPropagation();">
+            <div class="centered-div">
+                <input type="checkbox" id="{{ attendance.id }}"
+                    class="oh-input attendance-checkbox oh-input__checkbox mt-2 mr-2 {{ checkbox_class }}"
+                    hx-on:click="toggleTableHeaderCheckbox('.{{ checkbox_class }}', '.{{ checkbox_header_class }}'); highlightRow($(this));" />
+            </div>
+        </div>
+        <div class="oh-sticky-table__td">
+    {% else %}
+        <div class="oh-sticky-table__sd{% if show_status %}{% if attendance.is_validate_request_approved %} row-status--blue{% elif attendance.attendance_validated %} row-status--green{% elif attendance.is_validate_request %} row-status--orange{% else %} row-status--red{% endif %}{% endif %}">
+    {% endif %}
+        <div class="oh-profile oh-profile--md">
+            <div class="oh-profile__avatar mr-1">
+                <img src="{{ row.employee.get_avatar }}" class="oh-profile__image" alt="" />
+            </div>
+            <span class="oh-profile__name oh-text--dark">{{ row.employee }}</span>
+        </div>
+    </div>
+    <div data-cell-index="0" class="oh-sticky-table__td">{{ row.employee.employee_no|default:"&mdash;" }}</div>
+    <div data-cell-index="1" class="oh-sticky-table__td">{{ row.employee.employee_work_info.business_unit_id.code|default:"&mdash;" }}</div>
+    <div data-cell-index="2" class="oh-sticky-table__td">{{ row.employee.employee_work_info.branch_id|default:"&mdash;" }}</div>
+    <div data-cell-index="3" class="oh-sticky-table__td">{{ row.employee.employee_work_info.department_id|default:"&mdash;" }}</div>
+    <div data-cell-index="4" class="oh-sticky-table__td">{{ row.employee.employee_work_info.payroll_group_id|default:"&mdash;" }}</div>
+    <div data-cell-index="5" class="oh-sticky-table__td dateformat_changer">{{ row.attendance_date }}</div>
+    <div data-cell-index="6" class="oh-sticky-table__td">
+        <div class="oh-daily-activity-pair">
+            <strong>{% trans "In" %}</strong>
+            {% if row.work_in and row.work_in.clock_in %}
+                <span class="timeformat_changer">{{ row.work_in.clock_in }}</span>
+            {% else %}
+                <span class="oh-text--light">&mdash;</span>
+            {% endif %}
+            <strong>{% trans "Out" %}</strong>
+            {% if row.work_out and row.work_out.clock_out %}
+                <span class="timeformat_changer">{{ row.work_out.clock_out }}</span>
+            {% else %}
+                <span class="oh-text--light">&mdash;</span>
+            {% endif %}
+        </div>
+    </div>
+    <div data-cell-index="7" class="oh-sticky-table__td">
+        {% for segment in row.break_segments %}
+            <div class="oh-daily-activity-pair">
+                <strong>{% trans "In" %}</strong>
+                <span class="timeformat_changer">{{ segment.clock_in }}</span>
+                <strong>{% trans "Out" %}</strong>
+                {% if segment.clock_out %}
+                    <span class="timeformat_changer">{{ segment.clock_out }}</span>
+                {% else %}
+                    <span class="oh-text--light">&mdash;</span>
+                {% endif %}
+            </div>
+        {% empty %}
+            <span class="oh-text--light">&mdash;</span>
+        {% endfor %}
+    </div>
+    <div data-cell-index="8" class="oh-sticky-table__td">
+        {% for segment in row.lunch_segments %}
+            <div class="oh-daily-activity-pair">
+                <strong>{% trans "In" %}</strong>
+                <span class="timeformat_changer">{{ segment.clock_in }}</span>
+                <strong>{% trans "Out" %}</strong>
+                {% if segment.clock_out %}
+                    <span class="timeformat_changer">{{ segment.clock_out }}</span>
+                {% else %}
+                    <span class="oh-text--light">&mdash;</span>
+                {% endif %}
+            </div>
+        {% empty %}
+            <span class="oh-text--light">&mdash;</span>
+        {% endfor %}
+    </div>
+    <div data-cell-index="9" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+        <div class="oh-daily-activity-images">
+            {% for segment in row.work_segments %}
+                {% if segment.clock_in_selfie %}
+                    <img src="{{ segment.clock_in_selfie.url }}" alt="{% trans 'Clock In' %}" title="{% trans 'Clock In' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Clock In Image" %}', '{{ segment.clock_in_map_url|default:"" }}')" />
+                {% endif %}
+                {% if segment.clock_out_selfie %}
+                    <img src="{{ segment.clock_out_selfie.url }}" alt="{% trans 'Clock Out' %}" title="{% trans 'Clock Out' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Clock Out Image" %}', '{{ segment.clock_out_map_url|default:"" }}')" />
+                {% endif %}
+            {% endfor %}
+            {% if not row.has_work_images %}
+                <span class="oh-text--light">&mdash;</span>
+            {% endif %}
+        </div>
+    </div>
+    <div data-cell-index="10" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+        {% for segment in row.break_segments %}
+            <div class="oh-daily-activity-images mb-1">
+                {% if segment.clock_in_selfie %}
+                    <img src="{{ segment.clock_in_selfie.url }}" alt="{% trans 'Break In' %}" title="{% trans 'Break In' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Break In Image" %}', '{{ segment.clock_in_map_url|default:"" }}')" />
+                {% endif %}
+                {% if segment.clock_out_selfie %}
+                    <img src="{{ segment.clock_out_selfie.url }}" alt="{% trans 'Break Out' %}" title="{% trans 'Break Out' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Break Out Image" %}', '{{ segment.clock_out_map_url|default:"" }}')" />
+                {% endif %}
+                {% if not segment.clock_in_selfie and not segment.clock_out_selfie %}
+                    <span class="oh-text--light">&mdash;</span>
+                {% endif %}
+            </div>
+        {% empty %}
+            <span class="oh-text--light">&mdash;</span>
+        {% endfor %}
+    </div>
+    <div data-cell-index="11" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+        {% for segment in row.lunch_segments %}
+            <div class="oh-daily-activity-images mb-1">
+                {% if segment.clock_in_selfie %}
+                    <img src="{{ segment.clock_in_selfie.url }}" alt="{% trans 'Lunch In' %}" title="{% trans 'Lunch In' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Lunch In Image" %}', '{{ segment.clock_in_map_url|default:"" }}')" />
+                {% endif %}
+                {% if segment.clock_out_selfie %}
+                    <img src="{{ segment.clock_out_selfie.url }}" alt="{% trans 'Lunch Out' %}" title="{% trans 'Lunch Out' %}"
+                        class="oh-daily-activity-thumb" onclick="openImageModal(this.src, '{% trans "Lunch Out Image" %}', '{{ segment.clock_out_map_url|default:"" }}')" />
+                {% endif %}
+                {% if not segment.clock_in_selfie and not segment.clock_out_selfie %}
+                    <span class="oh-text--light">&mdash;</span>
+                {% endif %}
+            </div>
+        {% empty %}
+            <span class="oh-text--light">&mdash;</span>
+        {% endfor %}
+    </div>
+    <div data-cell-index="12" class="oh-sticky-table__td">{{ row.shift|default:"&mdash;" }}</div>
+    <div data-cell-index="13" class="oh-sticky-table__td">{{ row.late_come_duration|default:"&mdash;" }}</div>
+    <div data-cell-index="14" class="oh-sticky-table__td">{{ row.early_out_duration|default:"&mdash;" }}</div>
+    <div data-cell-index="15" class="oh-sticky-table__td">{{ row.work_hours|default:"&mdash;" }}</div>
+    <div data-cell-index="16" class="oh-sticky-table__td">{{ row.break_hours|default:"&mdash;" }}</div>
+    <div data-cell-index="17" class="oh-sticky-table__td">{{ row.lunch_hours|default:"&mdash;" }}</div>
+    <div data-cell-index="18" class="oh-sticky-table__td">{{ row.overtime|default:"&mdash;" }}</div>
+    <div data-cell-index="19" class="oh-sticky-table__td">{{ row.leave|default:"&mdash;" }}</div>
+    <div data-cell-index="20" class="oh-sticky-table__td">{{ row.holiday|default:"&mdash;" }}</div>
+    {% if show_actions %}
+        <div class="oh-sticky-table__td{% if not show_confirmation %} oh-sticky-table__right{% endif %}">
+            <div class="oh-btn-group">
+                {% if perms.attendance.change_attendance or request.user|is_reportingmanager %}
+                    <a hx-get="{% url 'attendance-update' attendance.id %}" onclick="event.stopPropagation()"
+                        hx-target="#updateAttendanceModalBody" hx-swap="innerHTML"
+                        data-toggle="oh-modal-toggle" data-target="#updateAttendanceModal"
+                        class="oh-btn oh-btn--light-bkg w-50" title="{% trans 'Edit' %}">
+                        <ion-icon name="create-outline"></ion-icon>
+                    </a>
+                {% endif %}
+                {% if perms.attendance.delete_attendance or request.user|is_reportingmanager %}
+                    <form action="{% url 'attendance-delete' attendance.id %}" onclick="event.stopPropagation()"
+                        onsubmit="return confirm('{% trans "Are you sure want to delete this attendance?" %}')"
+                        method="post" class="w-50">
+                        {% csrf_token %}
+                        <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100"
+                            title="{% trans 'Remove' %}">
+                            <ion-icon name="trash-outline"></ion-icon>
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+    {% if confirmation_type == "validate" %}
+        <div class="oh-sticky-table__td oh-sticky-table__right" onclick="event.stopPropagation()">
+            {% if request.user|is_reportingmanager or perms.attendance.change_attendance %}
+                <a href="{% url 'validate-this-attendance' attendance.id %}" hx-target="#updateAttendanceBody"
+                    data-req="/attendance/request-attendance-view/?id={{ attendance.id }}"
+                    onclick="{% if attendance.is_validate_request %}event.preventDefault(); showSweetAlert($(this).data('req'));{% endif %}"
+                    class="oh-btn oh-btn--info">
+                    {% trans "Validate" %}
+                </a>
+            {% endif %}
+        </div>
+    {% elif confirmation_type == "overtime" %}
+        <div class="oh-sticky-table__td oh-sticky-table__right" onclick="event.stopPropagation()">
+            {% if attendance.attendance_overtime_approve %}
+                <a type="submit" href="#" title="{% trans 'Approved' %}" class="oh-btn oh-btn--success oh-btn--disabled w-100">
+                    <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
+                </a>
+            {% elif minot <= attendance.overtime_second %}
+                <a type="submit" href="{% url 'approve-overtime' attendance.id %}" title="{% trans 'Approve Overtime' %}"
+                    class="oh-btn oh-btn--success w-100">
+                    <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
+                </a>
+            {% elif attendance.overtime_second >= 60 %}
+                <a type="submit" href="#" title="{% trans 'Approve' %}" class="oh-btn oh-btn--warning w-100"
+                    onclick="Swal.fire({title: '{% trans 'Are you sure?' %}', text: '{% trans 'This does not satisfy the minimum OT requirement!' %}', icon: 'warning', showCancelButton: true, confirmButtonColor: '#3085d6', cancelButtonColor: '#d33', confirmButtonText: 'Approve', cancelButtonText: 'Cancel'}).then((result) => { if (result.isConfirmed) { $('[data-ot-approve-id={{ attendance.id }}]').click(); } });">
+                    <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
+                </a>
+                <button type="submit" data-ot-approve-id="{{ attendance.id }}" hidden
+                    onclick="window.location.href='{% url 'approve-overtime' attendance.id %}'"
+                    title="{% trans 'Approve Overtime' %}" class="oh-btn oh-btn--success w-100">
+                    <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
+                </button>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+{% endwith %}

@@ -16,72 +16,56 @@
     border-left: 4px solid rgb(16, 56, 235);
     border-radius: 5px;
   }
+  .oh-daily-activity-thumb {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-right: 4px;
+  }
+  .oh-daily-activity-images {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .oh-daily-activity-pair {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 2px 8px;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
 </style>
 
 {% if attendances %}
-
   <div class="d-flex flex-row-reverse mb-2">
-    <span
-      class="me-3"
-      style="cursor: pointer"
-      hx-get='{% url "filter-own-attendance" %}?is_validate_request_approved=true'
-      hx-swap="innerHTML"
-      hx-target="#attendance-container"
-    >
-      <span
-        class="oh-dot oh-dot--small me-1"
-        style="background-color: blue"
-      ></span>
+    <span class="me-3" style="cursor: pointer" hx-get='{% url "filter-own-attendance" %}?is_validate_request_approved=true' hx-swap="innerHTML" hx-target="#attendance-container">
+      <span class="oh-dot oh-dot--small me-1" style="background-color: blue"></span>
       {% trans "Approved request" %}
     </span>
-    <span
-      class="me-3"
-      style="cursor: pointer"
-      hx-get='{% url "filter-own-attendance" %}?is_validate_request=true'
-      hx-swap="innerHTML"
-      hx-target="#attendance-container"
-    >
-      <span
-        class="oh-dot oh-dot--smallui-avatars.com me-1"
-        style="background-color: orange"
-      ></span>
+    <span class="me-3" style="cursor: pointer" hx-get='{% url "filter-own-attendance" %}?is_validate_request=true' hx-swap="innerHTML" hx-target="#attendance-container">
+      <span class="oh-dot oh-dot--smallui-avatars.com me-1" style="background-color: orange"></span>
       {% trans "Requested" %}
     </span>
-    <span
-      class="me-3"
-      style="cursor: pointer"
-      hx-get='{% url "filter-own-attendance" %}?attendance_validated=false'
-      hx-swap="innerHTML"
-      hx-target="#attendance-container"
-    >
-      <span
-        class="oh-dot oh-dot--small me-1"
-        style="background-color: red"
-      ></span>
+    <span class="me-3" style="cursor: pointer" hx-get='{% url "filter-own-attendance" %}?attendance_validated=false' hx-swap="innerHTML" hx-target="#attendance-container">
+      <span class="oh-dot oh-dot--small me-1" style="background-color: red"></span>
       {% trans "Not validated" %}
     </span>
-    <span
-      class="me-3"
-      style="cursor: pointer"
-      hx-get='{% url "filter-own-attendance" %}?attendance_validated=true'
-      hx-swap="innerHTML"
-      hx-target="#attendance-container"
-    >
-      <span
-        class="oh-dot oh-dot--small me-1"
-        style="background-color: green"
-      ></span>
+    <span class="me-3" style="cursor: pointer" hx-get='{% url "filter-own-attendance" %}?attendance_validated=true' hx-swap="innerHTML" hx-target="#attendance-container">
+      <span class="oh-dot oh-dot--small me-1" style="background-color: green"></span>
       {% trans "Validated" %}
     </span>
   </div>
   <div class="oh-table_sticky--wrapper">
     <div class="oh-sticky-dropdown--header">
       <div class="oh-dropdown" x-data="{open: false}">
-        <button class="oh-sticky-dropdown_btn " @click="open = !open"><ion-icon name="ellipsis-vertical-sharp"
-          role="img" class="md hydrated" aria-label="ellipsis vertical sharp"></ion-icon></button>
+        <button class="oh-sticky-dropdown_btn" @click="open = !open">
+          <ion-icon name="ellipsis-vertical-sharp" role="img" class="md hydrated" aria-label="ellipsis vertical sharp"></ion-icon>
+        </button>
         <div class="oh-dropdown__menu oh-sticky-table_dropdown" x-show="open" @click.outside="open = false">
-        <ul class="oh-dropdown__items" id="MyAttendanceCells">
-        </ul>
+          <ul class="oh-dropdown__items" id="MyAttendanceCells"></ul>
         </div>
       </div>
     </div>
@@ -89,288 +73,10 @@
   <div id="my-attendance-table" data-table-name="my_attendance_tab_v2">
     <div class="oh-sticky-table">
       <div class="oh-sticky-table__table oh-table--sortable">
-        <div class="oh-sticky-table__thead">
-          <div class="oh-sticky-table__tr">
-            <div
-              class="oh-sticky-table__th {% if request.sort_option.order == '-employee_id__employee_first_name' %}arrow-up {% elif request.sort_option.order == 'employee_id__employee_first_name' %}arrow-down {% else %} arrow-up-down {% endif %}"
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=employee_id__employee_first_name"
-            >
-              {% trans "Employee" %}
-            </div>
-            <div
-              class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_date' %}arrow-up {% elif request.sort_option.order == 'attendance_date' %}arrow-down {% else %} arrow-up-down {% endif %}"
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=attendance_date"
-            >
-              {% trans "Attendance Date" %}
-            </div>
-            <div
-              data-cell-index="0" data-cell-title='{% trans "Branch" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Branch" %}
-            </div>
-            <div
-              data-cell-index="1" data-cell-title='{% trans "Department" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Department" %}
-            </div>
-            <div
-              data-cell-index="2" data-cell-title='{% trans "Day" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Day" %}
-            </div>
-            <div
-              data-cell-index="3" data-cell-title='{% trans "In Date" %}'
-              class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_clock_in_date' %}arrow-up {% elif request.sort_option.order == 'attendance_clock_in_date' %}arrow-down {% else %} arrow-up-down {% endif %}"
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=attendance_clock_in_date"
-            >
-              {% trans "In Date" %}
-            </div>
-            <div
-              data-cell-index="4" data-cell-title='{% trans "Check-In" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Check-In" %}
-            </div>
-            <div
-              data-cell-index="5" data-cell-title='{% trans "Check-In Image" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Check-In Image" %}
-            </div>
-            <div
-              data-cell-index="6" data-cell-title='{% trans "Out Date" %}'
-              class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_clock_out_date' %}arrow-up {% elif request.sort_option.order == 'attendance_clock_out_date' %}arrow-down {% else %} arrow-up-down {% endif %}"
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=attendance_clock_out_date"
-            >
-              {% trans "Out Date" %}
-            </div>
-            <div
-              data-cell-index="7" data-cell-title='{% trans "Check-Out" %}'
-              class="oh-sticky-table__th {% if request.sort_option.order == '-attendance_clock_out' %}arrow-up {% elif request.sort_option.order == 'attendance_clock_out' %}arrow-down {% else %} arrow-up-down {% endif %}"
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=attendance_clock_out"
-            >
-              {% trans "Check-Out" %}
-            </div>
-            <div
-              data-cell-index="8" data-cell-title='{% trans "Check-Out Image" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Check-Out Image" %}
-            </div>
-            <div
-              data-cell-index="9" data-cell-title='{% trans "Shift" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Shift" %}
-            </div>
-            <div
-              data-cell-index="10" data-cell-title='{% trans "Work Type" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Work Type" %}
-            </div>
-            <div
-              data-cell-index="11" data-cell-title='{% trans "Min Hour" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Min Hour" %}
-            </div>
-            <div
-              data-cell-index="12" data-cell-title='{% trans "Work Hours" %}'
-              class="oh-sticky-table__th {% if request.sort_option.order == '-at_work_second' %}arrow-up {% elif request.sort_option.order == 'at_work_second' %}arrow-down {% else %} arrow-up-down {% endif %}"
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=at_work_second"
-            >
-              {% trans "Work Hours" %}
-            </div>
-            <div
-              data-cell-index="13" data-cell-title='{% trans "Pending Hour" %}' class="oh-sticky-table__th"
-              >
-              {% trans "Pending Hour" %}
-            </div>
-            <div
-              data-cell-index="14" data-cell-title='{% trans "Overtime" %}'
-              class="oh-sticky-table__th {% if request.sort_option.order == '-overtime_second' %}arrow-up {% elif request.sort_option.order == 'overtime_second' %}arrow-down {% else %} arrow-up-down {% endif %}"
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&orderby=overtime_second"
-            >
-              {% trans "Overtime" %}
-            </div>
-            <div
-              data-cell-index="15" data-cell-title='{% trans "Check In Location" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Check In Location" %}
-            </div>
-            <div
-              data-cell-index="16" data-cell-title='{% trans "Check In Map" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Check In Map" %}
-            </div>
-            <div
-              data-cell-index="17" data-cell-title='{% trans "Check Out Location" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Check Out Location" %}
-            </div>
-            <div
-              data-cell-index="18" data-cell-title='{% trans "Check Out Map" %}'
-              class="oh-sticky-table__th"
-            >
-              {% trans "Check Out Map" %}
-            </div>
-          </div>
-        </div>
+        {% include "attendance/attendance/daily_attendance_headers.html" with show_checkbox=False show_actions=False show_confirmation=False search_url="own-attendance-filter" sort_param="orderby" hx_target="#attendance-container" %}
         <div class="oh-sticky-table__tbody">
-          {% for attendance in attendances %}
-          <div
-            class="oh-sticky-table__tr"
-            draggable="false"
-            data-toggle="oh-modal-toggle"
-            data-target="#objectDetailsModalW25"
-            hx-target="#objectDetailsModalW25Target"
-            hx-get="{% url 'user-request-one-view' attendance.id %}?my_attendance=true&instances_ids={{attendances_ids}}"
-          >
-            <div
-              class="oh-sticky-table__sd{% if attendance.is_validate_request_approved %} row-status--blue {% elif attendance.attendance_validated %} row-status--green {% elif attendance.is_validate_request %} row-status--orange {% else %} row-status--red{% endif %}"
-            >
-              <div class="oh-profile oh-profile--md">
-                <div class="oh-profile__avatar mr-1">
-                  <img
-                    src="{{attendance.employee_id.get_avatar}}"
-                    class="oh-profile__image"
-                    alt="Mary Magdalene"
-                  />
-                </div>
-                <span class="oh-profile__name oh-text--dark"
-                  >{{attendance.employee_id}}</span
-                >
-              </div>
-            </div>
-            <div class="oh-sticky-table__td dateformat_changer">{{attendance.attendance_date}}</div>
-            <div data-cell-index="0" class="oh-sticky-table__td">
-              {{ attendance.employee_id.employee_work_info.branch_id|default:"—" }}
-            </div>
-            <div data-cell-index="1" class="oh-sticky-table__td">
-              {{ attendance.employee_id.employee_work_info.department_id|default:"—" }}
-            </div>
-            <div data-cell-index="2" class="oh-sticky-table__td">
-              {{attendance.attendance_day|capfirst}}
-            </div>
-            <div data-cell-index="3" class="oh-sticky-table__td dateformat_changer">
-              {{attendance.attendance_clock_in_date}}
-            </div>
-            <div data-cell-index="4" class="oh-sticky-table__td timeformat_changer">
-              {{attendance.attendance_clock_in}}
-            </div>
-            <div data-cell-index="5" class="oh-sticky-table__td" onclick="event.stopPropagation();">
-              {% if attendance.activity_meta.check_in_image_url %}
-                <img
-                  src="{{ attendance.activity_meta.check_in_image_url }}"
-                  alt="Check In"
-                  style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;"
-                  onclick="openImageModal('{{ attendance.activity_meta.check_in_image_url }}', 'Check In Selfie')"
-                />
-              {% else %}
-                <span class="oh-text--light">&mdash;</span>
-              {% endif %}
-            </div>
-            <div data-cell-index="6" class="oh-sticky-table__td dateformat_changer">
-              {{attendance.attendance_clock_out_date}}
-            </div>
-            <div data-cell-index="7" class="oh-sticky-table__td timeformat_changer">
-              {{attendance.attendance_clock_out}}
-            </div>
-            <div data-cell-index="8" class="oh-sticky-table__td" onclick="event.stopPropagation();">
-              {% if attendance.activity_meta.check_out_image_url %}
-                <img
-                  src="{{ attendance.activity_meta.check_out_image_url }}"
-                  alt="Check Out"
-                  style="width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer;"
-                  onclick="openImageModal('{{ attendance.activity_meta.check_out_image_url }}', 'Check Out Selfie')"
-                />
-              {% else %}
-                <span class="oh-text--light">&mdash;</span>
-              {% endif %}
-            </div>
-            <div data-cell-index="9" class="oh-sticky-table__td">{{attendance.shift_id|default:"—"}}</div>
-            <div data-cell-index="10" class="oh-sticky-table__td">{{attendance.work_type_id|default:"—"}}</div>
-            <div data-cell-index="11" class="oh-sticky-table__td">{{attendance.minimum_hour|default:"—"}}</div>
-            <div data-cell-index="12" class="oh-sticky-table__td">
-              {{attendance.attendance_worked_hour}}
-            </div>
-            <div data-cell-index="13" class="oh-sticky-table__td">{{ attendance.hours_pending }}</div>
-            <div data-cell-index="14" class="oh-sticky-table__td">
-              {{attendance.attendance_overtime}}
-            </div>
-            <div data-cell-index="15" class="oh-sticky-table__td">
-              {% if attendance.activity_meta.check_in_location %}
-                <span
-                  title="{{ attendance.activity_meta.check_in_location }}"
-                  style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
-                >
-                  <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
-                  {{ attendance.activity_meta.check_in_location }}
-                </span>
-              {% else %}
-                <span class="oh-text--light">&mdash;</span>
-              {% endif %}
-            </div>
-            <div data-cell-index="16" class="oh-sticky-table__td" onclick="event.stopPropagation();">
-              {% if attendance.activity_meta.check_in_maps_url %}
-                <a
-                  href="{{ attendance.activity_meta.check_in_maps_url }}"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="oh-btn oh-btn--primary-outline oh-btn--sm"
-                  style="font-size: 11px; white-space: nowrap;"
-                >
-                  <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
-                  {% trans "View Map" %}
-                </a>
-              {% else %}
-                <span class="oh-text--light">&mdash;</span>
-              {% endif %}
-            </div>
-            <div data-cell-index="17" class="oh-sticky-table__td">
-              {% if attendance.activity_meta.check_out_location %}
-                <span
-                  title="{{ attendance.activity_meta.check_out_location }}"
-                  style="font-size:11px; display:block; max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"
-                >
-                  <ion-icon name="location-outline" style="vertical-align:middle;"></ion-icon>
-                  {{ attendance.activity_meta.check_out_location }}
-                </span>
-              {% else %}
-                <span class="oh-text--light">&mdash;</span>
-              {% endif %}
-            </div>
-            <div data-cell-index="18" class="oh-sticky-table__td" onclick="event.stopPropagation();">
-              {% if attendance.activity_meta.check_out_maps_url %}
-                <a
-                  href="{{ attendance.activity_meta.check_out_maps_url }}"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="oh-btn oh-btn--primary-outline oh-btn--sm"
-                  style="font-size: 11px; white-space: nowrap;"
-                >
-                  <ion-icon name="map-outline" style="vertical-align: middle;"></ion-icon>
-                  {% trans "View Map" %}
-                </a>
-              {% else %}
-                <span class="oh-text--light">&mdash;</span>
-              {% endif %}
-            </div>
-          </div>
+          {% for row in attendance_rows %}
+            {% include "attendance/attendance/daily_attendance_row.html" with show_checkbox=False show_status=True show_actions=False show_confirmation=False detail_query="my_attendance=true" instances_ids=attendances_ids %}
           {% endfor %}
         </div>
       </div>
@@ -383,78 +89,42 @@
       <nav class="oh-pagination__nav">
         <div class="oh-pagination__input-container me-3">
           <span class="oh-pagination__label me-1">{% trans "Page" %}</span>
-          <input
-            type="number"
-            name="page"
-            class="oh-pagination__input"
-            value="{{attendances.number}}"
-            hx-get="{% url 'own-attendance-filter' %}?{{pd}}"
-            hx-target="#attendance-container"
-            min="1"
-          />
-          <span class="oh-pagination__label"
-            >{% trans "of" %} {{attendances.paginator.num_pages}}</span
-          >
+          <input type="number" name="page" class="oh-pagination__input" value="{{attendances.number}}"
+            hx-get="{% url 'own-attendance-filter' %}?{{pd}}" hx-target="#attendance-container" min="1" />
+          <span class="oh-pagination__label">{% trans "of" %} {{attendances.paginator.num_pages}}</span>
         </div>
         <ul class="oh-pagination__items">
           {% if attendances.has_previous %}
-          <li class="oh-pagination__item oh-pagination__item--wide">
-            <a
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&page=1"
-              class="oh-pagination__link"
-              >{% trans "First" %}</a
-            >
-          </li>
-          <li class="oh-pagination__item oh-pagination__item--wide">
-            <a
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&page={{ attendances.previous_page_number }}"
-              class="oh-pagination__link"
-              >{% trans "Previous" %}</a
-            >
-          </li>
-          {% endif %} {% if attendances.has_next %}
-          <li class="oh-pagination__item oh-pagination__item--wide">
-            <a
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&page={{ attendances.next_page_number }}"
-              class="oh-pagination__link"
-              >{% trans "Next" %}</a
-            >
-          </li>
-          <li class="oh-pagination__item oh-pagination__item--wide">
-            <a
-              hx-target="#attendance-container"
-              hx-get="{% url 'own-attendance-filter' %}?{{pd}}&page={{ attendances.paginator.num_pages }}"
-              class="oh-pagination__link"
-              >{% trans "Last" %}</a
-            >
-          </li>
+            <li class="oh-pagination__item oh-pagination__item--wide">
+              <a hx-target="#attendance-container" hx-get="{% url 'own-attendance-filter' %}?{{pd}}&page=1" class="oh-pagination__link">{% trans "First" %}</a>
+            </li>
+            <li class="oh-pagination__item oh-pagination__item--wide">
+              <a hx-target="#attendance-container" hx-get="{% url 'own-attendance-filter' %}?{{pd}}&page={{ attendances.previous_page_number }}" class="oh-pagination__link">{% trans "Previous" %}</a>
+            </li>
+          {% endif %}
+          {% if attendances.has_next %}
+            <li class="oh-pagination__item oh-pagination__item--wide">
+              <a hx-target="#attendance-container" hx-get="{% url 'own-attendance-filter' %}?{{pd}}&page={{ attendances.next_page_number }}" class="oh-pagination__link">{% trans "Next" %}</a>
+            </li>
+            <li class="oh-pagination__item oh-pagination__item--wide">
+              <a hx-target="#attendance-container" hx-get="{% url 'own-attendance-filter' %}?{{pd}}&page={{ attendances.paginator.num_pages }}" class="oh-pagination__link">{% trans "Last" %}</a>
+            </li>
           {% endif %}
         </ul>
       </nav>
     </div>
   </div>
 {% else %}
-  <!-- start of empty page -->
   <div>
-    <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%;" >
-      <img
-      style="width: 150px; height: 150px"
-      src="{% static 'images/ui/no-results.png' %}"
-      class="oh-404__image mb-4"
-      />
-      <h5 class="oh-404__subtitle">
-      {% trans "No search result found!" %}
-      </h5>
+    <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%;">
+      <img style="width: 150px; height: 150px" src="{% static 'images/ui/no-results.png' %}" class="oh-404__image mb-4" />
+      <h5 class="oh-404__subtitle">{% trans "No search result found!" %}</h5>
     </div>
   </div>
-  <!-- end of empty page -->
 {% endif %}
 
 <script>
-  function openImageModal(imageUrl, title) {
+  function openImageModal(imageUrl, title, mapUrl) {
     const existing = document.getElementById("selfie-preview-overlay");
     if (existing) existing.remove();
 
@@ -465,6 +135,14 @@
       background: rgba(0,0,0,0.75);
       display: flex; align-items: center; justify-content: center;
     `;
+    const mapButton = mapUrl ? `
+      <div style="padding:12px 16px; border-top:1px solid #e5e7eb; text-align:center;">
+        <a href="${mapUrl}" target="_blank" rel="noopener noreferrer"
+          style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; background:#4285f4; color:#fff; border-radius:6px; text-decoration:none; font-size:14px; font-weight:500;">
+          <ion-icon name="map-outline"></ion-icon> View on Map
+        </a>
+      </div>
+    ` : "";
     overlay.innerHTML = `
       <div style="background:#fff; border-radius:12px; max-width:90vw; max-height:90vh; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.4); display:flex; flex-direction:column;">
         <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #e5e7eb;">
@@ -474,6 +152,7 @@
         <div style="padding:16px; overflow:auto; text-align:center;">
           <img src="${imageUrl}" alt="${title}" style="max-width:100%; max-height:75vh; border-radius:8px; display:block; margin:auto;" />
         </div>
+        ${mapButton}
       </div>
     `;
     overlay.addEventListener("click", function (event) {
@@ -482,11 +161,10 @@
     document.body.appendChild(overlay);
   }
 
-  // toggle columns //
-  toggleColumns("my-attendance-table","MyAttendanceCells")
-  localStorageMyAttendanceCells = localStorage.getItem("my_attendance_tab_v2")
+  toggleColumns("my-attendance-table", "MyAttendanceCells");
+  localStorageMyAttendanceCells = localStorage.getItem("my_attendance_tab_v2");
   if (!localStorageMyAttendanceCells) {
-    $("#MyAttendanceCells").find("[type=checkbox]").prop("checked",true)
+    $("#MyAttendanceCells").find("[type=checkbox]").prop("checked", true);
   }
-  $("[type=checkbox]").change()
+  $("[type=checkbox]").change();
 </script>
