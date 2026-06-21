@@ -1081,6 +1081,7 @@
         }
 
         #retry-location-btn,
+        #reload-location-btn,
         #location-coordinates {
             display: none !important;
         }
@@ -1983,6 +1984,11 @@
                                     id="retry-location-btn" style="display:none;">
                                     {% trans "Retry" %}
                                 </button>
+                                <button type="button" class="oh-btn oh-btn--xsm oh-btn--secondary"
+                                    id="reload-location-btn" style="display:none;"
+                                    onclick="window.location.reload()">
+                                    {% trans "Reload Page" %}
+                                </button>
                                 <small id="location-coordinates" style="display:none;"></small>
 
                                 <!-- Clock In / Out buttons -->
@@ -2247,7 +2253,6 @@
 
         // Initialize
         $(document).ready(function () {
-            initializeLocationCapture();
             setupEventListeners();
             startLiveClock();
             updatePinUi();
@@ -2304,66 +2309,87 @@
             if (navigator.geolocation) {
                 setPortalLocationText('{% trans "Getting location..." %}');
                 setPortalCoordinatesText(null, null);
+                $('#reload-location-btn').hide();
 
-                const options = {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 0
-                };
+                function onSuccess(position) {
+                    latitude = position.coords.latitude;
+                    longitude = position.coords.longitude;
+                    locationAccuracy = Math.round(position.coords.accuracy);
+                    setPortalCoordinatesText(latitude, longitude);
 
-                navigator.geolocation.getCurrentPosition(
-                    function (position) {
-                        latitude = position.coords.latitude;
-                        longitude = position.coords.longitude;
-                        locationAccuracy = Math.round(position.coords.accuracy);
-                        setPortalCoordinatesText(latitude, longitude);
+                    // Show loading while getting address
+                    setPortalLocationText('{% trans "Getting address..." %}');
+                    $('#location-coordinates').text('');
+                    $('#retry-location-btn').hide();
+                    $('#reload-location-btn').hide();
+                    $('#location-status').removeClass('warning').addClass('success');
+                    updateFaceGatedButtons();
+                    initClockPreviewMap();
 
-                        // Show loading while getting address
-                        setPortalLocationText('{% trans "Getting address..." %}');
-                        $('#location-coordinates').text('');
-                        $('#retry-location-btn').hide();
-                        $('#location-status').removeClass('warning').addClass('success');
-                        updateFaceGatedButtons();
-                        initClockPreviewMap();
+                    // Get address immediately and display it
+                    geocodingPromise = reverseGeocode(latitude, longitude).then(function (address) {
+                        capturedAddress = address;
+                        setPortalLocationText(address);
+                        console.info(`Location address: ${address}`);
+                        return address;
+                    });
 
-                        // Get address immediately and display it
-                        geocodingPromise = reverseGeocode(latitude, longitude).then(function (address) {
-                            capturedAddress = address;
-                            setPortalLocationText(address);
-                            console.info(`Location address: ${address}`);
-                            return address;
+                    console.info(`Location captured: ${latitude}, ${longitude}, accuracy: ${locationAccuracy}m`);
+                }
+
+                function onFinalError(error) {
+                    let errorMsg = '{% trans "Location unavailable" %}';
+                    let showReload = false;
+
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMsg = '{% trans "Location permission denied. Enable location for this site in Settings, then reload this page." %}';
+                            showReload = true;
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMsg = '{% trans "Location position unavailable" %}';
+                            break;
+                        case error.TIMEOUT:
+                            errorMsg = '{% trans "Location request timeout" %}';
+                            break;
+                    }
+
+                    latitude = null;
+                    longitude = null;
+                    setPortalLocationText(errorMsg);
+                    setPortalCoordinatesText(null, null);
+                    $('#location-coordinates').text('');
+                    $('#retry-location-btn').show();
+                    if (showReload) {
+                        $('#reload-location-btn').show();
+                    }
+                    $('#location-status').removeClass('success').addClass('warning');
+                    disableClockButtons();
+
+                    console.warn('Geolocation error:', error);
+                }
+
+                function onError(error) {
+                    // Safari on iOS returns PERMISSION_DENIED for high-accuracy requests
+                    // even when the user has granted permission. Retry with low accuracy
+                    // (WiFi/Cell) as a fallback before giving up.
+                    if (error.code === error.PERMISSION_DENIED) {
+                        console.info('High-accuracy location denied, retrying with low accuracy (Safari fallback)...');
+                        navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
+                            enableHighAccuracy: false,
+                            timeout: 15000,
+                            maximumAge: 30000
                         });
+                        return;
+                    }
+                    onFinalError(error);
+                }
 
-                        console.info(`Location captured: ${latitude}, ${longitude}, accuracy: ${locationAccuracy}m`);
-                    },
-                    function (error) {
-                        let errorMsg = '{% trans "Location unavailable" %}';
-
-                        switch (error.code) {
-                            case error.PERMISSION_DENIED:
-                                errorMsg = '{% trans "Location permission denied. Please enable location in browser settings." %}';
-                                break;
-                            case error.POSITION_UNAVAILABLE:
-                                errorMsg = '{% trans "Location position unavailable" %}';
-                                break;
-                            case error.TIMEOUT:
-                                errorMsg = '{% trans "Location request timeout" %}';
-                                break;
-                        }
-
-                        latitude = null;
-                        longitude = null;
-                        setPortalLocationText(errorMsg);
-                        setPortalCoordinatesText(null, null);
-                        $('#location-coordinates').text('');
-                        $('#retry-location-btn').show();
-                        $('#location-status').removeClass('success').addClass('warning');
-                        disableClockButtons();
-
-                        console.warn('Geolocation error:', error);
-                    },
-                    options
-                );
+                navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+                    enableHighAccuracy: true,
+                    timeout: 15000,
+                    maximumAge: 0
+                });
             } else {
                 latitude = null;
                 longitude = null;
