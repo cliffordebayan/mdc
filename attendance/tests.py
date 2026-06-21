@@ -127,6 +127,7 @@ class ClockOutAttendanceAndActivityTests(SimpleTestCase):
         self.assertEqual(result, ctx["attendance"])
         attendance_validate_mock.assert_called_once_with(ctx["attendance"])
         self.assertTrue(ctx["attendance"].attendance_validated)
+        self.assertFalse(ctx["attendance"]._skip_auto_approve_overtime)
 
     @patch("attendance.views.clock_in_out.attendance_validate")
     @patch("attendance.views.clock_in_out.overtime_calculation", return_value="00:00")
@@ -156,6 +157,72 @@ class ClockOutAttendanceAndActivityTests(SimpleTestCase):
         self.assertEqual(result, ctx["attendance"])
         attendance_validate_mock.assert_not_called()
         self.assertFalse(ctx["attendance"].attendance_validated)
+        self.assertFalse(ctx["attendance"]._skip_auto_approve_overtime)
+
+    @patch("attendance.views.clock_in_out.attendance_validate", return_value=True)
+    @patch("attendance.views.clock_in_out.overtime_calculation", return_value="01:00")
+    @patch("attendance.views.clock_in_out.calculate_worked_hours", return_value="09:00")
+    @patch("attendance.views.clock_in_out.Attendance")
+    @patch("attendance.views.clock_in_out.AttendanceActivity")
+    def test_clock_out_can_skip_overtime_auto_approval(
+        self,
+        attendance_activity_model,
+        attendance_model,
+        _calculate_worked_hours_mock,
+        _overtime_mock,
+        _attendance_validate_mock,
+    ):
+        ctx = self._setup_clock_out_mocks()
+        attendance_activity_model.objects.filter.return_value.order_by.return_value = ctx["activities_qs"]
+        attendance_model.objects.filter.return_value = ctx["attendance_qs"]
+
+        result = clock_out_attendance_and_activity(
+            employee=ctx["employee"],
+            date_today=ctx["today"],
+            now="17:00",
+            out_datetime=ctx["out_dt"],
+            auto_validate=True,
+            auto_approve_overtime=False,
+        )
+
+        self.assertEqual(result, ctx["attendance"])
+        self.assertTrue(ctx["attendance"].attendance_validated)
+        self.assertTrue(ctx["attendance"]._skip_auto_approve_overtime)
+
+
+class AttendanceOvertimeAutoApprovalTests(SimpleTestCase):
+    def _attendance_with_overtime(self):
+        attendance = Attendance()
+        attendance.is_validate_request = False
+        attendance.overtime_second = attendance_utils.strtime_seconds("01:00")
+        attendance.attendance_overtime_approve = False
+        return attendance
+
+    def _auto_approval_condition(self):
+        return SimpleNamespace(
+            auto_approve_ot=True,
+            minimum_overtime_to_approve="00:30",
+            overtime_cutoff=None,
+        )
+
+    @patch("attendance.models.AttendanceValidationCondition.objects.first")
+    def test_overtime_auto_approval_runs_by_default(self, condition_mock):
+        attendance = self._attendance_with_overtime()
+        condition_mock.return_value = self._auto_approval_condition()
+
+        attendance.handle_overtime_conditions()
+
+        self.assertTrue(attendance.attendance_overtime_approve)
+
+    @patch("attendance.models.AttendanceValidationCondition.objects.first")
+    def test_overtime_auto_approval_can_be_skipped_per_save(self, condition_mock):
+        attendance = self._attendance_with_overtime()
+        attendance._skip_auto_approve_overtime = True
+        condition_mock.return_value = self._auto_approval_condition()
+
+        attendance.handle_overtime_conditions()
+
+        self.assertFalse(attendance.attendance_overtime_approve)
 
 
 class SharedAttendanceRecalculationTests(SimpleTestCase):
@@ -536,7 +603,7 @@ class PortalClockOutTests(SimpleTestCase):
     @patch("attendance.views.portal.AttendanceActivity")
     @patch("attendance.views.portal.Employee")
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    def test_portal_clock_out_calls_helper_with_auto_validate_false(
+    def test_portal_clock_out_auto_validates_without_auto_approving_overtime(
         self,
         _ip_allowed_mock,
         employee_model,
@@ -579,7 +646,8 @@ class PortalClockOutTests(SimpleTestCase):
         payload = json.loads(response.content)
         self.assertTrue(payload["success"])
         clock_out_helper_mock.assert_called_once()
-        self.assertFalse(clock_out_helper_mock.call_args.kwargs["auto_validate"])
+        self.assertTrue(clock_out_helper_mock.call_args.kwargs["auto_validate"])
+        self.assertFalse(clock_out_helper_mock.call_args.kwargs["auto_approve_overtime"])
 
     @patch("attendance.views.portal._reverse_geocode", return_value="Clock Out Address")
     @patch("attendance.views.portal.clock_out_attendance_and_activity")
@@ -756,7 +824,8 @@ class PortalAutoCheckoutTests(SimpleTestCase):
             date_today=date(2026, 6, 5),
             now="17:30",
             out_datetime=datetime(2026, 6, 5, 17, 30, 0),
-            auto_validate=False,
+            auto_validate=True,
+            auto_approve_overtime=False,
         )
 
     @patch("attendance.views.portal.clock_out_attendance_and_activity")
@@ -868,7 +937,8 @@ class PortalAutoCheckoutTests(SimpleTestCase):
             date_today=date(2026, 6, 6),
             now="06:30",
             out_datetime=datetime(2026, 6, 6, 6, 30, 0),
-            auto_validate=False,
+            auto_validate=True,
+            auto_approve_overtime=False,
         )
 
     @patch("attendance.views.portal.clock_out_attendance_and_activity")

@@ -698,7 +698,8 @@ def _maybe_auto_checkout_employee(employee, current_time=None):
         date_today=checkout_at.date(),
         now=checkout_at.strftime("%H:%M"),
         out_datetime=checkout_at,
-        auto_validate=False,
+        auto_validate=True,
+        auto_approve_overtime=False,
     )
 
 
@@ -2098,6 +2099,7 @@ def public_clock_out(request):
                 now=now_str,
                 out_datetime=datetime_now,
                 auto_validate=True,
+                auto_approve_overtime=False,
             )
         except Exception as e:
             logger.error(f"Clock out error for {employee.id}: {str(e)}", exc_info=True)

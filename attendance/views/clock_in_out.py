@@ -351,7 +351,12 @@ def clock_in(request):
 
 
 def clock_out_attendance_and_activity(
-    employee, date_today, now, out_datetime=None, auto_validate=True
+    employee,
+    date_today,
+    now,
+    out_datetime=None,
+    auto_validate=True,
+    auto_approve_overtime=True,
 ):
     """
     Clock out the attendance and activity
@@ -360,6 +365,7 @@ def clock_out_attendance_and_activity(
         date_today    : today date
         now           : now
         auto_validate : if True, apply attendance validation condition automatically
+        auto_approve_overtime : if True, allow save hooks to auto-approve overtime
     """
 
     attendance_activities = AttendanceActivity.objects.filter(
@@ -394,6 +400,7 @@ def clock_out_attendance_and_activity(
         else:
             # Keep attendance in not-validated state until manual validation.
             attendance.attendance_validated = False
+        attendance._skip_auto_approve_overtime = not auto_approve_overtime
         attendance.save()
 
         return attendance

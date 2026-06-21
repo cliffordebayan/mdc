@@ -658,11 +658,19 @@ class Attendance(HorillaModel):
                     self.overtime_second = cutoff_seconds
                     self.attendance_overtime = format_time(cutoff_seconds)
 
-            # Auto-approve overtime if conditions are met
-            if condition.auto_approve_ot and self.overtime_second >= strtime_seconds(
-                condition.minimum_overtime_to_approve
+            # Auto-approve overtime if conditions are met.
+            if (
+                condition.auto_approve_ot
+                and not getattr(self, "_skip_auto_approve_overtime", False)
             ):
-                self.attendance_overtime_approve = True
+                minimum_overtime_seconds = strtime_seconds(
+                    condition.minimum_overtime_to_approve
+                )
+                if (
+                    self.overtime_second is not None
+                    and self.overtime_second >= minimum_overtime_seconds
+                ):
+                    self.attendance_overtime_approve = True
 
     def save(self, *args, **kwargs):
         self.update_attendance_overtime()
