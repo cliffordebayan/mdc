@@ -25,6 +25,7 @@ from base.models import (
     EmployeeType,
     JobPosition,
     JobRole,
+    PayrollGroup,
     WorkType,
 )
 from employee.models import Employee, EmployeeBankDetails, EmployeeTag, EmployeeWorkInformation
@@ -104,6 +105,7 @@ def get_error_data_template():
             "Job Role",
             "Shift Information",
             "Employee Type",
+            "Payroll Group",
             "Reporting Manager",
             "Work Location",
             "Branch",
@@ -135,6 +137,7 @@ def get_error_data_template():
             "Salary Hour Error",
             "User ID Error",
             "Company Error",
+            "Payroll Group Error",
             "Import Error",
         ]
     }
@@ -352,6 +355,9 @@ def process_employee_records(data_frame):
         )
     )
     existing_companies = frozenset(Company.objects.values_list("company", flat=True))
+    existing_payroll_groups = frozenset(
+        PayrollGroup.objects.values_list("name", flat=True)
+    )
     success_list, error_list = [], []
     employee_dicts = data_frame.to_dict("records")
 
@@ -374,6 +380,7 @@ def process_employee_records(data_frame):
         last_name = convert_nan("Last Name", emp)
         gender = str(emp.get("Gender") or "").strip().lower()
         company = convert_nan("Company", emp)
+        payroll_group = convert_nan("Payroll Group", emp)
         basic_salary = convert_nan("Salary", emp)
         salary_hour = convert_nan("Salary Hour", emp)
 
@@ -470,6 +477,13 @@ def process_employee_records(data_frame):
         # Company validation
         if company and company not in existing_companies:
             errors["Company Error"] = f"Company '{company}' does not exist."
+            save = False
+
+        # Payroll Group validation
+        if payroll_group and payroll_group not in existing_payroll_groups:
+            errors["Payroll Group Error"] = (
+                f"Payroll Group '{payroll_group}' does not exist."
+            )
             save = False
 
         # Salary validation
@@ -920,6 +934,11 @@ def bulk_create_work_info_import(success_lists):
     job_roles = set(row.get("Job Role") for row in success_lists)
     work_types = set(row.get("Work Type") for row in success_lists)
     employee_types = set(row.get("Employee Type") for row in success_lists)
+    payroll_groups = {
+        group
+        for row in success_lists
+        if (group := convert_nan("Payroll Group", row))
+    }
     shifts = set(row.get("Shift Information") for row in success_lists)
     companies = set(row.get("Company") for row in success_lists)
     branches = set(row.get("Branch") for row in success_lists if row.get("Branch"))
@@ -988,6 +1007,10 @@ def bulk_create_work_info_import(success_lists):
             "employee_type"
         )
     }
+    existing_payroll_groups = {
+        pg.name: pg
+        for pg in PayrollGroup.objects.filter(name__in=payroll_groups).only("name")
+    }
     existing_companies = {
         comp.company: comp
         for comp in Company.objects.filter(company__in=companies).only("company")
@@ -1030,6 +1053,9 @@ def bulk_create_work_info_import(success_lists):
 
         work_type_obj = existing_work_types.get(work_info.get("Work Type"))
         employee_type_obj = existing_employee_types.get(work_info.get("Employee Type"))
+        payroll_group_obj = existing_payroll_groups.get(
+            convert_nan("Payroll Group", work_info)
+        )
         shift_obj = existing_shifts.get(work_info.get("Shift Information"))
         reporting_manager = work_info.get("Reporting Manager")
         reporting_manager_obj = None
@@ -1081,6 +1107,7 @@ def bulk_create_work_info_import(success_lists):
                 job_role_id=job_role_obj,
                 work_type_id=work_type_obj,
                 employee_type_id=employee_type_obj,
+                payroll_group_id=payroll_group_obj,
                 shift_id=shift_obj,
                 reporting_manager_id=reporting_manager_obj,
                 company_id=company_obj,
@@ -1110,6 +1137,7 @@ def bulk_create_work_info_import(success_lists):
             employee_work_info.job_role_id = job_role_obj
             employee_work_info.work_type_id = work_type_obj
             employee_work_info.employee_type_id = employee_type_obj
+            employee_work_info.payroll_group_id = payroll_group_obj
             employee_work_info.shift_id = shift_obj
             employee_work_info.reporting_manager_id = reporting_manager_obj
             employee_work_info.company_id = company_obj
@@ -1145,6 +1173,7 @@ def bulk_create_work_info_import(success_lists):
                 "job_role_id",
                 "work_type_id",
                 "employee_type_id",
+                "payroll_group_id",
                 "shift_id",
                 "reporting_manager_id",
                 "company_id",

@@ -7,7 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TransactionTestCase
 from django.urls import reverse
 
-from base.models import Company
+from base.models import Company, PayrollGroup
 from employee.models import Employee, EmployeeBankDetails, EmployeeWorkInformation
 from horilla.horilla_middlewares import _thread_locals
 
@@ -54,13 +54,14 @@ class EmployeeImportFlowTests(TransactionTestCase):
             "Work Type": "",
             "Shift Information": "",
             "Employee Type": "",
+            "Payroll Group": "",
             "Reporting Manager": "",
             "Company": "",
             "Work Location": "Main Office",
             "Joining Date": "2024-01-15",
             "Salary": 30000,
             "Salary Hour": 150,
-            "Gcash": "09171234567",
+            "GCash": "09171234567",
             "Metrobank": "000123456789",
         }
         row.update(overrides)
@@ -87,17 +88,39 @@ class EmployeeImportFlowTests(TransactionTestCase):
             response.get("Content-Disposition", ""),
         )
 
-    def test_work_info_import_template_contains_required_headers_only(self):
+    def test_work_info_import_template_contains_payroll_group_header_and_reference(self):
+        payroll_group = PayrollGroup.objects.create(name="Monthly Payroll")
         response = self.client.get(reverse("work-info-import-file"))
         self.assertEqual(response.status_code, 200)
 
-        data_frame = pd.read_excel(BytesIO(response.content))
-        self.assertEqual(
-            list(data_frame.columns),
-            ["Employee No", "First Name", "Last Name", "Phone", "Email", "Gender"],
+        workbook = BytesIO(response.content)
+        data_frame = pd.read_excel(workbook, sheet_name="Import Template")
+        columns = list(data_frame.columns)
+
+        self.assertGreater(len(columns), 6)
+        self.assertIn("Payroll Group", columns)
+        self.assertLess(
+            columns.index("Employee Type"),
+            columns.index("Payroll Group"),
+        )
+        self.assertLess(
+            columns.index("Payroll Group"),
+            columns.index("Reporting Manager"),
         )
 
+        reference_frame = pd.read_excel(BytesIO(response.content), sheet_name="Reference")
+        self.assertIn("Payroll Group", reference_frame.columns)
+        self.assertIn(payroll_group.name, reference_frame["Payroll Group"].dropna().tolist())
+
     def test_work_info_import_accepts_downloaded_template_file(self):
+        Company.objects.create(
+            company="Martin Development Corporation",
+            address="Sample Address",
+            country="PH",
+            state="NCR",
+            city="Manila",
+            zip="1000",
+        )
         template_response = self.client.get(reverse("work-info-import-file"))
         self.assertEqual(template_response.status_code, 200)
 
@@ -173,6 +196,27 @@ class EmployeeImportFlowTests(TransactionTestCase):
 
         self.assertIn("Import Successful", response.content.decode("utf-8"))
 
+    def test_work_info_import_sets_payroll_group(self):
+        payroll_group = PayrollGroup.objects.create(name="Semi-Monthly Payroll")
+        file_buffer = self._build_excel_file(
+            [
+                self._valid_import_row(
+                    **{
+                        "Employee No": "EMP1004",
+                        "Email": "payroll.group@example.com",
+                        "Payroll Group": payroll_group.name,
+                    }
+                )
+            ]
+        )
+
+        response = self._post_import(file_buffer)
+
+        self.assertEqual(response.status_code, 200)
+        employee = Employee.objects.get(employee_no="EMP1004")
+        work_info = EmployeeWorkInformation.objects.get(employee_id=employee)
+        self.assertEqual(work_info.payroll_group_id, payroll_group)
+
     def test_work_info_import_rejects_unknown_company_and_shows_error_download(self):
         file_buffer = self._build_excel_file(
             [self._valid_import_row(**{"Employee No": "EMP1002", "Company": "Unknown Co"})]
@@ -182,6 +226,25 @@ class EmployeeImportFlowTests(TransactionTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Employee.objects.filter(employee_no="EMP1002").exists())
+        self.assertIn("Download Error File", response.content.decode("utf-8"))
+
+    def test_work_info_import_rejects_unknown_payroll_group_and_shows_error_download(self):
+        file_buffer = self._build_excel_file(
+            [
+                self._valid_import_row(
+                    **{
+                        "Employee No": "EMP1005",
+                        "Email": "unknown.payroll@example.com",
+                        "Payroll Group": "Unknown Payroll Group",
+                    }
+                )
+            ]
+        )
+
+        response = self._post_import(file_buffer)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Employee.objects.filter(employee_no="EMP1005").exists())
         self.assertIn("Download Error File", response.content.decode("utf-8"))
 
     def test_work_info_import_preserves_numeric_and_bank_values(self):
