@@ -3333,11 +3333,12 @@
                 video.srcObject = null;
             }
 
-            // Camera first, then location — prevents Safari from silently dropping
-            // the location prompt when both permission dialogs fire simultaneously.
-            startCamera().finally(function () {
-                initializeLocationCapture();
-            });
+            // Both called synchronously within the same user-gesture activation window.
+            // Safari queues permission prompts sequentially when triggered this way.
+            // A setTimeout or Promise chain breaks the activation window and causes
+            // one prompt to be silently dropped.
+            initializeLocationCapture();
+            startCamera();
         }
 
         // ── Face Detection Functions ─────────────────────────────────────
