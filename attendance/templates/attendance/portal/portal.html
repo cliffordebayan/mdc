@@ -3320,7 +3320,6 @@
             if (isMobilePortalView()) {
                 initClockPreviewMap({ allowPlaceholder: true });
             }
-            initializeLocationCapture();
             capturedAddress = null;
             geocodingPromise = null;
             cameraReady = false;
@@ -3334,9 +3333,11 @@
                 video.srcObject = null;
             }
 
-            setTimeout(function () {
-                startCamera();
-            }, 100);
+            // Camera first, then location — prevents Safari from silently dropping
+            // the location prompt when both permission dialogs fire simultaneously.
+            startCamera().finally(function () {
+                initializeLocationCapture();
+            });
         }
 
         // ── Face Detection Functions ─────────────────────────────────────
@@ -3521,7 +3522,7 @@
         // Start camera
         function startCamera() {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+                return navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
                     .then(function (stream) {
                         if (!$('#step-clock').hasClass('active')) {
                             stream.getTracks().forEach(track => track.stop());
@@ -3566,6 +3567,7 @@
                     });
             } else {
                 Toast.fire({ icon: 'error', title: '{% trans "Camera not supported on this device." %}' });
+                return Promise.reject(new Error('Camera not supported'));
             }
         }
 
