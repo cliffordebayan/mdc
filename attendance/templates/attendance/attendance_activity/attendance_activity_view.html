@@ -17,6 +17,19 @@
                 <option value="{{ branch.id }}">{{ branch }}</option>
             {% endfor %}
         </select>
+        <select id="activity-payroll-group-filter"
+            name="employee_id__employee_work_info__payroll_group_id"
+            class="oh-select mb-2 ml-2"
+            style="max-width: 220px; cursor: pointer;"
+            hx-get="{% url 'attendance-activity-search' %}"
+            hx-target="#activity-table"
+            hx-trigger="change"
+            hx-include="#filterForm">
+            <option value="">{% trans "All Payroll Groups" %}</option>
+            {% for pg in payroll_groups %}
+                <option value="{{ pg.id }}">{{ pg }}</option>
+            {% endfor %}
+        </select>
         {% if perms.attendance.change_attendancelatecomeearlyout or request.user|is_reportingmanager %}
             <div class="oh-checkpoint-badge text-success mb-2" id="selectAllActivity" style="cursor: pointer; display: none">
                 {% trans "Select All Attendance" %}
@@ -41,6 +54,10 @@
         var branchId = params.get("employee_id__employee_work_info__branch_id");
         if (branchId) {
             document.getElementById("activity-branch-filter").value = branchId;
+        }
+        var pgId = params.get("employee_id__employee_work_info__payroll_group_id");
+        if (pgId) {
+            document.getElementById("activity-payroll-group-filter").value = pgId;
         }
     })();
 </script>

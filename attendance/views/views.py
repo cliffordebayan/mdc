@@ -1286,6 +1286,48 @@ def _get_payroll_period_dates(start_day, end_day):
     return date_from, date_to
 
 
+def get_current_cut_off_dates(group):
+    """Return (date_from, date_to) for the PayrollGroup period that today falls into."""
+    today = date.today()
+
+    def resolve_end(y, m, d):
+        last = calendar.monthrange(y, m)[1]
+        return last if d == 0 else min(d, last)
+
+    def next_month(y, m):
+        return (date(y, m, 1) + timedelta(days=32)).replace(day=1)
+
+    def prev_month(y, m):
+        return (date(y, m, 1) - timedelta(days=1)).replace(day=1)
+
+    periods = [
+        (group.start_day, group.end_day),
+        (group.second_cut_off_start, group.second_cut_off_end),
+        (group.third_cut_off_start, group.third_cut_off_end),
+        (group.fourth_cut_off_start, group.fourth_cut_off_end),
+    ]
+
+    for start_d, end_d in periods:
+        if not start_d or end_d is None:
+            continue
+        end_resolved = resolve_end(today.year, today.month, end_d)
+
+        if start_d <= end_resolved:
+            # Same-month period
+            if start_d <= today.day <= end_resolved:
+                return date(today.year, today.month, start_d), date(today.year, today.month, end_resolved)
+        else:
+            # Cross-month period (e.g. 26 – 10)
+            if today.day >= start_d:
+                nm = next_month(today.year, today.month)
+                return date(today.year, today.month, start_d), date(nm.year, nm.month, resolve_end(nm.year, nm.month, end_d))
+            elif today.day <= end_resolved:
+                pm = prev_month(today.year, today.month)
+                return date(pm.year, pm.month, start_d), date(today.year, today.month, end_resolved)
+
+    return None, None
+
+
 def export_attendance_activity_data(request):
     employee = request.user.employee_get
     form = AttendanceActivityExportForm()
@@ -2059,6 +2101,7 @@ def attendance_activity_view(request):
             "gp_fields": AttendanceActivityReGroup.fields,
             "activity_ids": activity_ids,
             "branches": Branch.objects.all(),
+            "payroll_groups": PayrollGroup.objects.all(),
         },
     )
 

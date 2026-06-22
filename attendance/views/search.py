@@ -30,10 +30,12 @@ from attendance.views.views import (
     build_daily_attendance_rows,
     build_my_attendance_activity_meta,
     build_daily_activity_rows,
+    get_current_cut_off_dates,
     group_daily_activity_rows,
     paginator_qry,
     strtime_seconds,
 )
+from base.models import PayrollGroup
 from base.methods import filtersubordinates, get_key_instances, sortby
 from horilla.decorators import hx_request_required, login_required, manager_can_enter
 from horilla.group_by import group_by_queryset
@@ -256,6 +258,25 @@ def attendance_activity_search(request):
     )
     attendance_activities = attendance_activities | self_attendance_activities
     attendance_activities = attendance_activities.distinct()
+
+    # Auto-apply cut-off date range when a payroll group filter is selected
+    # and no explicit date range is already in the request
+    payroll_group_ids = request.GET.getlist(
+        "employee_id__employee_work_info__payroll_group_id"
+    )
+    has_date_range = request.GET.get("attendance_date_from") or request.GET.get(
+        "attendance_date_till"
+    )
+    if payroll_group_ids and not has_date_range:
+        group = PayrollGroup.objects.filter(id=payroll_group_ids[0]).first()
+        if group:
+            date_from, date_to = get_current_cut_off_dates(group)
+            if date_from and date_to:
+                attendance_activities = attendance_activities.filter(
+                    attendance_date__gte=date_from,
+                    attendance_date__lte=date_to,
+                )
+
     template = "attendance/attendance_activity/activity_list.html"
     attendance_activities = sortby(request, attendance_activities, "orderby")
     daily_activity_rows = build_daily_activity_rows(attendance_activities)

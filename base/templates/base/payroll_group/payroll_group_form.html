@@ -9,7 +9,116 @@
 </div>
 <div class="oh-modal__dialog-body">
 	<form hx-post="{{ request.get_full_path }}" hx-target="{% if payroll_group.id %}#objectUpdateModalTarget{% else %}#objectCreateModalTarget{% endif %}" class="oh-profile-section">
-		{% csrf_token %} {{form.non_field_errors}} {{form.as_p}}
+		{% csrf_token %}
+		{{form.non_field_errors}}
+
+		<div class="oh-form__group">
+			<label class="oh-label">{{ form.name.label }}</label>
+			{{ form.name }}
+			{{ form.name.errors }}
+		</div>
+		<div class="oh-form__group">
+			<label class="oh-label">{{ form.description.label }}</label>
+			{{ form.description }}
+			{{ form.description.errors }}
+		</div>
+		<div class="oh-form__group">
+			<label class="oh-label">{{ form.frequency.label }}</label>
+			{{ form.frequency }}
+			{{ form.frequency.errors }}
+		</div>
+		<div class="oh-form__group">
+			<label class="oh-label">{{ form.company_id.label }}</label>
+			{{ form.company_id }}
+			{{ form.company_id.errors }}
+		</div>
+
+		<!-- Period 1 (always shown) -->
+		<div class="oh-divider mt-3 mb-2"><strong>{% trans "Period 1" %}</strong></div>
+		<div class="oh-wrapper oh-grid-3">
+			<div class="oh-form__group">
+				<label class="oh-label">{% trans "Cut-Off Start" %}</label>
+				{{ form.start_day }}
+				{{ form.start_day.errors }}
+			</div>
+			<div class="oh-form__group">
+				<label class="oh-label">{% trans "Cut-Off End" %}</label>
+				{{ form.end_day }}
+				{{ form.end_day.errors }}
+			</div>
+			<div class="oh-form__group">
+				<label class="oh-label">{% trans "Payout Day" %}</label>
+				{{ form.first_payout_day }}
+				{{ form.first_payout_day.errors }}
+			</div>
+		</div>
+
+		<!-- Period 2 (semi-monthly / weekly) -->
+		<div id="pg-period-2" style="display:none;">
+			<div class="oh-divider mt-3 mb-2"><strong>{% trans "Period 2" %}</strong></div>
+			<div class="oh-wrapper oh-grid-3">
+				<div class="oh-form__group">
+					<label class="oh-label">{% trans "Cut-Off Start" %}</label>
+					{{ form.second_cut_off_start }}
+					{{ form.second_cut_off_start.errors }}
+				</div>
+				<div class="oh-form__group">
+					<label class="oh-label">{% trans "Cut-Off End" %}</label>
+					{{ form.second_cut_off_end }}
+					{{ form.second_cut_off_end.errors }}
+				</div>
+				<div class="oh-form__group">
+					<label class="oh-label">{% trans "Payout Day" %}</label>
+					{{ form.second_payout_day }}
+					{{ form.second_payout_day.errors }}
+				</div>
+			</div>
+		</div>
+
+		<!-- Period 3 (weekly only) -->
+		<div id="pg-period-3" style="display:none;">
+			<div class="oh-divider mt-3 mb-2"><strong>{% trans "Period 3" %}</strong></div>
+			<div class="oh-wrapper oh-grid-3">
+				<div class="oh-form__group">
+					<label class="oh-label">{% trans "Cut-Off Start" %}</label>
+					{{ form.third_cut_off_start }}
+					{{ form.third_cut_off_start.errors }}
+				</div>
+				<div class="oh-form__group">
+					<label class="oh-label">{% trans "Cut-Off End" %}</label>
+					{{ form.third_cut_off_end }}
+					{{ form.third_cut_off_end.errors }}
+				</div>
+				<div class="oh-form__group">
+					<label class="oh-label">{% trans "Payout Day" %}</label>
+					{{ form.third_payout_day }}
+					{{ form.third_payout_day.errors }}
+				</div>
+			</div>
+		</div>
+
+		<!-- Period 4 (weekly only) -->
+		<div id="pg-period-4" style="display:none;">
+			<div class="oh-divider mt-3 mb-2"><strong>{% trans "Period 4" %}</strong></div>
+			<div class="oh-wrapper oh-grid-3">
+				<div class="oh-form__group">
+					<label class="oh-label">{% trans "Cut-Off Start" %}</label>
+					{{ form.fourth_cut_off_start }}
+					{{ form.fourth_cut_off_start.errors }}
+				</div>
+				<div class="oh-form__group">
+					<label class="oh-label">{% trans "Cut-Off End" %}</label>
+					{{ form.fourth_cut_off_end }}
+					{{ form.fourth_cut_off_end.errors }}
+				</div>
+				<div class="oh-form__group">
+					<label class="oh-label">{% trans "Payout Day" %}</label>
+					{{ form.fourth_payout_day }}
+					{{ form.fourth_payout_day.errors }}
+				</div>
+			</div>
+		</div>
+
 		<div class="oh-modal__dialog-footer p-0 mt-3">
 			<button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">
 				{% trans "Save" %}
@@ -17,3 +126,23 @@
 		</div>
 	</form>
 </div>
+
+<script>
+(function () {
+	var freqEl = document.getElementById("{{ form.frequency.auto_id }}");
+	var p2 = document.getElementById("pg-period-2");
+	var p3 = document.getElementById("pg-period-3");
+	var p4 = document.getElementById("pg-period-4");
+
+	function applyFrequency(val) {
+		p2.style.display = (val === "semi_monthly" || val === "weekly") ? "" : "none";
+		p3.style.display = (val === "weekly") ? "" : "none";
+		p4.style.display = (val === "weekly") ? "" : "none";
+	}
+
+	if (freqEl) {
+		applyFrequency(freqEl.value);
+		freqEl.addEventListener("change", function () { applyFrequency(this.value); });
+	}
+})();
+</script>

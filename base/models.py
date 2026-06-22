@@ -225,13 +225,60 @@ class PayrollGroup(HorillaModel):
 
     PAYROLL_DAY_CHOICES = [(0, _("End of Month"))] + [(i, str(i)) for i in range(1, 32)]
 
+    FREQUENCY_CHOICES = [
+        ("monthly", _("Monthly")),
+        ("semi_monthly", _("Semi-Monthly")),
+        ("weekly", _("Weekly")),
+    ]
+
     name = models.CharField(max_length=100, verbose_name=_("Name"))
     description = models.TextField(null=True, blank=True, verbose_name=_("Description"))
+    frequency = models.CharField(
+        max_length=20,
+        choices=FREQUENCY_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Frequency"),
+    )
+    # Period 1 cut-off (original fields kept for backward compatibility)
     start_day = models.PositiveSmallIntegerField(
-        null=True, blank=True, verbose_name=_("Start Day")
+        null=True, blank=True, verbose_name=_("Cut-Off Start")
     )
     end_day = models.PositiveSmallIntegerField(
-        null=True, blank=True, verbose_name=_("End Day")
+        null=True, blank=True, verbose_name=_("Cut-Off End")
+    )
+    first_payout_day = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Payout Day")
+    )
+    # Period 2 (semi-monthly / weekly)
+    second_cut_off_start = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Cut-Off Start")
+    )
+    second_cut_off_end = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Cut-Off End")
+    )
+    second_payout_day = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Payout Day")
+    )
+    # Period 3 (weekly)
+    third_cut_off_start = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Cut-Off Start")
+    )
+    third_cut_off_end = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Cut-Off End")
+    )
+    third_payout_day = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Payout Day")
+    )
+    # Period 4 (weekly)
+    fourth_cut_off_start = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Cut-Off Start")
+    )
+    fourth_cut_off_end = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Cut-Off End")
+    )
+    fourth_payout_day = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name=_("Payout Day")
     )
     company_id = models.ManyToManyField(Company, blank=True, verbose_name=_("Company"))
 

@@ -1,12 +1,20 @@
 {% load i18n %}
+{% comment %}Macro-style tag for rendering a day value{% endcomment %}
 <div class="oh-sticky-table">
 	<div class="oh-sticky-table__table oh-table--sortable">
 		<div class="oh-sticky-table__thead">
 			<div class="oh-sticky-table__tr">
 				<div class="oh-sticky-table__th">{% trans "Name" %}</div>
 				<div class="oh-sticky-table__th">{% trans "Description" %}</div>
-				<div class="oh-sticky-table__th">{% trans "Start Day" %}</div>
-				<div class="oh-sticky-table__th">{% trans "End Day" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Frequency" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Period 1 Cut-Off" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Period 1 Payout" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Period 2 Cut-Off" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Period 2 Payout" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Period 3 Cut-Off" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Period 3 Payout" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Period 4 Cut-Off" %}</div>
+				<div class="oh-sticky-table__th">{% trans "Period 4 Payout" %}</div>
 				{% if perms.base.change_payrollgroup or perms.base.delete_payrollgroup %}
 				<div class="oh-sticky-table__th">{% trans "Actions" %}</div>
 				{% endif %}
@@ -17,8 +25,76 @@
 				<div class="oh-sticky-table__tr" draggable="true" id="payrollGroupTr{{group.id}}">
 					<div class="oh-sticky-table__td">{{ group }}</div>
 					<div class="oh-sticky-table__td">{{ group.description|default:"-" }}</div>
-					<div class="oh-sticky-table__td">{% if group.start_day == 0 %}{% trans "End of Month" %}{% elif group.start_day %}{{ group.start_day }}{% else %}-{% endif %}</div>
-					<div class="oh-sticky-table__td">{% if group.end_day == 0 %}{% trans "End of Month" %}{% elif group.end_day %}{{ group.end_day }}{% else %}-{% endif %}</div>
+					<div class="oh-sticky-table__td">{{ group.get_frequency_display|default:"-" }}</div>
+
+					{% comment %}Period 1{% endcomment %}
+					<div class="oh-sticky-table__td">
+						{% if group.start_day is not None and group.end_day is not None %}
+							{% if group.start_day == 0 %}{% trans "End of Month" %}{% else %}{{ group.start_day }}{% endif %}
+							&ndash;
+							{% if group.end_day == 0 %}{% trans "End of Month" %}{% else %}{{ group.end_day }}{% endif %}
+						{% else %}-{% endif %}
+					</div>
+					<div class="oh-sticky-table__td">
+						{% if group.first_payout_day is not None %}
+							{% if group.first_payout_day == 0 %}{% trans "End of Month" %}{% else %}{{ group.first_payout_day }}{% endif %}
+						{% else %}-{% endif %}
+					</div>
+
+					{% comment %}Period 2{% endcomment %}
+					<div class="oh-sticky-table__td">
+						{% if group.frequency == "semi_monthly" or group.frequency == "weekly" %}
+							{% if group.second_cut_off_start is not None and group.second_cut_off_end is not None %}
+								{% if group.second_cut_off_start == 0 %}{% trans "End of Month" %}{% else %}{{ group.second_cut_off_start }}{% endif %}
+								&ndash;
+								{% if group.second_cut_off_end == 0 %}{% trans "End of Month" %}{% else %}{{ group.second_cut_off_end }}{% endif %}
+							{% else %}-{% endif %}
+						{% else %}&mdash;{% endif %}
+					</div>
+					<div class="oh-sticky-table__td">
+						{% if group.frequency == "semi_monthly" or group.frequency == "weekly" %}
+							{% if group.second_payout_day is not None %}
+								{% if group.second_payout_day == 0 %}{% trans "End of Month" %}{% else %}{{ group.second_payout_day }}{% endif %}
+							{% else %}-{% endif %}
+						{% else %}&mdash;{% endif %}
+					</div>
+
+					{% comment %}Period 3{% endcomment %}
+					<div class="oh-sticky-table__td">
+						{% if group.frequency == "weekly" %}
+							{% if group.third_cut_off_start is not None and group.third_cut_off_end is not None %}
+								{% if group.third_cut_off_start == 0 %}{% trans "End of Month" %}{% else %}{{ group.third_cut_off_start }}{% endif %}
+								&ndash;
+								{% if group.third_cut_off_end == 0 %}{% trans "End of Month" %}{% else %}{{ group.third_cut_off_end }}{% endif %}
+							{% else %}-{% endif %}
+						{% else %}&mdash;{% endif %}
+					</div>
+					<div class="oh-sticky-table__td">
+						{% if group.frequency == "weekly" %}
+							{% if group.third_payout_day is not None %}
+								{% if group.third_payout_day == 0 %}{% trans "End of Month" %}{% else %}{{ group.third_payout_day }}{% endif %}
+							{% else %}-{% endif %}
+						{% else %}&mdash;{% endif %}
+					</div>
+
+					{% comment %}Period 4{% endcomment %}
+					<div class="oh-sticky-table__td">
+						{% if group.frequency == "weekly" %}
+							{% if group.fourth_cut_off_start is not None and group.fourth_cut_off_end is not None %}
+								{% if group.fourth_cut_off_start == 0 %}{% trans "End of Month" %}{% else %}{{ group.fourth_cut_off_start }}{% endif %}
+								&ndash;
+								{% if group.fourth_cut_off_end == 0 %}{% trans "End of Month" %}{% else %}{{ group.fourth_cut_off_end }}{% endif %}
+							{% else %}-{% endif %}
+						{% else %}&mdash;{% endif %}
+					</div>
+					<div class="oh-sticky-table__td">
+						{% if group.frequency == "weekly" %}
+							{% if group.fourth_payout_day is not None %}
+								{% if group.fourth_payout_day == 0 %}{% trans "End of Month" %}{% else %}{{ group.fourth_payout_day }}{% endif %}
+							{% else %}-{% endif %}
+						{% else %}&mdash;{% endif %}
+					</div>
+
 					{% if perms.base.change_payrollgroup or perms.base.delete_payrollgroup %}
 						<div class="oh-sticky-table__td">
 							<div class="oh-btn-group">

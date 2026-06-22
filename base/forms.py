@@ -581,29 +581,68 @@ class PayrollGroupForm(ModelForm):
     PayrollGroup model's form
     """
 
-    start_day = forms.ChoiceField(
-        choices=[("", "---------")] + PayrollGroup.PAYROLL_DAY_CHOICES,
-        required=False,
-        label=_("Start Day"),
-    )
-    end_day = forms.ChoiceField(
-        choices=[("", "---------")] + PayrollGroup.PAYROLL_DAY_CHOICES,
-        required=False,
-        label=_("End Day"),
-    )
+    _DAY_CHOICES = [("", "---------")] + PayrollGroup.PAYROLL_DAY_CHOICES
+
+    start_day = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Cut-Off Start"))
+    end_day = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Cut-Off End"))
+    first_payout_day = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Payout Day"))
+
+    second_cut_off_start = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Cut-Off Start"))
+    second_cut_off_end = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Cut-Off End"))
+    second_payout_day = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Payout Day"))
+
+    third_cut_off_start = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Cut-Off Start"))
+    third_cut_off_end = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Cut-Off End"))
+    third_payout_day = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Payout Day"))
+
+    fourth_cut_off_start = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Cut-Off Start"))
+    fourth_cut_off_end = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Cut-Off End"))
+    fourth_payout_day = forms.ChoiceField(choices=_DAY_CHOICES, required=False, label=_("Payout Day"))
 
     class Meta:
         model = PayrollGroup
         fields = "__all__"
         exclude = ["is_active"]
 
-    def clean_start_day(self):
-        val = self.cleaned_data.get("start_day")
+    def _clean_day(self, field_name):
+        val = self.cleaned_data.get(field_name)
         return int(val) if val not in (None, "") else None
 
+    def clean_start_day(self):
+        return self._clean_day("start_day")
+
     def clean_end_day(self):
-        val = self.cleaned_data.get("end_day")
-        return int(val) if val not in (None, "") else None
+        return self._clean_day("end_day")
+
+    def clean_first_payout_day(self):
+        return self._clean_day("first_payout_day")
+
+    def clean_second_cut_off_start(self):
+        return self._clean_day("second_cut_off_start")
+
+    def clean_second_cut_off_end(self):
+        return self._clean_day("second_cut_off_end")
+
+    def clean_second_payout_day(self):
+        return self._clean_day("second_payout_day")
+
+    def clean_third_cut_off_start(self):
+        return self._clean_day("third_cut_off_start")
+
+    def clean_third_cut_off_end(self):
+        return self._clean_day("third_cut_off_end")
+
+    def clean_third_payout_day(self):
+        return self._clean_day("third_payout_day")
+
+    def clean_fourth_cut_off_start(self):
+        return self._clean_day("fourth_cut_off_start")
+
+    def clean_fourth_cut_off_end(self):
+        return self._clean_day("fourth_cut_off_end")
+
+    def clean_fourth_payout_day(self):
+        return self._clean_day("fourth_payout_day")
 
 
 class JobPositionForm(ModelForm):
