@@ -187,6 +187,11 @@ urlpatterns = [
         views.attendance_activity_export,
         name="attendance-activity-info-export",
     ),
+    path(
+        "attendance-payroll-group-export",
+        views.export_attendance_by_payroll_group,
+        name="attendance-payroll-group-export",
+    ),
     path("view-my-attendance/", views.view_my_attendance, name="view-my-attendance"),
     path(
         "filter-own-attendance",

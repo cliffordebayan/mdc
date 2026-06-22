@@ -1381,6 +1381,96 @@ def export_attendance_activity_data(request):
     return response
 
 
+@login_required
+@permission_required("attendance.change_attendanceactivity")
+def export_attendance_by_payroll_group(request):
+    """Modal (HTMX) → renders selection form; plain GET → generates XLSX."""
+    if request.META.get("HTTP_HX_REQUEST") == "true":
+        payroll_groups = PayrollGroup.objects.all()
+        groups_json = json.dumps(
+            [
+                {
+                    "id": g.id,
+                    "name": g.name,
+                    "periods": [
+                        {"start": g.start_day, "end": g.end_day},
+                        {"start": g.second_cut_off_start, "end": g.second_cut_off_end},
+                        {"start": g.third_cut_off_start, "end": g.third_cut_off_end},
+                        {"start": g.fourth_cut_off_start, "end": g.fourth_cut_off_end},
+                    ],
+                }
+                for g in payroll_groups
+            ]
+        )
+        return render(
+            request,
+            "attendance/attendance_activity/payroll_group_export_modal.html",
+            {"payroll_groups": payroll_groups, "groups_json": groups_json},
+        )
+
+    # Generate multi-sheet XLSX from the selections JSON submitted by the modal
+    import json as _json
+
+    try:
+        selections = _json.loads(request.GET.get("selections", "[]"))
+    except (ValueError, TypeError):
+        selections = []
+
+    if not selections:
+        return HttpResponse("No groups selected", status=400)
+
+    employee = request.user.employee_get
+    form = AttendanceActivityExportForm()
+    selected_fields = form.fields["selected_fields"].initial
+    selected_columns = _attendance_activity_export_columns(form, selected_fields)
+
+    today_date = date.today().strftime("%Y-%m-%d")
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response[
+        "Content-Disposition"
+    ] = f'attachment; filename="Attendance_by_PayrollGroup_{today_date}.xlsx"'
+
+    writer = pd.ExcelWriter(response, engine="xlsxwriter")
+    used_names = {}
+
+    for sel in selections:
+        group = PayrollGroup.objects.filter(id=sel.get("id")).first()
+        if not group or not sel.get("dateFrom") or not sel.get("dateTo"):
+            continue
+
+        activities = AttendanceActivity.objects.filter(
+            employee_id__employee_work_info__payroll_group_id=group,
+            attendance_date__gte=sel["dateFrom"],
+            attendance_date__lte=sel["dateTo"],
+        )
+        self_activities = activities.filter(employee_id__employee_user_id=request.user)
+        activities = filtersubordinates(
+            request, activities, "attendance.view_attendanceovertime"
+        )
+        activities = (activities | self_activities).distinct()
+
+        data_export = _attendance_activity_export_data(
+            activities, selected_columns, employee
+        )
+        df = pd.DataFrame(data=data_export)
+        styled_df = df.style.map(
+            lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
+        )
+
+        base = group.name[:31]
+        n = used_names.get(base, 0) + 1
+        used_names[base] = n
+        sheet_name = base if n == 1 else f"{base[:28]} ({n})"
+
+        styled_df.to_excel(writer, index=False, sheet_name=sheet_name)
+        writer.sheets[sheet_name].set_column("A:Z", 18)
+
+    writer.close()
+    return response
+
+
 def _daily_row_group_value(row, field):
     employee = row.employee
     work_info = getattr(employee, "employee_work_info", None)

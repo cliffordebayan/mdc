@@ -1,0 +1,215 @@
+{% load i18n %}
+<div class="oh-modal__dialog-header pb-0">
+    <span class="oh-modal__dialog-title">{% trans "Export by Payroll Group" %}</span>
+    <button class="oh-modal__close" aria-label="Close">
+        <ion-icon name="close-outline"></ion-icon>
+    </button>
+</div>
+<div class="oh-modal__dialog-body">
+    <form id="pg-export-form" method="get"
+        action="{% url 'attendance-payroll-group-export' %}"
+        onsubmit="pgExportSubmit(event)"
+        class="oh-profile-section">
+
+        <div class="oh-form__group mt-2">
+            <label class="oh-label" for="pg-month">{% trans "Month" %}</label>
+            <input type="month" id="pg-month" class="oh-input w-100" required />
+        </div>
+
+        <div class="d-flex align-items-center justify-content-between mt-3 mb-1">
+            <span class="oh-label mb-0">{% trans "Payroll Groups" %}</span>
+            <a href="#" id="pg-select-all" class="oh-label mb-0" style="font-size:12px; cursor:pointer;">
+                {% trans "Select All" %}
+            </a>
+        </div>
+
+        <div style="max-height:320px; overflow-y:auto; border:1px solid #e0e0e0; border-radius:6px; padding:8px;">
+            {% for pg in payroll_groups %}
+            <div class="pg-row d-flex align-items-center mb-2" data-group-id="{{ pg.id }}" style="gap:10px;">
+                <input type="checkbox" class="pg-check" id="pgck-{{ pg.id }}" style="flex-shrink:0;" />
+                <label for="pgck-{{ pg.id }}" style="min-width:140px; margin:0; cursor:pointer;">{{ pg.name }}</label>
+                <select class="oh-select pg-cutoff" disabled style="flex:1; min-width:0;">
+                    <option value="">-- {% trans "Select Cut-Off" %} --</option>
+                </select>
+            </div>
+            {% empty %}
+            <p class="text-muted mb-0">{% trans "No payroll groups found." %}</p>
+            {% endfor %}
+        </div>
+
+        <input type="hidden" id="pg-selections" name="selections" />
+
+        <div class="oh-modal__dialog-footer p-0 mt-3">
+            <button type="submit" id="pg-export-btn"
+                class="oh-btn oh-btn--secondary oh-btn--shadow" disabled>
+                {% trans "Export" %}
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+    var GROUPS = {{ groups_json|safe }};
+
+    var monthInput  = document.getElementById("pg-month");
+    var exportBtn   = document.getElementById("pg-export-btn");
+    var selectAllEl = document.getElementById("pg-select-all");
+    var allSelected = false;
+
+    // Default to current month
+    var now = new Date();
+    monthInput.value = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+
+    function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+
+    function fmtDate(y, m, d) {
+        return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+
+    function buildCutoffs(groupId, yearMonth) {
+        if (!yearMonth) return [];
+        var parts = yearMonth.split("-");
+        var year  = parseInt(parts[0], 10);
+        var month = parseInt(parts[1], 10);
+        var group = GROUPS.find(function (g) { return String(g.id) === String(groupId); });
+        if (!group) return [];
+
+        var options = [];
+        var dim = daysInMonth(year, month);
+
+        group.periods.forEach(function (p) {
+            if (!p.start) return;
+            if (p.end === null || p.end === undefined) return;
+
+            var endResolved = p.end === 0 ? dim : p.end;
+
+            if (p.start <= endResolved) {
+                var endDay = p.end === 0 ? dim : Math.min(p.end, dim);
+                options.push({
+                    label:    fmtDate(year, month, p.start) + " – " + fmtDate(year, month, endDay),
+                    dateFrom: year + "-" + String(month).padStart(2,"0") + "-" + String(p.start).padStart(2,"0"),
+                    dateTo:   year + "-" + String(month).padStart(2,"0") + "-" + String(endDay).padStart(2,"0"),
+                });
+            } else {
+                var nm  = month === 12 ? 1 : month + 1;
+                var ny  = month === 12 ? year + 1 : year;
+                var nDim = daysInMonth(ny, nm);
+                var endDay2 = p.end === 0 ? nDim : Math.min(p.end, nDim);
+                options.push({
+                    label:    fmtDate(year, month, p.start) + " – " + fmtDate(ny, nm, endDay2),
+                    dateFrom: year + "-" + String(month).padStart(2,"0") + "-" + String(p.start).padStart(2,"0"),
+                    dateTo:   ny   + "-" + String(nm).padStart(2,"0")    + "-" + String(endDay2).padStart(2,"0"),
+                });
+            }
+        });
+        return options;
+    }
+
+    function rebuildCutoffSelect(row, preserve) {
+        var sel     = row.querySelector(".pg-cutoff");
+        var check   = row.querySelector(".pg-check");
+        var groupId = row.getAttribute("data-group-id");
+        var ym      = monthInput.value;
+        var prevVal = preserve ? sel.value : "";
+
+        sel.innerHTML = "";
+        var placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "-- {% trans 'Select Cut-Off' %} --";
+        sel.appendChild(placeholder);
+
+        if (!check.checked || !ym) {
+            sel.disabled = true;
+            return;
+        }
+
+        var cutoffs = buildCutoffs(groupId, ym);
+        cutoffs.forEach(function (opt) {
+            var o = document.createElement("option");
+            o.value = JSON.stringify({ id: parseInt(groupId, 10), dateFrom: opt.dateFrom, dateTo: opt.dateTo });
+            o.textContent = opt.label;
+            sel.appendChild(o);
+        });
+
+        sel.disabled = cutoffs.length === 0;
+
+        // Restore previous selection if it still exists
+        if (prevVal) {
+            sel.value = prevVal;
+        }
+    }
+
+    function updateExportBtn() {
+        var rows = document.querySelectorAll(".pg-row");
+        var valid = false;
+        rows.forEach(function (row) {
+            var check = row.querySelector(".pg-check");
+            var sel   = row.querySelector(".pg-cutoff");
+            if (check.checked && sel.value) valid = true;
+        });
+        exportBtn.disabled = !valid;
+    }
+
+    // Month change: rebuild all checked rows (preserve selection), rebuild unchecked as disabled
+    monthInput.addEventListener("change", function () {
+        document.querySelectorAll(".pg-row").forEach(function (row) {
+            rebuildCutoffSelect(row, true);
+        });
+        updateExportBtn();
+    });
+
+    // Wire up each row
+    document.querySelectorAll(".pg-row").forEach(function (row) {
+        var check = row.querySelector(".pg-check");
+        var sel   = row.querySelector(".pg-cutoff");
+
+        check.addEventListener("change", function () {
+            rebuildCutoffSelect(row, false);
+            updateExportBtn();
+        });
+
+        sel.addEventListener("change", function () {
+            updateExportBtn();
+        });
+    });
+
+    // Select All / Deselect All
+    selectAllEl.addEventListener("click", function (e) {
+        e.preventDefault();
+        allSelected = !allSelected;
+        selectAllEl.textContent = allSelected ? "{% trans 'Deselect All' %}" : "{% trans 'Select All' %}";
+        document.querySelectorAll(".pg-check").forEach(function (cb) {
+            cb.checked = allSelected;
+        });
+        document.querySelectorAll(".pg-row").forEach(function (row) {
+            rebuildCutoffSelect(row, false);
+        });
+        updateExportBtn();
+    });
+
+    // Form submit: collect selections JSON, then submit
+    window.pgExportSubmit = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        var selections = [];
+        document.querySelectorAll(".pg-row").forEach(function (row) {
+            var check = row.querySelector(".pg-check");
+            var sel   = row.querySelector(".pg-cutoff");
+            if (check.checked && sel.value) {
+                selections.push(JSON.parse(sel.value));
+            }
+        });
+
+        if (selections.length === 0) return;
+
+        document.getElementById("pg-selections").value = JSON.stringify(selections);
+
+        // Close modal then submit
+        var modal = document.querySelector(".oh-modal--show");
+        if (modal) modal.classList.remove("oh-modal--show");
+        document.getElementById("pg-export-form").submit();
+    };
+})();
+</script>
