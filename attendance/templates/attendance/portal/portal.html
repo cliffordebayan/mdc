@@ -3336,12 +3336,14 @@
                 video.srcObject = null;
             }
 
-            // Both called synchronously within the same user-gesture activation window.
-            // Safari queues permission prompts sequentially when triggered this way.
-            // A setTimeout or Promise chain breaks the activation window and causes
-            // one prompt to be silently dropped.
-            initializeLocationCapture();
-            startCamera();
+            // On Safari, getUserMedia (Promise-based) is processed before
+            // getCurrentPosition (callback-based) when both are called synchronously,
+            // so the geolocation prompt is silently dropped. Fix: request camera first,
+            // then initiate location inside .then() — WebKit propagates user-gesture
+            // activation through the first Promise microtask, so the prompt still appears.
+            startCamera().then(function () {
+                initializeLocationCapture();
+            });
         }
 
         // ── Face Detection Functions ─────────────────────────────────────
