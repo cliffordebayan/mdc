@@ -2378,7 +2378,7 @@
                         navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
                             enableHighAccuracy: false,
                             timeout: 15000,
-                            maximumAge: 30000
+                            maximumAge: 0
                         });
                         return;
                     }
@@ -3323,6 +3323,9 @@
             capturedAddress = null;
             geocodingPromise = null;
             cameraReady = false;
+            latitude = null;
+            longitude = null;
+            locationAccuracy = null;
 
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
@@ -4487,6 +4490,9 @@
             employeeDataById = {};
             capturedAddress = null;
             cameraReady = false;
+            latitude = null;
+            longitude = null;
+            locationAccuracy = null;
             pinInput = '';
             $('#employee-search').val('');
             $('#search-results').empty();
