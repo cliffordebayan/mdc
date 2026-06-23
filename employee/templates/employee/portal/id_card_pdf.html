@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 26px 42px;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Helvetica, Arial, sans-serif;
+      color: #202124;
+      background: #ffffff;
+    }
+
+    table {
+      border-collapse: collapse;
+    }
+
+    .section {
+      width: 710px;
+      border-left: 2px solid #d7dde2;
+      border-right: 2px solid #d7dde2;
+    }
+
+    .header {
+      background: #e54f38;
+      border-top: 2px solid #d7dde2;
+    }
+
+    .header td {
+      padding: 12px 30px 10px 30px;
+      text-align: center;
+      color: #ffffff;
+    }
+
+    .company-name {
+      margin: 0;
+      font-size: 27px;
+      line-height: 1.12;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .card-label {
+      margin: 6px 0 0 0;
+      font-size: 17px;
+      line-height: 1.2;
+      color: #ffe5e1;
+      text-transform: uppercase;
+    }
+
+    .profile {
+      border-bottom: 2px solid #edf0f2;
+    }
+
+    .profile td {
+      padding: 10px 28px 10px 28px;
+      text-align: center;
+    }
+
+    .profile-layout {
+      width: 654px;
+    }
+
+    .photo-column {
+      width: 210px;
+      text-align: center;
+      vertical-align: top;
+      padding: 0 22px 0 0;
+    }
+
+    .info-column {
+      width: 444px;
+      text-align: left;
+      vertical-align: top;
+      padding: 0;
+    }
+
+    .photo-img {
+      border: 4px solid #e54f38;
+      background: #fff4f2;
+    }
+
+    .photo-placeholder {
+      width: 160px;
+      height: 190px;
+      border: 4px solid #e54f38;
+      background: #fff4f2;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .photo-placeholder td {
+      padding: 0;
+    }
+
+    .photo-initial {
+      font-size: 72px;
+      line-height: 190px;
+      color: #e54f38;
+      font-weight: bold;
+    }
+
+    .photo-caption {
+      margin: 5px 0 0 0;
+      font-size: 12px;
+      line-height: 1.2;
+      color: #69737b;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .employee-name {
+      margin: 0 0 5px 0;
+      font-size: 22px;
+      line-height: 1.12;
+      color: #202124;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .position {
+      margin: 0 0 6px 0;
+      font-size: 18px;
+      line-height: 1.15;
+      color: #e54f38;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .details {
+      width: 444px;
+      margin: 0;
+    }
+
+    .details td {
+      padding: 1px 0;
+      border-bottom: 1px solid #edf0f2;
+      text-align: left;
+      line-height: 1.05;
+      vertical-align: middle;
+    }
+
+    .detail-label {
+      width: 122px;
+      color: #69737b;
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .detail-value {
+      color: #202124;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .portal {
+      border-bottom: 2px solid #edf0f2;
+    }
+
+    .portal td.portal-cell {
+      padding: 10px 42px 10px 42px;
+    }
+
+    .portal-title {
+      margin: 0 0 8px 0;
+      font-size: 24px;
+      line-height: 1.15;
+      color: #202124;
+      text-align: center;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .portal-layout {
+      width: 626px;
+    }
+
+    .qr-column {
+      width: 250px;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .qr-img {
+      width: 118px;
+      height: 118px;
+      padding: 5px;
+      border: 4px solid #e54f38;
+      background: #ffffff;
+    }
+
+    .site-url {
+      margin: 8px 0 0 0;
+      font-size: 16px;
+      line-height: 1.2;
+      color: #e54f38;
+      font-weight: bold;
+    }
+
+    .pin-column {
+      width: 376px;
+      vertical-align: middle;
+      text-align: left;
+    }
+
+    .pin-label {
+      margin: 0 0 6px 0;
+      font-size: 16px;
+      line-height: 1.2;
+      color: #69737b;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .pin-value {
+      margin: 0 0 8px 0;
+      padding: 8px 18px;
+      background: #e54f38;
+      color: #ffffff;
+      font-size: 40px;
+      line-height: 1;
+      font-weight: bold;
+      letter-spacing: 6px;
+      text-align: center;
+    }
+
+    .portal-copy {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.22;
+      color: #3d464c;
+    }
+
+    .reminder {
+      background: #fafbfc;
+      border-bottom: 2px solid #edf0f2;
+    }
+
+    .reminder td {
+      padding: 14px 42px;
+    }
+
+    .reminder-title {
+      margin: 0 0 7px 0;
+      font-size: 20px;
+      line-height: 1.2;
+      color: #e54f38;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .reminder-text {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.3;
+      color: #3d464c;
+    }
+
+    .footer {
+      background: #202124;
+      border-bottom: 2px solid #d7dde2;
+    }
+
+    .footer td {
+      padding: 12px 34px;
+      color: #d8dde1;
+      text-align: center;
+    }
+
+    .footer-main {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .footer-sub {
+      margin: 5px 0 0 0;
+      font-size: 16px;
+      line-height: 1.25;
+      color: #aeb6bc;
+    }
+  </style>
+</head>
+<body>
+  <table class="section header" width="710" cellspacing="0" cellpadding="0">
+    <tr>
+      <td>
+        <p class="company-name">Martin Development Corporation</p>
+        <p class="card-label">Employee Identification Card</p>
+      </td>
+    </tr>
+  </table>
+
+  <table class="section profile" width="710" cellspacing="0" cellpadding="0">
+    <tr>
+      <td>
+        <table class="profile-layout" width="654" cellspacing="0" cellpadding="0">
+          <tr>
+            <td class="photo-column" width="210">
+              {% if photo_b64 %}
+              <img class="photo-img" src="data:{{ photo_mime }};base64,{{ photo_b64 }}" width="370" height="440" />
+              {% else %}
+              <table class="photo-placeholder" align="center" width="160" height="190" cellspacing="0" cellpadding="0">
+                <tr><td><div class="photo-initial">{{ employee.employee_first_name|first|upper }}</div></td></tr>
+              </table>
+              {% endif %}
+              <p class="photo-caption">Employee Photo</p>
+            </td>
+
+            <td class="info-column" width="444">
+              <p class="employee-name">{{ employee.employee_first_name }}{% if employee.employee_middle_name %} {{ employee.employee_middle_name }}{% endif %} {{ employee.employee_last_name }}{% if employee.employee_extension %} {{ employee.employee_extension }}{% endif %}</p>
+              {% if work_info and work_info.job_position_id %}
+              <p class="position">{{ work_info.job_position_id }}</p>
+              {% endif %}
+
+              <table class="details" width="444" cellspacing="0" cellpadding="0">
+                {% if employee.employee_no %}
+                <tr>
+                  <td class="detail-label" width="122">ID No.</td>
+                  <td class="detail-value" width="322">{{ employee.employee_no }}</td>
+                </tr>
+                {% endif %}
+                {% if work_info and work_info.department_id %}
+                <tr>
+                  <td class="detail-label" width="122">Department</td>
+                  <td class="detail-value" width="322">{{ work_info.department_id }}</td>
+                </tr>
+                {% endif %}
+                {% if work_info and work_info.branch_id %}
+                <tr>
+                  <td class="detail-label" width="122">Branch</td>
+                  <td class="detail-value" width="322">{{ work_info.branch_id }}</td>
+                </tr>
+                {% endif %}
+                {% if employee.email %}
+                <tr>
+                  <td class="detail-label" width="122">Email</td>
+                  <td class="detail-value" width="322">{{ employee.email }}</td>
+                </tr>
+                {% endif %}
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <table class="section portal" width="710" cellspacing="0" cellpadding="0">
+    <tr>
+      <td class="portal-cell">
+        <p class="portal-title">Attendance Portal Access</p>
+        <table class="portal-layout" width="626" cellspacing="0" cellpadding="0">
+          <tr>
+            <td class="qr-column">
+              <img class="qr-img" src="data:image/png;base64,{{ qr_b64 }}" width="118" height="118" />
+              <p class="site-url">{{ site_url }}</p>
+            </td>
+            <td class="pin-column">
+              <p class="pin-label">Attendance PIN</p>
+              <div class="pin-value">{% if work_info and work_info.pin %}{{ work_info.pin }}{% else %}--{% endif %}</div>
+              <p class="portal-copy">Scan the QR code or open the portal website. Use this PIN to clock in and clock out.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <table class="section footer" width="710" cellspacing="0" cellpadding="0">
+    <tr>
+      <td>
+        <p class="footer-main">Confidential - For Employee Use Only</p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

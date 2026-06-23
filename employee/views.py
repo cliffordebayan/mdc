@@ -5402,6 +5402,7 @@ def employee_portal_pin(request, token):
             portal.count = 4
             portal.used = True
             portal.save()
+            request.session["portal_completed_employee_id"] = employee.pk
             messages.success(request, _("Portal PIN set successfully."))
             return redirect("employee-portal-done")
 
@@ -5416,4 +5417,85 @@ def employee_portal_pin(request, token):
 
 def employee_portal_done(request):
     """Final page — shown after the employee completes all portal steps."""
-    return render(request, "employee/portal/done.html")
+    employee_id = request.session.get("portal_completed_employee_id")
+    employee = Employee.objects.filter(pk=employee_id).first() if employee_id else None
+    work_info = getattr(employee, "employee_work_info", None) if employee else None
+    return render(
+        request,
+        "employee/portal/done.html",
+        {"employee": employee, "work_info": work_info},
+    )
+
+
+def employee_portal_download_card(request):
+    """Generate and download a PDF ID card for the employee who just completed the portal."""
+    import base64
+    import io as _io
+
+    import qrcode
+    from xhtml2pdf import pisa
+
+    employee_id = request.session.get("portal_completed_employee_id")
+    if not employee_id:
+        return HttpResponse("Session expired. Please complete the portal again.", status=400)
+
+    employee = Employee.objects.filter(pk=employee_id).first()
+    if not employee:
+        return HttpResponse("Employee not found.", status=404)
+
+    work_info = getattr(employee, "employee_work_info", None)
+
+    # QR code → base64 PNG
+    qr_buf = _io.BytesIO()
+    qrcode.make("https://hrms.martindevcorp.com").save(qr_buf, format="PNG")
+    qr_b64 = base64.b64encode(qr_buf.getvalue()).decode()
+
+    # Employee photo → base64 (needed for xhtml2pdf inline images)
+    photo_b64 = None
+    photo_mime = "image/png"
+    if employee.employee_profile:
+        try:
+            from PIL import Image, ImageOps
+
+            with Image.open(employee.employee_profile.path) as photo:
+                photo = ImageOps.exif_transpose(photo)
+                photo = photo.convert("RGB")
+
+                target_width, target_height = 370, 440
+                source_width, source_height = photo.size
+                target_ratio = target_width / target_height
+                source_ratio = source_width / source_height
+
+                if source_ratio > target_ratio:
+                    crop_width = int(source_height * target_ratio)
+                    left = (source_width - crop_width) // 2
+                    photo = photo.crop((left, 0, left + crop_width, source_height))
+                else:
+                    crop_height = int(source_width / target_ratio)
+                    top = (source_height - crop_height) // 2
+                    photo = photo.crop((0, top, source_width, top + crop_height))
+
+                photo = photo.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                photo_buf = _io.BytesIO()
+                photo.save(photo_buf, format="PNG")
+                photo_b64 = base64.b64encode(photo_buf.getvalue()).decode()
+        except Exception:
+            pass
+
+    html = render_to_string(
+        "employee/portal/id_card_pdf.html",
+        {
+            "employee": employee,
+            "work_info": work_info,
+            "qr_b64": qr_b64,
+            "photo_b64": photo_b64,
+            "photo_mime": photo_mime,
+            "site_url": "hrms.martindevcorp.com",
+        },
+    )
+
+    result = _io.BytesIO()
+    pisa.CreatePDF(src=html, dest=result)
+    response = HttpResponse(result.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = 'attachment; filename="employee_card.pdf"'
+    return response

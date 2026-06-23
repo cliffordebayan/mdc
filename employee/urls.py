@@ -546,4 +546,9 @@ urlpatterns = [
         views.employee_portal_done,
         name="employee-portal-done",
     ),
+    path(
+        "employee-portal/download-card/",
+        views.employee_portal_download_card,
+        name="employee-portal-download-card",
+    ),
 ]
