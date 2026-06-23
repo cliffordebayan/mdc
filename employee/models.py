@@ -1151,6 +1151,7 @@ class EmployeeOnboardingPortal(models.Model):
         default=0,
         help_text="0=set-password, 1=profile-photo, 2=personal-details, 3=bank-details, 4=done",
     )
+    sent_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"EmployeeOnboardingPortal({self.employee_id}, count={self.count})"

@@ -4727,6 +4727,8 @@ def send_employee_portal_link(request, obj_id):
         email_msg.content_subtype = "html"
         try:
             email_msg.send()
+            portal.sent_at = timezone.now()
+            portal.save()
             messages.success(request, _("Portal link sent to %(email)s") % {"email": send_to})
         except Exception as e:
             logger.error(e)
@@ -4804,6 +4806,8 @@ def send_bulk_portal_link(request):
         email_msg.content_subtype = "html"
         try:
             email_msg.send()
+            portal.sent_at = timezone.now()
+            portal.save(update_fields=["sent_at"])
             success_count += 1
         except Exception as e:
             logger.error(e)
@@ -4952,6 +4956,7 @@ def check_bulk_email_status(request):
 
     already_sent = []
     not_sent = []
+    one_hour_ago = timezone.now() - timedelta(hours=1)
 
     for emp_id in ids:
         employee = Employee.objects.filter(id=emp_id).first()
@@ -4961,7 +4966,7 @@ def check_bulk_email_status(request):
         sent = False
         if email_type == "portal":
             sent = EmployeeOnboardingPortal.objects.filter(
-                employee_id_id=emp_id
+                employee_id_id=emp_id, sent_at__gte=one_hour_ago
             ).exists()
         elif email_type == "password":
             email_addr = (
@@ -4970,7 +4975,9 @@ def check_bulk_email_status(request):
             )
             if email_addr:
                 sent = EmailLog.objects.filter(
-                    to__iexact=email_addr, subject__icontains="password"
+                    to__iexact=email_addr,
+                    subject__icontains="password",
+                    created_at__gte=one_hour_ago,
                 ).exists()
         elif email_type == "pin":
             work_info = getattr(employee, "employee_work_info", None)
@@ -4979,7 +4986,9 @@ def check_bulk_email_status(request):
             )
             if email_addr:
                 sent = EmailLog.objects.filter(
-                    to__iexact=email_addr, subject__icontains="ATTENDANCE PIN"
+                    to__iexact=email_addr,
+                    subject__icontains="ATTENDANCE PIN",
+                    created_at__gte=one_hour_ago,
                 ).exists()
         elif email_type == "website_url":
             email_addr = (
@@ -4988,7 +4997,9 @@ def check_bulk_email_status(request):
             )
             if email_addr:
                 sent = EmailLog.objects.filter(
-                    to__iexact=email_addr, subject__icontains="HRIS Portal Link"
+                    to__iexact=email_addr,
+                    subject__icontains="HRIS Portal Link",
+                    created_at__gte=one_hour_ago,
                 ).exists()
 
         entry = {"id": emp_id, "name": employee.get_full_name()}
@@ -5073,6 +5084,8 @@ def send_single_bulk_email(request):
             email_msg = EmailMessage(subject=subject, body=html_message, to=[send_to])
             email_msg.content_subtype = "html"
             email_msg.send()
+            portal.sent_at = timezone.now()
+            portal.save(update_fields=["sent_at"])
             EmailLog.objects.create(
                 subject=subject,
                 body=html_message[:255],
