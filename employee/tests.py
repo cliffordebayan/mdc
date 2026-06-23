@@ -272,8 +272,8 @@ class EmployeeImportFlowTests(TransactionTestCase):
         self.assertEqual(work_info.salary_hour, 220)
 
         bank_accounts = EmployeeBankDetails.objects.filter(employee_id=employee)
-        self.assertTrue(bank_accounts.filter(bank_name="GCash").exists())
-        self.assertTrue(bank_accounts.filter(bank_name="Metrobank").exists())
+        self.assertTrue(bank_accounts.filter(bank__name="GCash").exists())
+        self.assertTrue(bank_accounts.filter(bank__name="Metrobank").exists())
 
 
 class EmployeeStatusTransitionTests(TransactionTestCase):

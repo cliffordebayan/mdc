@@ -852,6 +852,23 @@ class EmployeeWorkInformation(models.Model):
         return self
 
 
+class Bank(HorillaModel):
+    """
+    Canonical list of banks / e-wallets for the Philippines.
+    """
+
+    name = models.CharField(max_length=100, unique=True)
+    objects = models.Manager()
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = _("Bank")
+        verbose_name_plural = _("Banks")
+
+    def __str__(self):
+        return self.name
+
+
 class EmployeeBankDetails(HorillaModel):
     """
     EmployeeBankDetails model
@@ -864,7 +881,13 @@ class EmployeeBankDetails(HorillaModel):
         related_name="employee_bank_details",
         verbose_name=_("Employee"),
     )
-    bank_name = models.CharField(max_length=50)
+    bank = models.ForeignKey(
+        "Bank",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=False,
+        verbose_name=_("Bank"),
+    )
     account_number = models.CharField(
         max_length=50,
         null=True,
@@ -879,6 +902,10 @@ class EmployeeBankDetails(HorillaModel):
     class Meta:
         verbose_name = _("Employee Bank Details")
         verbose_name_plural = _("Employee Bank Details")
+
+    @property
+    def bank_name(self):
+        return self.bank.name if self.bank else ""
 
     def __str__(self) -> str:
         return f"{self.employee_id}-{self.bank_name}"

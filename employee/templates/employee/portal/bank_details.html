@@ -61,6 +61,10 @@
               <div class="oh-onboarding-card__count">4</div>
               <span class="oh-onboarding-card__text">{% trans "Bank Details" %}</span>
             </li>
+            <li class="oh-onboarding-card__step">
+              <div class="oh-onboarding-card__count">5</div>
+              <span class="oh-onboarding-card__text">{% trans "Portal PIN" %}</span>
+            </li>
           </ul>
         </div>
         <form method="post">
@@ -70,7 +74,8 @@
             {{ form.as_p }}
           </div>
           <button class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100 mb-2" role="button">
-            {% trans "Finish" %}
+            {% trans "Next Step" %}
+            <ion-icon class="ms-2" name="arrow-forward-outline"></ion-icon>
           </button>
           <a href="{% url 'employee-portal-personal' token %}"
             class="oh-btn oh-btn--light oh-btn--shadow w-100 mb-4"

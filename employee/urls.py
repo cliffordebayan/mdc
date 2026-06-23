@@ -9,7 +9,7 @@ from django.urls import path
 from base.views import object_delete, object_duplicate
 from employee import not_in_out_dashboard, policies, views
 from employee.forms import DisciplinaryActionForm
-from employee.models import DisciplinaryAction, Employee, EmployeeTag
+from employee.models import Bank, DisciplinaryAction, Employee, EmployeeTag
 from horilla_documents.models import DocumentRequest
 
 urlpatterns = [
@@ -95,6 +95,7 @@ urlpatterns = [
         views.employee_delete_bank_details,
         name="employee-delete-bank-details",
     ),
+    path("add-bank/", views.add_bank, name="employee-add-bank"),
     path(
         "employee-save-insurance",
         views.employee_save_insurance,
@@ -537,6 +538,11 @@ urlpatterns = [
         name="employee-portal-personal",
     ),
     path(
+        "employee-portal/bank/<str:token>/",
+        views.employee_portal_bank,
+        name="employee-portal-bank",
+    ),
+    path(
         "employee-portal/pin/<str:token>/",
         views.employee_portal_pin,
         name="employee-portal-pin",
@@ -550,5 +556,18 @@ urlpatterns = [
         "employee-portal/download-card/",
         views.employee_portal_download_card,
         name="employee-portal-download-card",
+    ),
+    path("settings/bank-view/", views.bank_settings_view, name="bank-view"),
+    path("settings/bank-creation/", views.bank_create, name="bank-creation"),
+    path(
+        "settings/bank-update/<int:obj_id>/",
+        views.bank_update,
+        name="bank-update",
+    ),
+    path(
+        "bank-delete/<int:obj_id>/",
+        object_delete,
+        name="bank-delete",
+        kwargs={"model": Bank, "HttpResponse": True},
     ),
 ]

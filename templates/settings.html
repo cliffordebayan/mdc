@@ -404,6 +404,16 @@
 													>
 												{% endif %}
 											</div>
+											<div class="oh-input-group">
+												{% if perms.employee.view_bank %}
+													<a
+														id="bankSettings"
+														href="{% url 'bank-view' %}"
+														class="oh-inner-sidebar__link oh-dropdown__link"
+														>{% trans "Banks" %}</a
+													>
+												{% endif %}
+											</div>
 
 										</div>
 									</div>

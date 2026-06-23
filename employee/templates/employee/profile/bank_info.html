@@ -2,71 +2,45 @@
 <div class="oh-general__tab-target oh-profile-section mb-4 d-none" id="bank">
     <div class="oh-profile-section__card">
 
-        {% if bank_accounts %}
-        <div class="mb-4">
-            <h6 class="fw-bold mb-3">{% trans "Existing Bank Accounts" %}</h6>
-            {% for bank in bank_accounts %}
-            <div class="border rounded p-3 mb-2 d-flex justify-content-between align-items-start">
-                <div>
-                    <strong>{{ bank.bank_name }}</strong>
-                    {% if bank.is_primary %}<span class="badge bg-success ms-2">{% trans "Primary" %}</span>{% endif %}
-                    <br>
-                    <small class="text-muted">{% trans "Account" %}: {{ bank.account_number|default:"—" }}</small>
-                </div>
-                <div class="d-flex gap-2">
-                    <button type="button" class="oh-btn oh-btn--secondary oh-btn--xs"
-                        onclick="fillBankForm({{ bank.id }}, '{{ bank.bank_name|escapejs }}', '{{ bank.account_number|default:''|escapejs }}', {{ bank.is_primary|yesno:'true,false' }})">
-                        {% trans "Edit" %}
-                    </button>
-                    <form method="post" action="{% url 'employee-delete-bank-details' bank.id %}" style="display:inline;">
-                        {% csrf_token %}
-                        <button type="submit" class="oh-btn oh-btn--danger oh-btn--xs"
-                            onclick="return confirm('{% trans "Delete this bank account?" %}')">
-                            {% trans "Delete" %}
-                        </button>
-                    </form>
-                </div>
+        {% if bank_account %}
+        <div class="mb-3 p-3 border rounded d-flex align-items-center gap-3" style="background:var(--oh-color-bg-subtle,#f8f9fa);">
+            <div>
+                <strong>{{ bank_account.bank_name }}</strong>
+                <div><small class="text-muted">{% trans "Account" %}: {{ bank_account.account_number|default:"—" }}</small></div>
             </div>
-            {% endfor %}
         </div>
-        <hr>
+        <hr class="mb-3">
         {% endif %}
 
-        <h6 class="fw-bold mb-3" id="bankFormTitle">{% trans "Add Bank Account" %}</h6>
+        <h6 class="fw-bold mb-3">{% trans "Bank Account" %}</h6>
         <form action="{% url 'employee-profile-bank-update' %}" method="post">
             {% csrf_token %}
-            <input type="hidden" name="bank_id" id="bankFormId" value="">
             <div class="row">
                 <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                    <div class="oh-input-group">
-                        <label class="oh-label">{% trans "Bank Name" %}</label>
-                        {{ bank_form.bank_name }}
-                        {{ bank_form.bank_name.errors }}
-                    </div>
+                    <label class="oh-label required-star">{% trans "Bank Name" %}</label>
+                    {{ bank_form.bank }}
+                    {# Sentinel injected synchronously so it's present before Select2 initializes #}
+                    <script>
+                    (function () {
+                        var sel = document.getElementById('id_bank');
+                        if (sel && !sel.querySelector('option[value="__add_bank__"]')) {
+                            var opt = document.createElement('option');
+                            opt.value = '__add_bank__';
+                            opt.textContent = '＋ {% trans "Add new bank..." %}';
+                            sel.appendChild(opt);
+                        }
+                    }());
+                    </script>
+                    {{ bank_form.bank.errors }}
                 </div>
                 <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                    <div class="oh-input-group">
-                        <label class="oh-label">{% trans "Account Number" %}</label>
-                        {{ bank_form.account_number }}
-                        {{ bank_form.account_number.errors }}
-                    </div>
+                    <label class="oh-label required-star">{% trans "Account Number" %}</label>
+                    {{ bank_form.account_number }}
+                    {{ bank_form.account_number.errors }}
                 </div>
             </div>
-            <div class="row mt-2">
-                <div class="col-12">
-                    <div class="oh-input-group d-flex align-items-center gap-2">
-                        <div class="oh-switch" style="width: 30px;">
-                            {{ bank_form.is_primary }}
-                        </div>
-                        <label class="oh-label mb-0" for="{{ bank_form.is_primary.id_for_label }}">{% trans "Set as Primary Account" %}</label>
-                    </div>
-                </div>
-            </div>
-            <hr class="mt-5 mb-3">
-            <div class="w-100 d-flex align-items-center justify-content-between">
-                <button type="button" class="oh-btn oh-btn--light oh-btn--w-100-resp d-none" id="bankCancelBtn" onclick="cancelBankEdit()">
-                    {% trans "Cancel" %}
-                </button>
+            <hr class="mt-4 mb-3">
+            <div class="w-100 d-flex justify-content-end">
                 <button type="submit" class="oh-btn oh-btn--secondary oh-btn--w-100-resp">
                     {% trans "Save" %}
                 </button>
@@ -74,23 +48,77 @@
         </form>
     </div>
 </div>
+
+{# ── Add Bank modal ───────────────────────────────────────────────── #}
+<div class="oh-modal" id="profileAddBankModal" role="dialog" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <span class="oh-modal__dialog-title">{% trans "Add New Bank" %}</span>
+            <button type="button" class="oh-modal__close" aria-label="Close">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <div class="oh-input__group mb-3">
+                <label class="oh-label required-star">{% trans "Bank Name" %}</label>
+                <input type="text" id="profileNewBankName" class="oh-input w-100"
+                       placeholder="{% trans 'e.g. Security Bank' %}" />
+                <div id="profileNewBankError" class="oh-alert oh-alert--danger mt-2" style="display:none;"></div>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="oh-btn oh-btn--light oh-modal__cancel">{% trans "Cancel" %}</button>
+                <button type="button" class="oh-btn oh-btn--secondary" id="profileSaveBankBtn">{% trans "Save" %}</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
-function fillBankForm(id, bankName, accountNumber, isPrimary) {
-    document.getElementById('bankFormId').value = id;
-    document.getElementById('bankFormTitle').textContent = '{% trans "Edit Bank Account" %}';
-    document.getElementById('id_bank_name').value = bankName;
-    document.getElementById('id_account_number').value = accountNumber;
-    document.getElementById('id_is_primary').checked = isPrimary;
-    document.getElementById('bankCancelBtn').classList.remove('d-none');
-    document.querySelector('#bank').scrollIntoView({behavior: 'smooth'});
-}
+$(document).ready(function () {
+    var SENTINEL    = '__add_bank__';
+    var $sel        = $('#id_bank');
+    var $modal      = $('#profileAddBankModal');
+    var $input      = $('#profileNewBankName');
+    var $error      = $('#profileNewBankError');
+    var csrfToken   = '{{ csrf_token }}';
+    var addBankUrl  = '{% url "employee-add-bank" %}';
 
-function cancelBankEdit() {
-    document.getElementById('bankFormId').value = '';
-    document.getElementById('bankFormTitle').textContent = '{% trans "Add Bank Account" %}';
-    document.querySelector('#bank form').reset();
-    document.getElementById('bankCancelBtn').classList.add('d-none');
-}
+    function openModal()  { $modal.addClass('oh-modal--show'); $input.val('').focus(); $error.hide(); }
+    function closeModal() { $modal.removeClass('oh-modal--show'); }
+
+    $sel.on('select2:select', function (e) {
+        if (e.params.data.id === SENTINEL) {
+            $sel.val(null).trigger('change');   // clear the sentinel "selection"
+            openModal();
+        }
+    });
+
+    $('#profileSaveBankBtn').on('click', function () {
+        var name = $input.val().trim();
+        if (!name) {
+            $error.text('{% trans "Please enter a bank name." %}').show();
+            return;
+        }
+        $error.hide();
+
+        $.ajax({
+            url: addBankUrl,
+            method: 'POST',
+            data: { name: name, csrfmiddlewaretoken: csrfToken },
+            success: function (data) {
+                // Insert the new option just before the sentinel
+                var sentinel = $sel.find('option[value="' + SENTINEL + '"]');
+                $('<option>', { value: data.id, text: data.name })
+                    .insertBefore(sentinel);
+                $sel.val(data.id).trigger('change');
+                closeModal();
+            },
+            error: function (xhr) {
+                var msg = '{% trans "Could not save bank." %}';
+                try { msg = JSON.parse(xhr.responseText).error || msg; } catch (ex) {}
+                $error.text(msg).show();
+            }
+        });
+    });
+});
 </script>

@@ -28,28 +28,23 @@ from base.models import (
     PayrollGroup,
     WorkType,
 )
-from employee.models import Employee, EmployeeBankDetails, EmployeeTag, EmployeeWorkInformation
+from employee.models import Bank, Employee, EmployeeBankDetails, EmployeeTag, EmployeeWorkInformation
 
 logger = logging.getLogger(__name__)
 
 is_postgres = connection.vendor == "postgresql"
 
-DEFAULT_BANK_NAMES = ["GCash", "Metrobank"]
 DEFAULT_INSURANCE_NAMES = []
 
 
 def get_import_bank_names():
-    """Returns the ordered list of bank names for import: defaults + any added in DB."""
-    db_banks = list(
-        EmployeeBankDetails.objects.values_list("bank_name", flat=True).distinct()
-    )
-    seen = set()
-    result = []
-    for name in DEFAULT_BANK_NAMES + db_banks:
-        if name not in seen:
-            seen.add(name)
-            result.append(name)
-    return result
+    """Returns the ordered list of canonical bank names from the Bank model."""
+    from django.db import OperationalError, ProgrammingError
+
+    try:
+        return list(Bank.objects.order_by("name").values_list("name", flat=True))
+    except (OperationalError, ProgrammingError):
+        return []
 
 
 def get_import_insurance_names():
@@ -70,7 +65,6 @@ def get_import_insurance_names():
 
 def get_error_data_template():
     """Returns a fresh error-report template dict with dynamic bank/insurance columns."""
-    bank_names = get_import_bank_names()
     insurance_names = get_import_insurance_names()
     return {
         field: []
@@ -121,7 +115,8 @@ def get_error_data_template():
             "Is Active",
             "Work Email",
             "Work Phone",
-            *bank_names,
+            "Bank",
+            "Account Number",
             *[col for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")],
             "Email Error",
             "First Name Error",
@@ -1202,7 +1197,8 @@ def bulk_create_work_info_import(success_lists):
 
 def bulk_create_bank_details_import(success_lists):
     """
-    Creates EmployeeBankDetails for Gcash and Metrobank columns from the import.
+    Creates EmployeeBankDetails from bank columns in the import file.
+    Each bank column header must match a canonical Bank.name value.
     """
     employee_nos = [row["Employee No"] for row in success_lists]
     existing_employees = {
@@ -1213,26 +1209,30 @@ def bulk_create_bank_details_import(success_lists):
     existing_bank_keys = set(
         EmployeeBankDetails.objects.filter(
             employee_id__in=existing_employees.values()
-        ).values_list("employee_id", "bank_name")
+        ).values_list("employee_id", "bank_id")
     )
 
-    bank_names = get_import_bank_names()
+    all_banks = {b.name: b for b in Bank.objects.all()}
+
     bank_details_to_create = []
     for row in success_lists:
         emp = existing_employees.get(row["Employee No"])
         if not emp:
             continue
-        for bank_name in bank_names:
-            account_no = convert_nan(bank_name, row)
-            if account_no and (emp.pk, bank_name) not in existing_bank_keys:
-                bank_details_to_create.append(
-                    EmployeeBankDetails(
-                        employee_id=emp,
-                        bank_name=bank_name,
-                        account_number=str(account_no).strip(),
-                    )
+        bank_name = convert_nan("Bank", row)
+        account_no = convert_nan("Account Number", row)
+        if not bank_name or not account_no:
+            continue
+        bank_obj = all_banks.get(str(bank_name).strip())
+        if bank_obj and (emp.pk, bank_obj.pk) not in existing_bank_keys:
+            bank_details_to_create.append(
+                EmployeeBankDetails(
+                    employee_id=emp,
+                    bank=bank_obj,
+                    account_number=str(account_no).strip(),
                 )
-                existing_bank_keys.add((emp.pk, bank_name))
+            )
+            existing_bank_keys.add((emp.pk, bank_obj.pk))
 
     if bank_details_to_create:
         with transaction.atomic():

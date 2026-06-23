@@ -43,6 +43,7 @@ from base.methods import (
 )
 from employee.models import (
     Actiontype,
+    Bank,
     BonusPoint,
     DisciplinaryAction,
     Employee,
@@ -574,25 +575,14 @@ class EmployeeBankDetailsForm(ModelForm):
     """
 
     class Meta:
-        """
-        Meta class to add the additional info
-        """
-
         model = EmployeeBankDetails
-        fields = (
-            "bank_name",
-            "account_number",
-            "is_primary",
-        )
-        exclude = ["employee_id", "is_active", "additional_info"]
+        fields = ("bank", "account_number")
+        exclude = ["employee_id", "is_active", "additional_info", "is_primary"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for visible in self.visible_fields():
-            if visible.field.widget.input_type == "checkbox":
-                visible.field.widget.attrs["class"] = "oh-switch__checkbox"
-            else:
-                visible.field.widget.attrs["class"] = "oh-input w-100"
+        self.fields["bank"].widget.attrs["class"] = "oh-select oh-select-2 w-100"
+        self.fields["account_number"].widget.attrs["class"] = "oh-input w-100"
 
     def as_p(self, *args, **kwargs):
         context = {"form": self}
@@ -605,18 +595,14 @@ class EmployeeBankDetailsUpdateForm(ModelForm):
     """
 
     class Meta:
-        """
-        Meta class to add the additional info
-        """
-
         model = EmployeeBankDetails
         fields = "__all__"
-        exclude = ["employee_id", "is_active", "additional_info"]
+        exclude = ["employee_id", "is_active", "additional_info", "is_primary"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for visible in self.visible_fields():
-            visible.field.widget.attrs["class"] = "oh-input w-100"
+        self.fields["bank"].widget.attrs["class"] = "oh-select oh-select-2 w-100"
+        self.fields["account_number"].widget.attrs["class"] = "oh-input w-100"
         for field in self.fields:
             self.fields[field].widget.attrs["placeholder"] = get_ph_field_placeholder(
                 field, self.fields[field].label
@@ -979,10 +965,6 @@ class EmployeePortalPersonalForm(ModelForm):
             "state",
             "city",
             "zip",
-            "qualification",
-            "experience",
-            "marital_status",
-            "children",
             "emergency_contact",
             "emergency_contact_name",
             "emergency_contact_relation",
@@ -1000,10 +982,6 @@ class EmployeePortalPersonalForm(ModelForm):
             "state": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
             "city": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "zip": forms.TextInput(attrs={"class": "oh-input w-100"}),
-            "qualification": forms.TextInput(attrs={"class": "oh-input w-100"}),
-            "experience": forms.NumberInput(attrs={"class": "oh-input w-100"}),
-            "marital_status": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
-            "children": forms.NumberInput(attrs={"class": "oh-input w-100"}),
             "emergency_contact": forms.TextInput(attrs={"class": "oh-input w-100", "maxlength": "11", "minlength": "11", "placeholder": "09XXXXXXXXX"}),
             "emergency_contact_name": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "emergency_contact_relation": forms.TextInput(attrs={"class": "oh-input w-100"}),
@@ -1019,8 +997,6 @@ class EmployeePortalPersonalForm(ModelForm):
         "state",
         "city",
         "zip",
-        "marital_status",
-        "children",
         "emergency_contact",
         "emergency_contact_name",
         "emergency_contact_relation",
@@ -1110,3 +1086,9 @@ class EmployeePortalPINForm(ModelForm):
         if pin is not None and confirm_pin is not None and pin != confirm_pin:
             self.add_error("confirm_pin", "PINs do not match.")
         return cleaned_data
+
+
+class BankForm(ModelForm):
+    class Meta:
+        model = Bank
+        fields = ["name"]

@@ -82,6 +82,7 @@ from base.models import (
 from base.views import generate_error_report
 from employee.filters import DocumentRequestFilter, EmployeeFilter, EmployeeReGroup
 from employee.forms import (
+    BankForm,
     BonusPointAddForm,
     BonusPointRedeemForm,
     BulkUpdateFieldForm,
@@ -121,6 +122,7 @@ from employee.methods.methods import (
     valid_import_file_headers,
 )
 from employee.models import (
+    Bank,
     BonusPoint,
     Employee,
     EmployeeBankDetails,
@@ -307,7 +309,8 @@ def self_info_update(request):
     user = request.user
     employee = Employee.objects.filter(employee_user_id=user).first()
     employee_no = employee.employee_no
-    bank_form = EmployeeBankDetailsForm()
+    existing_bank = EmployeeBankDetails.objects.filter(employee_id=employee).first()
+    bank_form = EmployeeBankDetailsForm(instance=existing_bank)
     form = EmployeeForm(instance=Employee.objects.filter(employee_user_id=user).first())
     if request.POST:
         if request.POST.get("employee_first_name") is not None:
@@ -321,18 +324,17 @@ def self_info_update(request):
                 instance.save()
                 messages.success(request, _("Profile updated."))
         elif request.POST.get("any_other_code1") is not None:
-            bank_id = request.POST.get("bank_id")
-            existing = EmployeeBankDetails.objects.filter(id=bank_id, employee_id=employee).first() if bank_id else None
-            bank_form = EmployeeBankDetailsForm(request.POST, instance=existing)
+            existing_bank = EmployeeBankDetails.objects.filter(employee_id=employee).first()
+            bank_form = EmployeeBankDetailsForm(request.POST, instance=existing_bank)
             if bank_form.is_valid():
                 instance = bank_form.save(commit=False)
                 instance.employee_id = employee
+                instance.is_primary = True
                 instance.save()
-                if instance.is_primary:
-                    EmployeeBankDetails.objects.filter(employee_id=employee).exclude(pk=instance.pk).update(is_primary=False)
                 messages.success(request, _("Bank details saved."))
-                bank_form = EmployeeBankDetailsForm()
-    bank_accounts = EmployeeBankDetails.objects.filter(employee_id=employee)
+                existing_bank = instance
+                bank_form = EmployeeBankDetailsForm(instance=existing_bank)
+    bank_account = EmployeeBankDetails.objects.filter(employee_id=employee).first()
     insurance_form = EmployeeInsuranceForm()
     insurance_accounts = EmployeeInsurance.objects.filter(employee_id=employee)
     return render(
@@ -341,7 +343,7 @@ def self_info_update(request):
         {
             "form": form,
             "bank_form": bank_form,
-            "bank_accounts": bank_accounts,
+            "bank_account": bank_account,
             "insurance_form": insurance_form,
             "insurance_accounts": insurance_accounts,
         },
@@ -1342,15 +1344,13 @@ def employee_profile_bank_details(request):
     This method is used to fill self bank details
     """
     employee = request.user.employee_get
-    bank_id = request.POST.get("bank_id")
-    instance = EmployeeBankDetails.objects.filter(id=bank_id, employee_id=employee).first() if bank_id else None
-    form = EmployeeBankDetailsUpdateForm(request.POST, instance=instance)
+    existing = EmployeeBankDetails.objects.filter(employee_id=employee).first()
+    form = EmployeeBankDetailsUpdateForm(request.POST, instance=existing)
     if form.is_valid():
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
+        bank_info.is_primary = True
         bank_info.save()
-        if bank_info.is_primary:
-            EmployeeBankDetails.objects.filter(employee_id=employee).exclude(pk=bank_info.pk).update(is_primary=False)
         messages.success(request, _("Bank details saved"))
     return HorillaRedirect(request)
 
@@ -1827,7 +1827,8 @@ def employee_view_update(request, obj_id, **kwargs):
                 employee_id=employee
             ).first()
         )
-        bank_form = EmployeeBankDetailsForm()
+        existing_bank = EmployeeBankDetails.objects.filter(employee_id=employee).first()
+        bank_form = EmployeeBankDetailsUpdateForm(instance=existing_bank)
         if request.POST:
             if request.POST.get("form") == "personal":
                 form = EmployeeForm(request.POST, instance=employee)
@@ -1866,18 +1867,16 @@ def employee_view_update(request, obj_id, **kwargs):
                     ).first()
                 )
             elif request.POST.get("form") == "bank":
-                bank_id = request.POST.get("bank_id")
-                existing = EmployeeBankDetails.objects.filter(id=bank_id, employee_id=employee).first() if bank_id else None
-                bank_form = EmployeeBankDetailsUpdateForm(request.POST, instance=existing)
+                existing_bank = EmployeeBankDetails.objects.filter(employee_id=employee).first()
+                bank_form = EmployeeBankDetailsUpdateForm(request.POST, instance=existing_bank)
                 if bank_form.is_valid():
                     instance = bank_form.save(commit=False)
                     instance.employee_id = employee
+                    instance.is_primary = True
                     instance.save()
-                    if instance.is_primary:
-                        EmployeeBankDetails.objects.filter(employee_id=employee).exclude(pk=instance.pk).update(is_primary=False)
                     messages.success(request, _("Employee bank details updated."))
-                    bank_form = EmployeeBankDetailsForm()
-        bank_accounts = EmployeeBankDetails.objects.filter(employee_id=employee)
+                    bank_form = EmployeeBankDetailsUpdateForm(instance=instance)
+        bank_account = EmployeeBankDetails.objects.filter(employee_id=employee).first()
         insurance_form = EmployeeInsuranceForm()
         insurance_accounts = EmployeeInsurance.objects.filter(employee_id=employee)
         return render(
@@ -1888,7 +1887,7 @@ def employee_view_update(request, obj_id, **kwargs):
                 "form": form,
                 "work_form": work_form,
                 "bank_form": bank_form,
-                "bank_accounts": bank_accounts,
+                "bank_account": bank_account,
                 "insurance_form": insurance_form,
                 "insurance_accounts": insurance_accounts,
                 "work_info_history": work_info_history,
@@ -2106,15 +2105,13 @@ def employee_update_bank_details(request, obj_id=None):
     This method is used to render form to create employee's bank information.
     """
     employee = Employee.objects.filter(id=obj_id).first()
-    bank_id = request.POST.get("bank_id")
-    existing = EmployeeBankDetails.objects.filter(id=bank_id, employee_id=employee).first() if bank_id else None
+    existing = EmployeeBankDetails.objects.filter(employee_id=employee).first() if employee else None
     form = EmployeeBankDetailsForm(request.POST, instance=existing)
     if form.is_valid() and employee is not None:
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
+        bank_info.is_primary = True
         bank_info.save()
-        if bank_info.is_primary:
-            EmployeeBankDetails.objects.filter(employee_id=employee).exclude(pk=bank_info.pk).update(is_primary=False)
         return HttpResponse(
             """
             <div class="oh-alert-container">
@@ -2745,7 +2742,8 @@ def employee_bank_details_view_create(request, obj_id):
     """
     employee = Employee.objects.get(id=obj_id)
     form = EmployeeForm(instance=employee)
-    bank_form = EmployeeBankDetailsUpdateForm(request.POST)
+    existing_bank = EmployeeBankDetails.objects.filter(employee_id=employee).first()
+    bank_form = EmployeeBankDetailsUpdateForm(request.POST, instance=existing_bank)
     work_form_instance = EmployeeWorkInformation.objects.filter(
         employee_id=employee
     ).first()
@@ -2755,8 +2753,9 @@ def employee_bank_details_view_create(request, obj_id):
     if bank_form.is_valid():
         bank_instance = bank_form.save(commit=False)
         bank_instance.employee_id = employee
+        bank_instance.is_primary = True
         bank_instance.save()
-        messages.success(request, _("Bank Details Created Successfully"))
+        messages.success(request, _("Bank Details Saved Successfully"))
     return render(
         request,
         "employee_personal_info/employee_update_form.html",
@@ -2782,6 +2781,7 @@ def employee_bank_details_view_update(request, obj_id):
     if bank_form.is_valid():
         bank_instance = bank_form.save(commit=False)
         bank_instance.employee_id = employee_bank_instance.employee_id
+        bank_instance.is_primary = True
         bank_instance.save()
         messages.success(request, _("Bank Details Updated Successfully"))
     return render(
@@ -2835,6 +2835,17 @@ def employee_delete_bank_details(request, obj_id):
     except EmployeeBankDetails.DoesNotExist:
         messages.error(request, _("Bank account not found"))
     return HorillaRedirect(request)
+
+
+@login_required
+@require_http_methods(["POST"])
+def add_bank(request):
+    """Create a new Bank entry and return its id and name as JSON."""
+    name = request.POST.get("name", "").strip()
+    if not name:
+        return JsonResponse({"error": "Bank name is required."}, status=400)
+    bank, _ = Bank.objects.get_or_create(name=name)
+    return JsonResponse({"id": bank.id, "name": bank.name})
 
 
 @login_required
@@ -3053,7 +3064,8 @@ def work_info_import_file(request):
         "Work Email",
         "Work Phone",
         "PIN",
-        *bank_names,
+        "Bank",
+        "Account Number",
         *[col for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")],
     ]
     example = {
@@ -3104,7 +3116,8 @@ def work_info_import_file(request):
         "Work Email": "",
         "Work Phone": "",
         "PIN": "",
-        **{bank: "" for bank in bank_names},
+        "Bank": "",
+        "Account Number": "",
         **{col: "" for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")},
     }
 
@@ -3122,6 +3135,7 @@ def work_info_import_file(request):
         "Branch": list(Branch.objects.values_list("branch", flat=True)),
         "Cost Center": list(CostCenter.objects.values_list("name", flat=True)),
         "Business Unit": list(BusinessUnit.objects.values_list("name", flat=True)),
+        "Bank": list(bank_names),
     }
 
     philippine_provinces = [
@@ -3563,20 +3577,7 @@ def work_info_export(request):
     has_insurance = any(f == "employee_insurance" for f, _ in selected_columns)
 
     employee_ids = list(employees.values_list("id", flat=True))
-    all_bank_names = []
     all_insurance_names = []
-
-    if bank_detail_fields and employee_ids:
-        _seen_banks = {}
-        for _name in (
-            EmployeeBankDetails.objects.filter(employee_id__in=employee_ids)
-            .values_list("bank_name", flat=True)
-            .order_by("bank_name")
-        ):
-            _key = _name.strip().lower()
-            if _key not in _seen_banks:
-                _seen_banks[_key] = _name.strip()
-        all_bank_names = sorted(_seen_banks.values(), key=str.lower)
 
     if has_insurance and employee_ids:
         _seen_ins = {}
@@ -3595,8 +3596,8 @@ def work_info_export(request):
     for col_value, col_name in selected_columns:
         if col_value.startswith("employee_bank_details__"):
             if not bank_cols_added:
-                for bank_name in all_bank_names:
-                    employees_data[bank_name] = []
+                employees_data["Bank Name"] = []
+                employees_data["Account Number"] = []
                 bank_cols_added = True
         elif col_value == "employee_insurance":
             for ins_name in all_insurance_names:
@@ -3609,7 +3610,7 @@ def work_info_export(request):
     date_fmt = HORILLA_DATE_FORMATS.get(date_format, "%Y-%m-%d")
     for employee in employees:
         # Cache bank accounts and insurances per employee (primary first).
-        emp_banks = list(employee.employee_bank_details.order_by("-is_primary", "id")) if bank_detail_fields else []
+        emp_banks = list(employee.employee_bank_details.select_related("bank").order_by("-is_primary", "id")) if bank_detail_fields else []
         emp_insurances = list(employee.employee_insurance.all()) if has_insurance else []
         bank_written = False
 
@@ -3657,11 +3658,9 @@ def work_info_export(request):
 
             if column_value.startswith("employee_bank_details__"):
                 if not bank_written:
-                    for bank_name in all_bank_names:
-                        bank = next((b for b in emp_banks if b.bank_name.strip().lower() == bank_name.lower()), None)
-                        employees_data[bank_name].append(
-                            str(bank.account_number or "") if bank else ""
-                        )
+                    primary_bank = emp_banks[0] if emp_banks else None
+                    employees_data["Bank Name"].append(primary_bank.bank_name if primary_bank else "")
+                    employees_data["Account Number"].append(str(primary_bank.account_number or "") if primary_bank else "")
                     bank_written = True
                 continue
 
@@ -5371,7 +5370,7 @@ def employee_portal_personal(request, token):
             portal.count = 3
             portal.save()
             messages.success(request, _("Personal details saved successfully."))
-            return redirect("employee-portal-pin", token)
+            return redirect("employee-portal-bank", token)
 
     company = work_info.company_id
 
@@ -5382,14 +5381,47 @@ def employee_portal_personal(request, token):
     )
 
 
-def employee_portal_pin(request, token):
-    """Step 4 — Employee sets their attendance portal PIN."""
+def employee_portal_bank(request, token):
+    """Step 4 — Employee fills in bank details."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
     if portal is None or portal.used:
         return render(request, "404.html")
 
     if portal.count < 3:
         return redirect("employee-portal-personal", token)
+
+    employee = portal.employee_id
+    work_info, _created = EmployeeWorkInformation.objects.get_or_create(employee_id=employee)
+    existing_bank = EmployeeBankDetails.objects.filter(employee_id=employee).first()
+    form = EmployeeBankDetailsForm(instance=existing_bank)
+
+    if request.method == "POST":
+        form = EmployeeBankDetailsForm(request.POST, instance=existing_bank)
+        if form.is_valid():
+            instance = form.save(commit=False)
+            instance.employee_id = employee
+            instance.is_primary = True
+            instance.save()
+            portal.count = 4
+            portal.save()
+            messages.success(request, _("Bank details saved successfully."))
+            return redirect("employee-portal-pin", token)
+
+    return render(
+        request,
+        "employee/portal/bank_details.html",
+        {"form": form, "employee": employee, "company": work_info.company_id, "token": token},
+    )
+
+
+def employee_portal_pin(request, token):
+    """Step 5 — Employee sets their attendance portal PIN."""
+    portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
+    if portal is None or portal.used:
+        return render(request, "404.html")
+
+    if portal.count < 4:
+        return redirect("employee-portal-bank", token)
 
     employee = portal.employee_id
     work_info, _created = EmployeeWorkInformation.objects.entire().get_or_create(employee_id=employee)
@@ -5399,7 +5431,7 @@ def employee_portal_pin(request, token):
         form = EmployeePortalPINForm(request.POST, instance=work_info)
         if form.is_valid():
             form.save()
-            portal.count = 4
+            portal.count = 5
             portal.used = True
             portal.save()
             request.session["portal_completed_employee_id"] = employee.pk
@@ -5499,3 +5531,40 @@ def employee_portal_download_card(request):
     response = HttpResponse(result.getvalue(), content_type="application/pdf")
     response["Content-Disposition"] = 'attachment; filename="employee_card.pdf"'
     return response
+
+
+@login_required
+@permission_required("employee.view_bank")
+def bank_settings_view(request):
+    banks = Bank.objects.all()
+    return render(request, "employee/bank/bank.html", {"banks": banks})
+
+
+@login_required
+@hx_request_required
+@permission_required("employee.add_bank")
+def bank_create(request):
+    form = BankForm()
+    if request.method == "POST":
+        form = BankForm(request.POST)
+        if form.is_valid():
+            form.save()
+            form = BankForm()
+            messages.success(request, _("Bank has been created successfully!"))
+            return HorillaRedirect(request)
+    return render(request, "employee/bank/bank_form.html", {"form": form})
+
+
+@login_required
+@hx_request_required
+@permission_required("employee.change_bank")
+def bank_update(request, obj_id):
+    bank = Bank.objects.get(id=obj_id)
+    form = BankForm(instance=bank)
+    if request.method == "POST":
+        form = BankForm(request.POST, instance=bank)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Bank updated successfully."))
+            return HorillaRedirect(request)
+    return render(request, "employee/bank/bank_form.html", {"form": form, "bank": bank})
