@@ -55,7 +55,7 @@ from base.models import (
     EmployeeShiftDay,
     EmployeeShiftSchedule,
 )
-from employee.models import Employee
+from employee.models import Employee, EmployeeBankDetails, EmployeeInsurance
 
 logger = logging.getLogger(__name__)
 
@@ -965,6 +965,132 @@ def _update_attendance_worked_hours(employee, attendance_date):
     return attendance
 
 
+def _portal_display_value(value):
+    if value is None or value == "":
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%b %d, %Y")
+    return str(value)
+
+
+def _portal_profile_item(label, value):
+    return {
+        "label": str(label),
+        "value": _portal_display_value(value),
+    }
+
+
+def _portal_choice_display(instance, field_name):
+    display_method = getattr(instance, f"get_{field_name}_display", None)
+    if callable(display_method):
+        return display_method()
+    return getattr(instance, field_name, None)
+
+
+def _portal_employee_profile_payload(employee):
+    work_info = getattr(employee, "employee_work_info", None)
+    primary_bank = (
+        EmployeeBankDetails.objects.filter(employee_id=employee, is_primary=True).first()
+        or EmployeeBankDetails.objects.filter(employee_id=employee).first()
+    )
+    insurances = EmployeeInsurance.objects.filter(employee_id=employee).order_by(
+        "start_date",
+        "id",
+    )
+
+    personal_items = [
+        _portal_profile_item(_("Employee ID"), employee.employee_no),
+        _portal_profile_item(_("Personal Email"), employee.email),
+        _portal_profile_item(_("Phone"), employee.phone),
+        _portal_profile_item(_("Date of Birth"), employee.dob),
+        _portal_profile_item(_("Gender"), _portal_choice_display(employee, "gender")),
+        _portal_profile_item(
+            _("Marital Status"),
+            _portal_choice_display(employee, "marital_status"),
+        ),
+        _portal_profile_item(_("TIN Number"), employee.tin_number),
+        _portal_profile_item(_("SSS Number"), employee.sss_number),
+        _portal_profile_item(_("HDMF Number"), employee.hdmf_number),
+        _portal_profile_item(_("PhilHealth Number"), employee.philhealth_number),
+        _portal_profile_item(_("Address"), employee.address),
+        _portal_profile_item(_("City"), employee.city),
+        _portal_profile_item(_("State"), employee.state),
+        _portal_profile_item(_("Country"), employee.country),
+        _portal_profile_item(_("ZIP"), employee.zip),
+        _portal_profile_item(_("Emergency Contact"), employee.emergency_contact_name),
+        _portal_profile_item(_("Emergency Phone"), employee.emergency_contact),
+        _portal_profile_item(
+            _("Emergency Relation"),
+            employee.emergency_contact_relation,
+        ),
+    ]
+
+    work_items = [
+        _portal_profile_item(_("Company"), getattr(work_info, "company_id", None)),
+        _portal_profile_item(_("Branch"), getattr(work_info, "branch_id", None)),
+        _portal_profile_item(_("Department"), getattr(work_info, "department_id", None)),
+        _portal_profile_item(
+            _("Job Position"),
+            getattr(work_info, "job_position_id", None),
+        ),
+        _portal_profile_item(_("Job Role"), getattr(work_info, "job_role_id", None)),
+        _portal_profile_item(_("Work Type"), getattr(work_info, "work_type_id", None)),
+        _portal_profile_item(
+            _("Employee Type"),
+            getattr(work_info, "employee_type_id", None),
+        ),
+        _portal_profile_item(
+            _("Reporting Manager"),
+            getattr(work_info, "reporting_manager_id", None),
+        ),
+        _portal_profile_item(_("Shift"), getattr(work_info, "shift_id", None)),
+        _portal_profile_item(_("Work Location"), getattr(work_info, "location", None)),
+        _portal_profile_item(_("Work Email"), getattr(work_info, "email", None)),
+        _portal_profile_item(_("Work Phone"), getattr(work_info, "mobile", None)),
+        _portal_profile_item(_("Joining Date"), getattr(work_info, "date_joining", None)),
+        _portal_profile_item(
+            _("Contract End Date"),
+            getattr(work_info, "contract_end_date", None),
+        ),
+        _portal_profile_item(
+            _("Employee Status"),
+            _portal_choice_display(work_info, "employee_status") if work_info else None,
+        ),
+    ]
+
+    bank_items = [
+        _portal_profile_item(_("Bank"), getattr(primary_bank, "bank", None)),
+        _portal_profile_item(
+            _("Account Number"),
+            getattr(primary_bank, "account_number", None),
+        ),
+    ]
+
+    insurance_rows = [
+        {
+            "name": _portal_display_value(insurance.name),
+            "description": _portal_display_value(insurance.description),
+            "start_date": _portal_display_value(insurance.start_date),
+            "end_date": _portal_display_value(insurance.end_date),
+        }
+        for insurance in insurances
+    ]
+
+    return {
+        "employee": {
+            "name": employee.get_full_name(),
+            "employee_no": employee.employee_no or "",
+            "avatar": employee.get_avatar(),
+        },
+        "sections": {
+            "personal": [item for item in personal_items if item["value"]],
+            "work": [item for item in work_items if item["value"]],
+            "bank": [item for item in bank_items if item["value"]],
+            "insurance": insurance_rows,
+        },
+    }
+
+
 def public_portal(request):
     """
     Render the public portal clock in/out page.
@@ -1401,6 +1527,60 @@ def attendance_history(request):
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
             "rows": rows,
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def employee_profile(request):
+    """
+    Return read-only profile information for the selected public portal employee.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = (
+            Employee.objects.select_related(
+                "employee_work_info__company_id",
+                "employee_work_info__branch_id",
+                "employee_work_info__department_id",
+                "employee_work_info__job_position_id",
+                "employee_work_info__job_role_id",
+                "employee_work_info__reporting_manager_id",
+                "employee_work_info__shift_id",
+                "employee_work_info__work_type_id",
+                "employee_work_info__employee_type_id",
+            )
+            .prefetch_related("employee_bank_details__bank", "employee_insurance")
+            .get(id=employee_id, is_active=True)
+        )
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            **_portal_employee_profile_payload(employee),
         },
         status=200,
     )

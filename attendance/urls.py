@@ -68,6 +68,11 @@ urlpatterns = [
         name="portal-attendance-history",
     ),
     path(
+        "portal/profile/",
+        attendance.views.portal.employee_profile,
+        name="portal-employee-profile",
+    ),
+    path(
         "portal/server-time/",
         attendance.views.portal.server_time,
         name="portal-server-time",
