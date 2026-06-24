@@ -15,7 +15,7 @@ from django.apps import apps
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import ProtectedError, Q
+from django.db.models import ProtectedError, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -993,7 +993,63 @@ def leave_request_update(request, id):
             save = True
 
             if save:
-                leave_request.save()
+                old_approved_available_days = leave_request.approved_available_days
+                old_approved_carryforward_days = leave_request.approved_carryforward_days
+                was_approved = leave_request.status == "approved"
+                validation_error = None
+
+                with transaction.atomic():
+                    leave_request.save()
+
+                    if was_approved:
+                        other_approved_days = (
+                            LeaveRequest.objects.filter(
+                                employee_id=leave_request.employee_id,
+                                leave_type_id=leave_request.leave_type_id,
+                                status="approved",
+                            )
+                            .exclude(id=leave_request.id)
+                            .aggregate(total=Sum("requested_days"))["total"]
+                            or 0
+                        )
+
+                        max_allowed = leave_request.leave_type_id.total_days - other_approved_days
+
+                        if leave_request.requested_days > max_allowed:
+                            transaction.set_rollback(True)
+                            validation_error = _(
+                                "Cannot update. Total approved days would exceed the {max}-day limit for {leave_type}."
+                            ).format(
+                                max=leave_request.leave_type_id.total_days,
+                                leave_type=leave_request.leave_type_id,
+                            )
+                        else:
+                            try:
+                                available_leave = AvailableLeave.objects.get(
+                                    leave_type_id=leave_request.leave_type_id,
+                                    employee_id=leave_request.employee_id,
+                                )
+                                available_leave.available_days += old_approved_available_days
+                                available_leave.carryforward_days += old_approved_carryforward_days
+                                if leave_request.requested_days > available_leave.carryforward_days:
+                                    leave = leave_request.requested_days - available_leave.carryforward_days
+                                    leave_request.approved_carryforward_days = available_leave.carryforward_days
+                                    available_leave.carryforward_days = 0
+                                    available_leave.available_days -= leave
+                                    leave_request.approved_available_days = leave
+                                else:
+                                    available_leave.carryforward_days -= leave_request.requested_days
+                                    leave_request.approved_carryforward_days = leave_request.requested_days
+                                    leave_request.approved_available_days = 0
+                                available_leave.save()
+                                leave_request.save()
+                            except AvailableLeave.DoesNotExist:
+                                pass
+
+                if validation_error:
+                    messages.error(request, validation_error)
+                    return HorillaRedirect(request)
+
                 messages.success(request, _("Leave request is updated successfully.."))
                 with contextlib.suppress(Exception):
                     notify.send(
@@ -1089,6 +1145,11 @@ def leave_request_approve(request, id, emp_id=None):
     available_leave = AvailableLeave.objects.get(
         leave_type_id=leave_type_id, employee_id=employee_id
     )
+    if leave_type_id.carryforward_type == "no carryforward":
+        taken = available_leave.leave_taken()
+        available_leave.available_days = max(
+            round(leave_type_id.total_days - taken, 3), 0
+        )
     total_available_leave = (
         available_leave.available_days + available_leave.carryforward_days
     )

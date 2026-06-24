@@ -687,10 +687,37 @@ def _employee_shift_schedules(schedule_keys):
     return schedule_by_key
 
 
-def build_daily_activity_rows(attendance_activities):
+def _leave_days_for_date(lr, date_val):
+    end = lr.end_date or lr.start_date
+    if date_val == lr.start_date:
+        breakdown = lr.start_date_breakdown
+    elif date_val == end:
+        breakdown = lr.end_date_breakdown
+    else:
+        return 1.0
+    return 0.5 if breakdown in ("first_half", "second_half") else 1.0
+
+
+def _leave_type_for_row(leave_by_key, emp_id, date_val):
+    if date_val and date_val > date.today():
+        return None
+    data = leave_by_key.get((emp_id, date_val))
+    return data[0] if data else None
+
+
+def _leave_days_for_row(leave_by_key, emp_id, date_val):
+    if date_val and date_val > date.today():
+        return None
+    data = leave_by_key.get((emp_id, date_val))
+    return data[1] if data else None
+
+
+def build_daily_activity_rows(attendance_activities, date_from=None, date_to=None):
     """
     Convert activity records into one row per employee and attendance date.
     Break/lunch rows keep all underlying activity ids for bulk actions.
+    Leave-only rows are added for approved leaves on current/past dates
+    where there are no activity records.
     """
 
     activities = list(
@@ -733,25 +760,39 @@ def build_daily_activity_rows(attendance_activities):
 
     leave_by_key = {}
     holiday_by_date = {}
-    if employee_ids and attendance_dates:
-        min_date = min(attendance_dates)
-        max_date = max(attendance_dates)
+    all_check_dates = set(attendance_dates)
+    if date_from and date_to:
+        current = date_from
+        while current <= date_to:
+            all_check_dates.add(current)
+            current += timedelta(days=1)
+
+    if employee_ids:
+        today_date = date.today()
+        # Only fetch leaves that have started on or before today — future leaves are excluded.
+        # The inner `current <= today_date` cap handles leaves that span into the future.
         leave_requests = LeaveRequest.objects.filter(
             employee_id_id__in=employee_ids,
             status="approved",
-            start_date__lte=max_date,
-            end_date__gte=min_date,
+            start_date__lte=today_date,
         ).select_related("leave_type_id")
-        leave_by_employee = {}
-        for lr in leave_requests:
-            leave_by_employee.setdefault(lr.employee_id_id, []).append(lr)
-        for emp_id, date_val in [(e, d) for e in employee_ids for d in attendance_dates]:
-            for lr in leave_by_employee.get(emp_id, []):
-                end = lr.end_date or lr.start_date
-                if lr.start_date <= date_val <= end:
-                    leave_by_key[(emp_id, date_val)] = lr.leave_type_id.name
-                    break
 
+        for lr in leave_requests:
+            end = lr.end_date or lr.start_date
+            current = lr.start_date
+            while current <= end:
+                if current <= today_date:
+                    all_check_dates.add(current)
+                    if (lr.employee_id_id, current) not in leave_by_key:
+                        leave_by_key[(lr.employee_id_id, current)] = (
+                            lr.leave_type_id.name,
+                            _leave_days_for_date(lr, current),
+                        )
+                current += timedelta(days=1)
+
+    if employee_ids and attendance_dates:
+        min_date = date_from if date_from else min(attendance_dates)
+        max_date = date_to if date_to else max(all_check_dates or attendance_dates)
         holidays = Holidays.objects.filter(
             start_date__lte=max_date,
             end_date__gte=min_date,
@@ -760,7 +801,7 @@ def build_daily_activity_rows(attendance_activities):
             current = holiday.start_date
             end = holiday.end_date or holiday.start_date
             while current <= end:
-                if current in attendance_dates and current not in holiday_by_date:
+                if current in all_check_dates and current not in holiday_by_date:
                     holiday_by_date[current] = holiday.name
                 current += timedelta(days=1)
 
@@ -902,10 +943,77 @@ def build_daily_activity_rows(attendance_activities):
                     work_activities,
                     attendance_date,
                 ),
-                leave=leave_by_key.get((employee_id, attendance_date)),
+                leave=_leave_type_for_row(
+                    leave_by_key, employee_id, attendance_date
+                ),
+                leave_type=_leave_type_for_row(
+                    leave_by_key, employee_id, attendance_date
+                ),
+                leave_days=_leave_days_for_row(
+                    leave_by_key, employee_id, attendance_date
+                ),
+                is_leave_only=False,
                 holiday=holiday_by_date.get(attendance_date),
             )
         )
+
+    # Add leave-only rows for approved leave days with no attendance activity
+    today_date = date.today()
+    activity_keys = {(row.employee.id, row.attendance_date) for row in rows}
+    employee_by_id = {a.employee_id_id: a.employee_id for a in activities}
+
+    for emp_id in employee_ids:
+        for date_val in all_check_dates:
+            if date_val > today_date:
+                continue
+            if (emp_id, date_val) in activity_keys:
+                continue
+            leave_data = leave_by_key.get((emp_id, date_val))
+            if not leave_data:
+                continue
+            employee = employee_by_id.get(emp_id)
+            if not employee:
+                continue
+            leave_type_val, leave_days_val = leave_data
+            rows.append(
+                SimpleNamespace(
+                    employee=employee,
+                    attendance_date=date_val,
+                    attendance_date_iso=date_val.isoformat(),
+                    shift_day=None,
+                    attendance=None,
+                    activity_ids=[],
+                    activity_ids_json="[]",
+                    detail_activity_id=None,
+                    row_key=f"leave-{emp_id}-{date_val.isoformat()}",
+                    work_segments=[],
+                    break_segments=[],
+                    lunch_segments=[],
+                    work_in=None,
+                    work_out=None,
+                    has_work_images=False,
+                    shift=None,
+                    work_type=None,
+                    min_hour=None,
+                    late_come_duration=None,
+                    early_out_duration=None,
+                    work_hours=None,
+                    break_hours=None,
+                    lunch_hours=None,
+                    pending_hour=None,
+                    overtime=None,
+                    leave=leave_type_val,
+                    leave_type=leave_type_val,
+                    leave_days=leave_days_val,
+                    is_leave_only=True,
+                    holiday=holiday_by_date.get(date_val),
+                )
+            )
+
+    rows.sort(
+        key=lambda r: r.attendance_date or date.min,
+        reverse=True,
+    )
     return rows
 
 
@@ -946,6 +1054,9 @@ def _empty_daily_attendance_row(attendance):
         pending_hour=hours.pending_hour,
         overtime=hours.overtime,
         leave=None,
+        leave_type=None,
+        leave_days=None,
+        is_leave_only=False,
         holiday=None,
     )
 
@@ -1013,6 +1124,8 @@ ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS = {
     "daily_lunch_hours",
     "daily_overtime",
     "daily_leave",
+    "daily_leave_type",
+    "daily_leave_days",
     "daily_holiday",
 }
 
@@ -1168,6 +1281,11 @@ def _attendance_activity_daily_export_value(row, field_name, employee):
         return _format_attendance_activity_export_value(row.overtime, employee)
     if field_name == "daily_leave":
         return row.leave or ""
+    if field_name == "daily_leave_type":
+        return (getattr(row, "leave_type", None) or row.leave) or ""
+    if field_name == "daily_leave_days":
+        days = getattr(row, "leave_days", None)
+        return str(days) if days is not None else ""
     if field_name == "daily_holiday":
         return row.holiday or ""
 
@@ -1219,6 +1337,7 @@ def _attendance_activity_export_daily_rows(activities):
     filtered_rows = [
         row for row in rows
         if (row.employee.id, row.attendance_date) in row_keys
+        or getattr(row, "is_leave_only", False)
     ]
     filtered_rows.sort(
         key=lambda r: (
@@ -1421,7 +1540,14 @@ def export_attendance_by_payroll_group(request):
 
     employee = request.user.employee_get
     form = AttendanceActivityExportForm()
-    selected_fields = form.fields["selected_fields"].initial
+    _exclude = {
+        "daily_clock_in_location", "daily_clock_out_location",
+        "daily_break_in_location", "daily_break_out_location",
+        "daily_lunch_in_location", "daily_lunch_out_location",
+        "daily_clock_image", "daily_break_image", "daily_lunch_image",
+        "daily_leave",
+    }
+    selected_fields = [f for f in form.fields["selected_fields"].initial if f not in _exclude]
     selected_columns = _attendance_activity_export_columns(form, selected_fields)
 
     today_date = date.today().strftime("%Y-%m-%d")
@@ -1455,6 +1581,12 @@ def export_attendance_by_payroll_group(request):
             activities, selected_columns, employee
         )
         df = pd.DataFrame(data=data_export)
+        emp_no_col = str(_("Employee No."))
+        date_col = str(_("Attendance Date"))
+        sort_cols = [c for c in [emp_no_col, date_col] if c in df.columns]
+        if sort_cols:
+            ascending = [True if c == emp_no_col else False for c in sort_cols]
+            df = df.sort_values(by=sort_cols, ascending=ascending).reset_index(drop=True)
         styled_df = df.style.map(
             lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
         )

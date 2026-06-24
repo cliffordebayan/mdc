@@ -540,11 +540,25 @@ class AvailableLeave(HorillaModel):
         leave_taken = LeaveRequest.objects.filter(
             leave_type_id=self.leave_type_id,
             employee_id=self.employee_id,
-            start_date__gte=self.assigned_date,  # Considering leaves taken after assigned date
             status="approved",
         ).aggregate(total_sum=Sum("requested_days"))
 
-        return leave_taken["total_sum"] if leave_taken["total_sum"] else 0
+        return round(leave_taken["total_sum"], 3) if leave_taken["total_sum"] else 0
+
+    def total_allocated_days(self):
+        """Returns the total allocated days: leave type allocation + any carryforward."""
+        return round(self.leave_type_id.total_days + self.carryforward_days, 3)
+
+    def get_available_days_display(self):
+        """
+        Returns correct remaining available days for display in the assign view.
+        For no-carryforward types: computed dynamically as total_days - leave_taken.
+        For carryforward types: uses the stored available_days + carryforward_days balance.
+        """
+        if self.leave_type_id.carryforward_type == "no carryforward":
+            taken = self.leave_taken()
+            return max(round(self.leave_type_id.total_days - taken, 3), 0)
+        return max(round(self.available_days + self.carryforward_days, 3), 0)
 
     # Setting the expiration date for carryforward leaves
     def set_expired_date(self, available_leave, assigned_date):
@@ -1004,15 +1018,34 @@ class LeaveRequest(HorillaModel):
 
         forcated_days = available_leave.forcasted_leaves(self.start_date)
 
-        available_days = available_leave.available_days or 0
-        carryforward_days = available_leave.carryforward_days or 0
         carryforward_max = available_leave.leave_type_id.carryforward_max or 0
         carryforward_type = available_leave.leave_type_id.carryforward_type
 
-        if carryforward_type in ["carryforward", "carryforward expire"]:
-            carryforward_days = min(carryforward_days, carryforward_max)
-        elif carryforward_type == "no carryforward":
+        if carryforward_type == "no carryforward":
+            # Dynamically compute remaining days so stale DB values cannot
+            # allow overbooking. Exclude this request when editing.
+            qs = LeaveRequest.objects.filter(
+                leave_type_id=leave_type,
+                employee_id=self.employee_id,
+                status="approved",
+            )
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            taken = qs.aggregate(total_sum=Sum("requested_days"))["total_sum"] or 0
+            available_days = max(round(leave_type.total_days - taken, 3), 0)
             carryforward_days = 0
+        else:
+            available_days = available_leave.available_days or 0
+            carryforward_days = available_leave.carryforward_days or 0
+
+            # When editing an already-approved request, restore the previously
+            # deducted amounts before checking balance.
+            if self.status == "approved":
+                available_days += self.approved_available_days or 0
+                carryforward_days += self.approved_carryforward_days or 0
+
+            if carryforward_type in ["carryforward", "carryforward expire"]:
+                carryforward_days = min(carryforward_days, carryforward_max)
 
         total_leave_days = available_days + carryforward_days + forcated_days
 
@@ -1106,6 +1139,11 @@ class LeaveRequest(HorillaModel):
         available_leave = AvailableLeave.objects.get(
             leave_type_id=leave_type_id, employee_id=employee_id
         )
+        if leave_type_id.carryforward_type == "no carryforward":
+            taken = available_leave.leave_taken()
+            available_leave.available_days = max(
+                round(leave_type_id.total_days - taken, 3), 0
+            )
         if self.requested_days > available_leave.available_days:
             leave = self.requested_days - available_leave.available_days
             self.approved_available_days = available_leave.available_days

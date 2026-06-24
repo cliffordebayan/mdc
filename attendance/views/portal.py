@@ -1132,12 +1132,21 @@ def _portal_leave_breakdown_options():
 
 def _portal_leave_type_payload(available_leave):
     leave_type = available_leave.leave_type_id
+    if leave_type.carryforward_type == "no carryforward":
+        taken = available_leave.leave_taken()
+        available_days = max(round(leave_type.total_days - taken, 3), 0)
+        total_leave_days = available_days
+    else:
+        available_days = available_leave.available_days
+        total_leave_days = round(
+            available_leave.available_days + available_leave.carryforward_days, 3
+        )
     return {
         "id": leave_type.id,
         "name": leave_type.name,
-        "available_days": available_leave.available_days,
+        "available_days": available_days,
         "carryforward_days": available_leave.carryforward_days,
-        "total_leave_days": available_leave.total_leave_days,
+        "total_leave_days": total_leave_days,
         "require_attachment": leave_type.require_attachment == "yes",
     }
 

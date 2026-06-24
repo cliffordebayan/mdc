@@ -59,7 +59,7 @@
                 </div>
                 <div class="oh-timeoff-modal__stat" style="margin-left: 20px">
                     <span class="oh-timeoff-modal__stat-title">{% trans "Available Days" %}</span>
-                    <span class="oh-timeoff-modal__stat-count">{{available_leave.available_days}}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{available_leave.get_available_days_display}}</span>
                 </div>
             </div>
 
@@ -70,7 +70,7 @@
                 </div>
                 <div class="oh-timeoff-modal__stat" style="margin-left: 20px">
                     <span class="oh-timeoff-modal__stat-title">{% trans "Total Leave Days" %}</span>
-                    <span class="oh-timeoff-modal__stat-count">{{available_leave.total_leave_days}}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{available_leave.total_allocated_days}}</span>
                 </div>
             </div>
 

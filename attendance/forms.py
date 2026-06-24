@@ -941,6 +941,8 @@ class AttendanceActivityExportForm(forms.Form):
         "daily_lunch_hours",
         "daily_overtime",
         "daily_leave",
+        "daily_leave_type",
+        "daily_leave_days",
         "daily_holiday",
     ]
 
@@ -975,6 +977,8 @@ class AttendanceActivityExportForm(forms.Form):
         ("daily_lunch_hours", _("Lunch Hours")),
         ("daily_overtime", _("Overtime")),
         ("daily_leave", _("Leave")),
+        ("daily_leave_type", _("Leave Type")),
+        ("daily_leave_days", _("Leave Days")),
         ("daily_holiday", _("Holiday")),
     ]
     selected_fields = forms.MultipleChoiceField(

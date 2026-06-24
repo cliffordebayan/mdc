@@ -6,6 +6,7 @@ This is moduel is used to register end point related to the search filter functi
 
 import json
 from datetime import datetime
+from django.utils.dateparse import parse_date
 from urllib.parse import parse_qs
 
 from django.http import JsonResponse
@@ -279,7 +280,11 @@ def attendance_activity_search(request):
 
     template = "attendance/attendance_activity/activity_list.html"
     attendance_activities = sortby(request, attendance_activities, "orderby")
-    daily_activity_rows = build_daily_activity_rows(attendance_activities)
+    date_from = parse_date(request.GET.get("attendance_date_from") or "")
+    date_to = parse_date(request.GET.get("attendance_date_till") or "")
+    daily_activity_rows = build_daily_activity_rows(
+        attendance_activities, date_from=date_from, date_to=date_to
+    )
     if field != "" and field is not None:
         attendance_activities = group_daily_activity_rows(
             daily_activity_rows, field, request

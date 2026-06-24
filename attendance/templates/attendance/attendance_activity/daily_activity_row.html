@@ -24,6 +24,9 @@
     <div data-cell-index="4" class="oh-sticky-table__td">{{ row.employee.employee_work_info.payroll_group_id|default:"&mdash;" }}</div>
     <div data-cell-index="5" class="oh-sticky-table__td dateformat_changer">{{row.attendance_date}}</div>
     <div data-cell-index="6" class="oh-sticky-table__td">
+        {% if row.is_leave_only %}
+            <span class="oh-text--light">&mdash;</span>
+        {% else %}
         <div class="oh-daily-activity-pair">
             <strong>{% trans "In" %}</strong>
             {% if row.work_in %}
@@ -38,8 +41,12 @@
                 <span class="oh-text--light">&mdash;</span>
             {% endif %}
         </div>
+        {% endif %}
     </div>
     <div data-cell-index="7" class="oh-sticky-table__td">
+        {% if row.is_leave_only %}
+            <span class="oh-text--light">&mdash;</span>
+        {% else %}
         {% for segment in row.break_segments %}
             <div class="oh-daily-activity-pair">
                 <strong>{% trans "In" %}</strong>
@@ -54,8 +61,12 @@
         {% empty %}
             <span class="oh-text--light">&mdash;</span>
         {% endfor %}
+        {% endif %}
     </div>
     <div data-cell-index="8" class="oh-sticky-table__td">
+        {% if row.is_leave_only %}
+            <span class="oh-text--light">&mdash;</span>
+        {% else %}
         {% for segment in row.lunch_segments %}
             <div class="oh-daily-activity-pair">
                 <strong>{% trans "In" %}</strong>
@@ -70,8 +81,12 @@
         {% empty %}
             <span class="oh-text--light">&mdash;</span>
         {% endfor %}
+        {% endif %}
     </div>
     <div data-cell-index="9" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+        {% if row.is_leave_only %}
+            <span class="oh-text--light">&mdash;</span>
+        {% else %}
         <div class="oh-daily-activity-images">
             {% for segment in row.work_segments %}
                 {% if segment.clock_in_selfie %}
@@ -87,8 +102,12 @@
                 <span class="oh-text--light">&mdash;</span>
             {% endif %}
         </div>
+        {% endif %}
     </div>
     <div data-cell-index="10" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+        {% if row.is_leave_only %}
+            <span class="oh-text--light">&mdash;</span>
+        {% else %}
         {% for segment in row.break_segments %}
             <div class="oh-daily-activity-images mb-1">
                 {% if segment.clock_in_selfie %}
@@ -106,8 +125,12 @@
         {% empty %}
             <span class="oh-text--light">&mdash;</span>
         {% endfor %}
+        {% endif %}
     </div>
     <div data-cell-index="11" class="oh-sticky-table__td" onclick="event.stopPropagation();">
+        {% if row.is_leave_only %}
+            <span class="oh-text--light">&mdash;</span>
+        {% else %}
         {% for segment in row.lunch_segments %}
             <div class="oh-daily-activity-images mb-1">
                 {% if segment.clock_in_selfie %}
@@ -125,6 +148,7 @@
         {% empty %}
             <span class="oh-text--light">&mdash;</span>
         {% endfor %}
+        {% endif %}
     </div>
     <div data-cell-index="12" class="oh-sticky-table__td">{{ row.shift|default:"&mdash;" }}</div>
     <div data-cell-index="13" class="oh-sticky-table__td">{{ row.late_come_duration|default:"&mdash;" }}</div>
@@ -133,9 +157,10 @@
     <div data-cell-index="16" class="oh-sticky-table__td">{{ row.break_hours|default:"&mdash;" }}</div>
     <div data-cell-index="17" class="oh-sticky-table__td">{{ row.lunch_hours|default:"&mdash;" }}</div>
     <div data-cell-index="18" class="oh-sticky-table__td">{{ row.overtime|default:"&mdash;" }}</div>
-    <div data-cell-index="19" class="oh-sticky-table__td">{{ row.leave|default:"&mdash;" }}</div>
-    <div data-cell-index="20" class="oh-sticky-table__td">{{ row.holiday|default:"&mdash;" }}</div>
-    {% if perms.attendance.delete_attendanceactivity %}
+    <div data-cell-index="19" class="oh-sticky-table__td">{{ row.leave_type|default:row.leave|default:"&mdash;" }}</div>
+    <div data-cell-index="20" class="oh-sticky-table__td">{{ row.leave_days|default:"&mdash;" }}</div>
+    <div data-cell-index="21" class="oh-sticky-table__td">{{ row.holiday|default:"&mdash;" }}</div>
+    {% if perms.attendance.delete_attendanceactivity and not row.is_leave_only %}
         <div class="oh-sticky-table__td oh-sticky-table__right">
             <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100"
                 title="{% trans 'Remove' %}" onclick="deleteDailyActivityRow(event, '{{ row.activity_ids_json|escapejs }}')">
