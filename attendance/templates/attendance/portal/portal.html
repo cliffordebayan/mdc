@@ -685,6 +685,14 @@
             font-size: 8.5px;
         }
 
+        .attendance-history-note {
+            margin: 8px 0 0;
+            color: #6b7280;
+            font-size: 12px;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+
         .attendance-history-empty {
             margin: 10px 0 4px;
             padding: 18px 12px;
@@ -702,6 +710,67 @@
             text-align: center;
             color: #6b7280;
             font-size: 13px;
+        }
+
+        .leave-history-swal {
+            width: min(98vw, 760px) !important;
+            max-height: min(94vh, 760px);
+        }
+
+        .leave-history-swal .swal2-close {
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            top: 18px;
+            right: 18px;
+            width: 34px;
+            height: 34px;
+            border: 0 !important;
+            border-radius: 50%;
+            outline: 0 !important;
+            box-shadow: none !important;
+            background: #f3f4f6;
+            color: #6b7280;
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .leave-history-swal .swal2-close:hover {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .leave-history-swal .swal2-close:focus,
+        .leave-history-swal .swal2-close:focus-visible {
+            border: 0 !important;
+            outline: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .leave-history-swal-html {
+            display: flex !important;
+            flex-direction: column;
+            width: 100% !important;
+            max-height: min(78vh, 620px);
+            overflow: hidden !important;
+            margin: 0 0 1em !important;
+        }
+
+        .leave-history-swal .swal2-content,
+        .leave-history-swal .swal2-html-container {
+            width: 100% !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        .leave-history-modal {
+            height: min(60vh, 500px);
+            min-height: 0;
+            max-height: min(60vh, 500px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            padding: 2px 4px 8px;
         }
 
         .portal-profile-swal {
@@ -860,12 +929,389 @@
             overflow-wrap: anywhere;
         }
 
+        .portal-faq-item {
+            display: block;
+            border: 1px solid #edf0f5;
+            background: #f8fafc;
+            padding: 0;
+            cursor: pointer;
+        }
+
+        .portal-faq-question {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            padding: 10px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 24px;
+            gap: 10px;
+            align-items: center;
+            text-align: left;
+            color: #111827;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.35;
+            cursor: pointer;
+        }
+
+        .portal-faq-question ion-icon {
+            justify-self: end;
+            color: #2563eb;
+            font-size: 18px;
+        }
+
+        .portal-faq-answer {
+            display: none;
+            border-top: 1px solid #edf0f5;
+            padding: 10px;
+            color: #111827;
+            font-size: 12px;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
+        .portal-faq-tags {
+            display: block;
+            margin-top: 8px;
+            color: #6b7280;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .portal-faq-item.is-open .portal-faq-answer {
+            display: block;
+        }
+
         .portal-profile-empty {
             padding: 10px;
             background: #f8fafc;
             color: #6b7280;
             font-size: 12px;
             text-align: center;
+        }
+
+        .portal-leave-swal {
+            width: min(98vw, 1040px) !important;
+            max-height: min(94vh, 820px);
+            max-height: min(94dvh, 820px);
+            padding-top: 28px !important;
+            display: flex !important;
+            flex-direction: column;
+            overflow: hidden !important;
+        }
+
+        .portal-leave-swal .swal2-title {
+            flex: 0 0 auto;
+            width: 100%;
+            margin: 0 0 12px;
+            padding: 0 48px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1.25;
+        }
+
+        .portal-leave-swal .swal2-close {
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            top: 14px;
+            right: 14px;
+            width: 42px;
+            height: 42px;
+            padding: 7px !important;
+            border: 0 !important;
+            border-radius: 50%;
+            outline: 0 !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            color: #6b7280;
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .portal-leave-swal .swal2-close:hover,
+        .portal-leave-swal .swal2-close:focus,
+        .portal-leave-swal .swal2-close:focus-visible {
+            border: 0 !important;
+            outline: 0 !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            color: #374151;
+        }
+
+        .portal-leave-swal .swal2-html-container {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+
+        .portal-leave-swal .swal2-content {
+            width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+
+        .portal-leave-swal-html {
+            width: 100% !important;
+            max-height: min(78vh, 680px);
+            max-height: min(78dvh, 680px);
+            overflow-x: hidden !important;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            margin: 0 !important;
+            padding: 0;
+            scroll-padding-bottom: 24px;
+        }
+
+        .portal-leave-layout {
+            display: grid;
+            gap: 14px;
+            text-align: left;
+        }
+
+        .portal-leave-surface {
+            display: grid;
+            gap: 16px;
+            background: #ffffff;
+        }
+
+        .portal-leave-section-title {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin: 0 0 8px;
+            font-size: 13px;
+            font-weight: 800;
+            color: #111827;
+        }
+
+        .portal-leave-section-title ion-icon {
+            font-size: 17px;
+            color: #2563eb;
+        }
+
+        .portal-leave-type-block {
+            display: grid;
+            gap: 8px;
+        }
+
+        .portal-leave-type-block label {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin: 0;
+            color: #111827;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .portal-leave-type-block label ion-icon {
+            font-size: 17px;
+            color: #2563eb;
+        }
+
+        .portal-leave-type-select {
+            width: 100%;
+            min-height: 42px;
+            border: 1px solid #d9dee8;
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 8px 10px;
+            color: #111827;
+            font-size: 14px;
+            font-weight: 400;
+        }
+
+        .portal-leave-selected {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: stretch;
+            border: 1px solid #e5eaf2;
+            border-radius: 8px;
+            background: #f8fafc;
+            padding: 12px;
+        }
+
+        .portal-leave-selected-name {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-width: 0;
+        }
+
+        .portal-leave-selected-name span {
+            color: #6b7280;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .portal-leave-selected-name strong {
+            margin-top: 3px;
+            color: #111827;
+            font-size: 18px;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
+        }
+
+        .portal-leave-summary {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(72px, 1fr));
+            gap: 8px;
+            flex: 0 1 360px;
+        }
+
+        .portal-leave-summary-item {
+            border-left: 1px solid #e5eaf2;
+            padding-left: 10px;
+        }
+
+        .portal-leave-summary-item strong {
+            display: block;
+            color: #111827;
+            font-size: 18px;
+            line-height: 1.1;
+        }
+
+        .portal-leave-summary-item span {
+            display: block;
+            margin-top: 4px;
+            color: #6b7280;
+            font-size: 11px;
+            line-height: 1.2;
+        }
+
+        .portal-leave-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            border-top: 1px solid #edf0f5;
+            padding: 9px 0;
+        }
+
+        .portal-leave-row:first-child {
+            border-top: 0;
+        }
+
+        .portal-leave-row strong {
+            display: block;
+            color: #111827;
+            font-size: 13px;
+            line-height: 1.3;
+        }
+
+        .portal-leave-row span {
+            display: block;
+            margin-top: 2px;
+            color: #6b7280;
+            font-size: 12px;
+            line-height: 1.35;
+        }
+
+        .portal-leave-status {
+            display: inline-flex !important;
+            width: fit-content;
+            margin-top: 6px !important;
+            border-radius: 999px;
+            padding: 3px 8px;
+            font-size: 11px !important;
+            font-weight: 700;
+            background: #eef2ff;
+            color: #3730a3 !important;
+        }
+
+        .portal-leave-status.approved,
+        .portal-leave-status.fulfilled {
+            background: #ecfdf3;
+            color: #027a48 !important;
+        }
+
+        .portal-leave-status.rejected,
+        .portal-leave-status.cancelled {
+            background: #fff1f2;
+            color: #be123c !important;
+        }
+
+        .portal-leave-form {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .portal-leave-field {
+            min-width: 0;
+        }
+
+        .portal-leave-field.is-full {
+            grid-column: 1 / -1;
+        }
+
+        .portal-leave-field label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #6b7280;
+        }
+
+        .portal-leave-field input,
+        .portal-leave-field select,
+        .portal-leave-field textarea {
+            width: 100%;
+            min-height: 42px;
+            border: 1px solid #d9dee8;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 14px;
+            background: #ffffff;
+        }
+
+        .portal-leave-field textarea {
+            min-height: 86px;
+            resize: vertical;
+        }
+
+        .portal-leave-submit {
+            grid-column: 1 / -1;
+            width: 100%;
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            font-weight: 700;
+        }
+
+        @media (max-width: 720px) {
+            .portal-leave-selected,
+            .portal-leave-form {
+                grid-template-columns: 1fr;
+            }
+
+            .portal-leave-selected {
+                flex-direction: column;
+            }
+
+            .portal-leave-summary {
+                flex: 1 1 auto;
+            }
+
+            .portal-leave-summary-item {
+                border-left: 1px solid #e5eaf2;
+                border-top: 0;
+                padding: 0 0 0 10px;
+            }
+
         }
 
         .portal-profile-insurance {
@@ -1935,6 +2381,27 @@
         body.clock-step-active {
             overflow: hidden;
         }
+
+        /* Profile, FAQ, Leave, Document, and Helpdesk fullscreen steps */
+        #step-profile .selection-fullscreen,
+        #step-faq .selection-fullscreen,
+        #step-leave .selection-fullscreen,
+        #step-document-request .selection-fullscreen,
+        #step-helpdesk .selection-fullscreen {
+            align-items: flex-start;
+            padding: 24px 14px;
+        }
+
+        #step-profile .selection-card,
+        #step-faq .selection-card {
+            max-width: 820px;
+        }
+
+        #step-leave .selection-card,
+        #step-document-request .selection-card,
+        #step-helpdesk .selection-card {
+            max-width: 1040px;
+        }
     </style>
 </head>
 
@@ -2050,20 +2517,25 @@
                                     <strong>{% trans "Profile" %}</strong>
                                     <span>{% trans "Personal, work, bank, and insurance info." %}</span>
                                 </button>
-                                <button type="button" class="selection-option is-disabled" disabled aria-disabled="true">
+                                <button type="button" class="selection-option" id="service-leave-btn">
                                     <ion-icon name="calendar-outline"></ion-icon>
                                     <strong>{% trans "Leave" %}</strong>
-                                    <span>{% trans "Coming soon" %}</span>
+                                    <span>{% trans "Request leave or view balances." %}</span>
                                 </button>
-                                <button type="button" class="selection-option is-disabled" disabled aria-disabled="true">
+                                <button type="button" class="selection-option" id="service-document-request-btn">
                                     <ion-icon name="document-text-outline"></ion-icon>
-                                    <strong>{% trans "Request" %}</strong>
-                                    <span>{% trans "Coming soon" %}</span>
+                                    <strong>{% trans "Document Request" %}</strong>
+                                    <span>{% trans "Request certificates, records, or HR documents." %}</span>
                                 </button>
-                                <button type="button" class="selection-option is-disabled" disabled aria-disabled="true">
+                                <button type="button" class="selection-option" id="service-helpdesk-btn">
                                     <ion-icon name="help-circle-outline"></ion-icon>
                                     <strong>{% trans "Helpdesk" %}</strong>
-                                    <span>{% trans "Coming soon" %}</span>
+                                    <span>{% trans "Create or view support tickets." %}</span>
+                                </button>
+                                <button type="button" class="selection-option" id="service-faq-btn">
+                                    <ion-icon name="information-circle-outline"></ion-icon>
+                                    <strong>{% trans "FAQ" %}</strong>
+                                    <span>{% trans "Browse helpdesk questions and answers." %}</span>
                                 </button>
                             </div>
 
@@ -2302,6 +2774,86 @@
                         {% trans "Clock Another Employee" %}
                     </button>
                 </div>
+
+                <!-- Step: Profile -->
+                <div class="self-service-step" id="step-profile">
+                    <div class="selection-fullscreen">
+                        <div class="selection-card">
+                            <p class="selection-title">{% trans "Profile" %}</p>
+                            <div id="profile-step-content">
+                                <div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>
+                            </div>
+                            <button type="button" class="btn-back selection-back-btn" id="profile-back-btn">
+                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                {% trans "Back to Services" %}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step: FAQ -->
+                <div class="self-service-step" id="step-faq">
+                    <div class="selection-fullscreen">
+                        <div class="selection-card">
+                            <p class="selection-title">{% trans "FAQ" %}</p>
+                            <div id="faq-step-content">
+                                <div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>
+                            </div>
+                            <button type="button" class="btn-back selection-back-btn" id="faq-back-btn">
+                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                {% trans "Back to Services" %}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step: Leave -->
+                <div class="self-service-step" id="step-leave">
+                    <div class="selection-fullscreen">
+                        <div class="selection-card">
+                            <p class="selection-title">{% trans "Leave" %}</p>
+                            <div id="leave-step-content">
+                                <div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>
+                            </div>
+                            <button type="button" class="btn-back selection-back-btn" id="leave-back-btn">
+                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                {% trans "Back to Services" %}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step: Document Request -->
+                <div class="self-service-step" id="step-document-request">
+                    <div class="selection-fullscreen">
+                        <div class="selection-card">
+                            <p class="selection-title">{% trans "Document Request" %}</p>
+                            <div id="document-request-step-content">
+                                <div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>
+                            </div>
+                            <button type="button" class="btn-back selection-back-btn" id="document-request-back-btn">
+                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                {% trans "Back to Services" %}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step: Helpdesk -->
+                <div class="self-service-step" id="step-helpdesk">
+                    <div class="selection-fullscreen">
+                        <div class="selection-card">
+                            <p class="selection-title">{% trans "Helpdesk" %}</p>
+                            <div id="helpdesk-step-content">
+                                <div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>
+                            </div>
+                            <button type="button" class="btn-back selection-back-btn" id="helpdesk-back-btn">
+                                <ion-icon name="arrow-back-outline" style="margin-right:6px;"></ion-icon>
+                                {% trans "Back to Services" %}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
@@ -2328,6 +2880,11 @@
         let pinInput = '';
         const PIN_LENGTH = 6;
         let geofenceMap = null;
+        let portalHelpdeskModalState = {
+            ticketTypes: [],
+            selectedTypeId: null,
+            raisedOnOptions: {},
+        };
 
         // ── Face Detection ───────────────────────────────────────────────
         let faceApiModelsLoaded = false;
@@ -2337,6 +2894,10 @@
         const FACE_MODELS_CDN = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
         let clockPreviewMap = null;
         let employeeDataById = {};
+        let portalLeaveModalState = {
+            leaveTypes: [],
+            selectedTypeId: null
+        };
         const EMPLOYEE_LOCATION_MARKER_COLOR = '#dc3545';
 
         function isMobilePortalView() {
@@ -3134,6 +3695,113 @@
             `;
         }
 
+        function portalFaqItemHtml(item) {
+            const tags = Array.isArray(item.tags) && item.tags.length
+                ? `<span class="portal-faq-tags">${item.tags.map(escapeHtml).join(', ')}</span>`
+                : '';
+            return `
+                <div class="portal-faq-item">
+                    <button type="button" class="portal-faq-question" aria-expanded="false">
+                        <span>${escapeHtml(item.question || '')}</span>
+                        <ion-icon name="caret-down-outline"></ion-icon>
+                    </button>
+                    <div class="portal-faq-answer">
+                        ${escapeHtml(item.answer || '{% trans "No answer available." %}')}
+                        ${tags}
+                    </div>
+                </div>
+            `;
+        }
+
+        function portalFaqCategoryHtml(category) {
+            const rows = Array.isArray(category.faqs) && category.faqs.length
+                ? category.faqs.map(portalFaqItemHtml).join('')
+                : `<div class="portal-profile-empty">{% trans "No FAQ items available." %}</div>`;
+            const description = category.description
+                ? `<div class="portal-profile-empty" style="text-align:left;">${escapeHtml(category.description)}</div>`
+                : '';
+            return `
+                <section class="portal-profile-section">
+                    <h5><ion-icon name="help-circle-outline"></ion-icon>${escapeHtml(category.title || '{% trans "FAQ" %}')}</h5>
+                    ${description}
+                    <div class="portal-profile-list">${rows}</div>
+                </section>
+            `;
+        }
+
+        function portalFaqStepHtml(data) {
+            const employee = data.employee || {};
+            const categories = Array.isArray(data.categories) ? data.categories : [];
+            const categoryHtml = categories.length
+                ? categories.map(portalFaqCategoryHtml).join('')
+                : `<section class="portal-profile-section">
+                    <h5><ion-icon name="help-circle-outline"></ion-icon>{% trans "FAQ" %}</h5>
+                    <div class="portal-profile-empty">{% trans "No FAQ items available." %}</div>
+                </section>`;
+
+            return `
+                <div class="portal-profile-head">
+                    <img src="${escapeHtml(employee.avatar || '')}" alt="" />
+                    <div>
+                        <h4>${escapeHtml(employee.name || '')}</h4>
+                        <p>${employee.employee_no ? '#' + escapeHtml(employee.employee_no) : ''}</p>
+                    </div>
+                </div>
+                <div class="portal-profile-grid">
+                    ${categoryHtml}
+                </div>
+            `;
+        }
+
+        function bindPortalFaqEvents() {
+            $('#faq-step-content').off('click', '.portal-faq-question');
+            $('#faq-step-content').on('click', '.portal-faq-question', function () {
+                const $button = $(this);
+                const $item = $button.closest('.portal-faq-item');
+                const isOpen = $item.hasClass('is-open');
+
+                $item.toggleClass('is-open', !isOpen);
+                $button.attr('aria-expanded', String(!isOpen));
+                $button.find('ion-icon').attr('name', isOpen ? 'caret-down-outline' : 'caret-up-outline');
+            });
+        }
+
+        async function showPortalFaqStep() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#service-faq-btn');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Loading..." %}');
+
+            try {
+                const formData = new FormData();
+                formData.append('employee_id', selectedEmployee.id);
+
+                const response = await fetch('{% url "portal-faq-data" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    Toast.fire({ icon: 'error', title: data.message || '{% trans "Unable to load FAQ." %}' });
+                    return;
+                }
+
+                $('#faq-step-content').html(portalFaqStepHtml(data));
+                bindPortalFaqEvents();
+                showStep('faq');
+            } catch (error) {
+                console.error('FAQ load error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load FAQ." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
         async function showEmployeeProfileModal() {
             if (!selectedEmployee) {
                 Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
@@ -3159,20 +3827,1044 @@
                     return;
                 }
 
+                $('#profile-step-content').html(portalProfileModalHtml(data));
+                showStep('profile');
+            } catch (error) {
+                console.error('Profile load error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load profile." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function portalLeaveNumber(value) {
+            const number = Number(value || 0);
+            return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+        }
+
+        function portalLeaveDisplayName(name) {
+            const value = String(name || '').trim();
+            return value.toLowerCase() === 'compesation' ? 'Compensation' : value;
+        }
+
+        function portalLeaveDayText(value) {
+            const number = Number(value || 0);
+            const label = Math.abs(number) === 1 ? '{% trans "day" %}' : '{% trans "days" %}';
+            return `${portalLeaveNumber(number)} ${label}`;
+        }
+
+        function portalLeaveTypeById(typeId) {
+            return portalLeaveModalState.leaveTypes.find(function (type) {
+                return String(type.id) === String(typeId);
+            }) || null;
+        }
+
+        function selectedPortalLeaveType() {
+            return portalLeaveTypeById(portalLeaveModalState.selectedTypeId) || portalLeaveModalState.leaveTypes[0] || null;
+        }
+
+        function portalLeaveTypeOptionHtml(row) {
+            const isSelected = String(row.id) === String(portalLeaveModalState.selectedTypeId);
+            const label = `${portalLeaveDisplayName(row.name)} {% trans "leave" %}`;
+            return `<option value="${escapeHtml(row.id)}"${isSelected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+        }
+
+        function portalLeaveSelectedSummaryHtml(row) {
+            if (!row) {
+                return `<div class="portal-profile-empty">{% trans "No leave types are assigned." %}</div>`;
+            }
+
+            return `
+                <div class="portal-leave-selected-name">
+                    <span>{% trans "Selected Leave" %}</span>
+                    <strong>${escapeHtml(portalLeaveDisplayName(row.name))}</strong>
+                </div>
+                <div class="portal-leave-summary">
+                    <div class="portal-leave-summary-item">
+                        <strong>${portalLeaveNumber(row.available_days)}</strong>
+                        <span>{% trans "Available" %}</span>
+                    </div>
+                    <div class="portal-leave-summary-item">
+                        <strong>${portalLeaveNumber(row.total_leave_days)}</strong>
+                        <span>{% trans "Total" %}</span>
+                    </div>
+                    <div class="portal-leave-summary-item">
+                        <strong>${portalLeaveNumber(row.carryforward_days)}</strong>
+                        <span>{% trans "Carryforward" %}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function portalLeaveRecentHtml(row) {
+            return `
+                <div class="portal-leave-row">
+                    <div>
+                        <strong>${escapeHtml(portalLeaveDisplayName(row.leave_type))}</strong>
+                        <span>${escapeHtml(row.start_date || '')} - ${escapeHtml(row.end_date || '')} | ${portalLeaveDayText(row.requested_days)}</span>
+                    </div>
+                    <span class="portal-leave-status ${escapeHtml(row.status || '')}">${escapeHtml(row.status_label || '')}</span>
+                </div>
+            `;
+        }
+
+        function portalLeaveOptionsHtml(options, selectedValue) {
+            return (Array.isArray(options) ? options : []).map(function (option) {
+                const selected = String(option.value) === String(selectedValue) ? ' selected' : '';
+                return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label || option.value)}</option>`;
+            }).join('');
+        }
+
+        function updatePortalLeaveAttachmentRequirement() {
+            const selectedType = selectedPortalLeaveType();
+            const requiresAttachment = !!(selectedType && selectedType.require_attachment);
+            $('#portal-leave-attachment').prop('required', requiresAttachment);
+            $('#portal-leave-attachment-required').toggle(requiresAttachment);
+            $('#portal-leave-attachment-field').show();
+        }
+
+        function updatePortalLeaveSelection(typeId) {
+            const selectedType = portalLeaveTypeById(typeId);
+            if (!selectedType) {
+                return;
+            }
+
+            portalLeaveModalState.selectedTypeId = selectedType.id;
+            $('#portal-leave-type').val(selectedType.id);
+            $('#portal-leave-selected-summary').html(portalLeaveSelectedSummaryHtml(selectedType));
+            updatePortalLeaveAttachmentRequirement();
+        }
+
+        function portalLeaveModalHtml(data) {
+            const employee = data.employee || {};
+            const leaveTypes = Array.isArray(data.leave_types) ? data.leave_types : [];
+            const breakdownOptions = Array.isArray(data.breakdown_options) ? data.breakdown_options : [];
+            const today = formatDateInputValue(new Date());
+            const previousSelectedId = portalLeaveModalState.selectedTypeId;
+
+            portalLeaveModalState.leaveTypes = leaveTypes;
+            portalLeaveModalState.selectedTypeId = leaveTypes.some(function (type) {
+                return String(type.id) === String(previousSelectedId);
+            }) ? previousSelectedId : (leaveTypes[0] ? leaveTypes[0].id : null);
+            const selectedType = selectedPortalLeaveType();
+
+            const leaveTypeOptionsHtml = leaveTypes.length
+                ? leaveTypes.map(portalLeaveTypeOptionHtml).join('')
+                : '';
+
+            return `
+                <div class="portal-profile-head">
+                    <img src="${escapeHtml(employee.avatar || '')}" alt="" />
+                    <div>
+                        <h4>${escapeHtml(employee.name || '')}</h4>
+                        <p>${employee.employee_no ? '#' + escapeHtml(employee.employee_no) : ''}</p>
+                    </div>
+                </div>
+                <div class="portal-leave-layout">
+                    <div class="portal-leave-surface">
+                        <form class="portal-leave-form" id="portal-leave-form">
+                            <div class="portal-leave-field is-full portal-leave-type-block">
+                                <label for="portal-leave-type">{% trans "Leave Type" %}</label>
+                                <select id="portal-leave-type" class="portal-leave-type-select" name="leave_type_id" required ${leaveTypes.length ? '' : 'disabled'}>
+                                    ${leaveTypeOptionsHtml}
+                                </select>
+                            </div>
+                            <section class="portal-leave-selected is-full" id="portal-leave-selected-summary">
+                                ${portalLeaveSelectedSummaryHtml(selectedType)}
+                            </section>
+                            <div class="portal-leave-field">
+                                <label for="portal-leave-start">{% trans "Start Date" %}</label>
+                                <input type="date" id="portal-leave-start" name="start_date" value="${today}" required />
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-leave-end">{% trans "End Date" %}</label>
+                                <input type="date" id="portal-leave-end" name="end_date" value="${today}" required />
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-leave-start-breakdown">{% trans "Start Breakdown" %}</label>
+                                <select id="portal-leave-start-breakdown" name="start_date_breakdown">
+                                    ${portalLeaveOptionsHtml(breakdownOptions, 'full_day')}
+                                </select>
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-leave-end-breakdown">{% trans "End Breakdown" %}</label>
+                                <select id="portal-leave-end-breakdown" name="end_date_breakdown">
+                                    ${portalLeaveOptionsHtml(breakdownOptions, 'full_day')}
+                                </select>
+                            </div>
+                            <div class="portal-leave-field is-full" id="portal-leave-attachment-field">
+                                <label for="portal-leave-attachment">
+                                    {% trans "Attachment" %}
+                                    <span id="portal-leave-attachment-required">{% trans "(required)" %}</span>
+                                </label>
+                                <input type="file" id="portal-leave-attachment" name="attachment" accept=".jpg,.jpeg,.png,.pdf" />
+                            </div>
+                            <div class="portal-leave-field is-full">
+                                <label for="portal-leave-description">{% trans "Description" %}</label>
+                                <textarea id="portal-leave-description" name="description" required></textarea>
+                            </div>
+                            <button type="submit" class="oh-btn oh-btn--secondary portal-leave-submit" id="portal-leave-submit" ${leaveTypes.length ? '' : 'disabled'}>
+                                <ion-icon name="send-outline"></ion-icon>
+                                {% trans "Submit Leave Request" %}
+                            </button>
+                        </form>
+                        <button type="button" class="oh-btn oh-btn--secondary attendance-history-btn" id="leave-history-btn">
+                            <ion-icon name="list-outline"></ion-icon>
+                            {% trans "View Leave" %}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function fetchPortalLeaveData() {
+            const formData = new FormData();
+            formData.append('employee_id', selectedEmployee.id);
+            const response = await fetch('{% url "portal-leave-data" %}', {
+                method: 'POST',
+                body: formData
+            });
+            return await response.json();
+        }
+
+        async function submitPortalLeaveRequest(event) {
+            event.preventDefault();
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#portal-leave-submit');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Submitting..." %}');
+
+            try {
+                const form = document.getElementById('portal-leave-form');
+                const formData = new FormData(form);
+                formData.append('employee_id', selectedEmployee.id);
+
+                const response = await fetch('{% url "portal-leave-request-create" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    Toast.fire({ icon: 'error', title: data.message || '{% trans "Unable to submit leave request." %}' });
+                    return;
+                }
+
+                Toast.fire({ icon: 'success', title: data.message || '{% trans "Leave request created." %}' });
+                const refreshedData = await fetchPortalLeaveData();
+                if (refreshedData.success) {
+                    $('#leave-step-content').html(portalLeaveModalHtml(refreshedData));
+                    bindPortalLeaveModalEvents();
+                }
+            } catch (error) {
+                console.error('Leave request error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to submit leave request." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function leaveHistoryRowHtml(row) {
+            const statusClass = escapeHtml(row.status || '');
+            return `
+                <div class="attendance-history-row">
+                    <p class="attendance-history-date">${escapeHtml(portalLeaveDisplayName(row.leave_type || ''))}</p>
+                    <div class="attendance-status-strip" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="calendar-outline"></ion-icon></span>
+                            <strong class="attendance-status-value">${escapeHtml(row.start_date || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Start" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="calendar-outline"></ion-icon></span>
+                            <strong class="attendance-status-value">${escapeHtml(row.end_date || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "End" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="time-outline"></ion-icon></span>
+                            <strong class="attendance-status-value">${escapeHtml(String(row.requested_days ?? '--'))}</strong>
+                            <span class="attendance-status-label">{% trans "Days" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="checkmark-circle-outline"></ion-icon></span>
+                            <strong class="attendance-status-value portal-leave-status ${statusClass}">${escapeHtml(row.status_label || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Status" %}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function leaveHistoryModalHtml(range) {
+            return `
+                <div class="attendance-history-filters">
+                    <div class="attendance-history-filter">
+                        <label for="leave-history-start">{% trans "From" %}</label>
+                        <input type="date" id="leave-history-start" value="${escapeHtml(range.start)}" />
+                    </div>
+                    <div class="attendance-history-filter">
+                        <label for="leave-history-end">{% trans "To" %}</label>
+                        <input type="date" id="leave-history-end" value="${escapeHtml(range.end)}" />
+                    </div>
+                    <button type="button" class="oh-btn oh-btn--secondary attendance-history-filter-btn" id="leave-history-filter-btn" title="{% trans 'Load leave' %}">
+                        <ion-icon name="search-outline"></ion-icon>
+                    </button>
+                </div>
+                <div class="leave-history-modal" id="leave-history-results">
+                    <div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>
+                </div>
+            `;
+        }
+
+        async function loadLeaveHistoryRows() {
+            const $results = $('#leave-history-results');
+            const $filterButton = $('#leave-history-filter-btn');
+            $filterButton.prop('disabled', true);
+            $results.html('<div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>');
+            try {
+                const formData = new FormData();
+                formData.append('employee_id', selectedEmployee.id);
+                formData.append('start_date', $('#leave-history-start').val() || '');
+                formData.append('end_date', $('#leave-history-end').val() || '');
+
+                const response = await fetch('{% url "portal-leave-data" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    $results.html(`<div class="attendance-history-empty">${escapeHtml(data.message || '{% trans "Unable to load leave." %}')}</div>`);
+                    return;
+                }
+                const requests = Array.isArray(data.recent_requests) ? data.recent_requests : [];
+                if (!requests.length) {
+                    $results.html('<div class="attendance-history-empty">{% trans "No leave requests found." %}</div>');
+                    return;
+                }
+                $results.html(requests.map(leaveHistoryRowHtml).join(''));
+            } catch (error) {
+                console.error('Leave history error:', error);
+                $results.html(`<div class="attendance-history-empty">${escapeHtml(error.message || '{% trans "Unable to load leave." %}')}</div>`);
+            } finally {
+                $filterButton.prop('disabled', false);
+            }
+        }
+
+        async function showLeaveHistoryModal() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#leave-history-btn');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Loading..." %}');
+
+            try {
+                const range = defaultAttendanceHistoryRange();
                 await Swal.fire({
-                    title: '{% trans "Profile" %}',
-                    html: portalProfileModalHtml(data),
+                    title: '{% trans "Leave" %}',
+                    html: leaveHistoryModalHtml(range),
                     showConfirmButton: false,
                     showCloseButton: true,
                     customClass: {
                         container: 'swal-toast-above',
-                        popup: 'portal-profile-swal',
-                        htmlContainer: 'portal-profile-swal-html'
+                        popup: 'leave-history-swal',
+                        htmlContainer: 'leave-history-swal-html'
+                    },
+                    didOpen: function () {
+                        $('#leave-history-filter-btn').on('click', function () {
+                            loadLeaveHistoryRows();
+                        });
+                        loadLeaveHistoryRows();
                     }
                 });
             } catch (error) {
-                console.error('Profile load error:', error);
-                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load profile." %}' });
+                console.error('Leave history error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load leave." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function bindPortalLeaveModalEvents() {
+            $('#portal-leave-type').on('change', function () {
+                updatePortalLeaveSelection($(this).val());
+            });
+            $('#portal-leave-form').on('submit', submitPortalLeaveRequest);
+            $('#leave-history-btn').on('click', function () {
+                showLeaveHistoryModal();
+            });
+            updatePortalLeaveAttachmentRequirement();
+        }
+
+        async function showPortalLeaveModal() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#service-leave-btn');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Loading..." %}');
+
+            try {
+                const data = await fetchPortalLeaveData();
+                if (!data.success) {
+                    Toast.fire({ icon: 'error', title: data.message || '{% trans "Unable to load leave." %}' });
+                    return;
+                }
+
+                $('#leave-step-content').html(portalLeaveModalHtml(data));
+                bindPortalLeaveModalEvents();
+                showStep('leave');
+            } catch (error) {
+                console.error('Leave load error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load leave." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function portalDocumentRequestStepHtml(data) {
+            const employee = data.employee || {};
+            return `
+                <div class="portal-profile-head">
+                    <img src="${escapeHtml(employee.avatar || '')}" alt="" />
+                    <div>
+                        <h4>${escapeHtml(employee.name || '')}</h4>
+                        <p>${employee.employee_no ? '#' + escapeHtml(employee.employee_no) : ''}</p>
+                    </div>
+                </div>
+                <div class="portal-leave-layout">
+                    <div class="portal-leave-surface">
+                        <form class="portal-leave-form" id="portal-document-request-form">
+                            <div class="portal-leave-field is-full portal-leave-type-block">
+                                <label for="portal-document-title">{% trans "Document Type" %}</label>
+                                <select id="portal-document-title" class="portal-leave-type-select" name="title" required>
+                                    <option value="" selected disabled>{% trans "Select document type" %}</option>
+                                    <option value="{% trans 'Certificate of Employment' %}">{% trans "Certificate of Employment" %}</option>
+                                    <option value="{% trans 'Payslip' %}">{% trans "Payslip" %}</option>
+                                    <option value="{% trans 'Clearance' %}">{% trans "Clearance" %}</option>
+                                    <option value="{% trans 'ID Replacement' %}">{% trans "ID Replacement" %}</option>
+                                    <option value="{% trans 'Employment Contract' %}">{% trans "Employment Contract" %}</option>
+                                </select>
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-document-issue-date">{% trans "Issue Date" %}</label>
+                                <input type="date" id="portal-document-issue-date" name="issue_date" />
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-document-expiry-date">{% trans "Expiry Date" %}</label>
+                                <input type="date" id="portal-document-expiry-date" name="expiry_date" />
+                            </div>
+                            <div class="portal-leave-field is-full">
+                                <label for="portal-document-attachment">{% trans "Attachment" %}</label>
+                                <input type="file" id="portal-document-attachment" name="attachment" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx" />
+                            </div>
+                            <div class="portal-leave-field is-full">
+                                <label for="portal-document-description">{% trans "Description" %}</label>
+                                <textarea id="portal-document-description" name="description" maxlength="500"></textarea>
+                            </div>
+                            <button type="submit" class="oh-btn oh-btn--secondary portal-leave-submit" id="portal-document-request-submit">
+                                <ion-icon name="send-outline"></ion-icon>
+                                {% trans "Submit Document Request" %}
+                            </button>
+                        </form>
+                        <button type="button" class="oh-btn oh-btn--secondary attendance-history-btn" id="document-request-history-btn">
+                            <ion-icon name="list-outline"></ion-icon>
+                            {% trans "View Requests" %}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function fetchPortalDocumentRequestData(extraData) {
+            const formData = new FormData();
+            formData.append('employee_id', selectedEmployee.id);
+            if (extraData) {
+                Object.keys(extraData).forEach(function (key) {
+                    formData.append(key, extraData[key] || '');
+                });
+            }
+            const response = await fetch('{% url "portal-document-request-data" %}', {
+                method: 'POST',
+                body: formData
+            });
+            return await response.json();
+        }
+
+        async function submitPortalDocumentRequest(event) {
+            event.preventDefault();
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#portal-document-request-submit');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Submitting..." %}');
+
+            try {
+                const form = document.getElementById('portal-document-request-form');
+                const formData = new FormData(form);
+                formData.append('employee_id', selectedEmployee.id);
+
+                const response = await fetch('{% url "portal-document-request-create" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    Toast.fire({ icon: 'error', title: data.message || '{% trans "Unable to submit document request." %}' });
+                    return;
+                }
+
+                Toast.fire({ icon: 'success', title: data.message || '{% trans "Document request submitted." %}' });
+                const refreshedData = await fetchPortalDocumentRequestData();
+                if (refreshedData.success) {
+                    $('#document-request-step-content').html(portalDocumentRequestStepHtml(refreshedData));
+                    bindPortalDocumentRequestEvents();
+                }
+            } catch (error) {
+                console.error('Document request error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to submit document request." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function documentRequestHistoryRowHtml(row) {
+            const statusClass = escapeHtml(row.status || '');
+            return `
+                <div class="attendance-history-row">
+                    <p class="attendance-history-date">${escapeHtml(row.title || '')}</p>
+                    <div class="attendance-status-strip" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="calendar-outline"></ion-icon></span>
+                            <strong class="attendance-status-value">${escapeHtml(row.created_at || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Requested" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="calendar-outline"></ion-icon></span>
+                            <strong class="attendance-status-value">${escapeHtml(row.issue_date || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Issue" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="calendar-outline"></ion-icon></span>
+                            <strong class="attendance-status-value">${escapeHtml(row.expiry_date || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Expiry" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="checkmark-circle-outline"></ion-icon></span>
+                            <strong class="attendance-status-value portal-leave-status ${statusClass}">${escapeHtml(row.status_label || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Status" %}</span>
+                        </div>
+                    </div>
+                    ${row.description ? `<p class="attendance-history-note">${escapeHtml(row.description)}</p>` : ''}
+                </div>
+            `;
+        }
+
+        function documentRequestHistoryModalHtml(range) {
+            return `
+                <div class="attendance-history-filters">
+                    <div class="attendance-history-filter">
+                        <label for="document-request-history-start">{% trans "From" %}</label>
+                        <input type="date" id="document-request-history-start" value="${escapeHtml(range.start)}" />
+                    </div>
+                    <div class="attendance-history-filter">
+                        <label for="document-request-history-end">{% trans "To" %}</label>
+                        <input type="date" id="document-request-history-end" value="${escapeHtml(range.end)}" />
+                    </div>
+                    <button type="button" class="oh-btn oh-btn--secondary attendance-history-filter-btn" id="document-request-history-filter-btn" title="{% trans 'Load requests' %}">
+                        <ion-icon name="search-outline"></ion-icon>
+                    </button>
+                </div>
+                <div class="leave-history-modal" id="document-request-history-results">
+                    <div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>
+                </div>
+            `;
+        }
+
+        async function loadDocumentRequestHistoryRows() {
+            const $results = $('#document-request-history-results');
+            const $filterButton = $('#document-request-history-filter-btn');
+            $filterButton.prop('disabled', true);
+            $results.html('<div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>');
+            try {
+                const data = await fetchPortalDocumentRequestData({
+                    start_date: $('#document-request-history-start').val() || '',
+                    end_date: $('#document-request-history-end').val() || ''
+                });
+
+                if (!data.success) {
+                    $results.html(`<div class="attendance-history-empty">${escapeHtml(data.message || '{% trans "Unable to load requests." %}')}</div>`);
+                    return;
+                }
+                const requests = Array.isArray(data.recent_requests) ? data.recent_requests : [];
+                if (!requests.length) {
+                    $results.html('<div class="attendance-history-empty">{% trans "No document requests found." %}</div>');
+                    return;
+                }
+                $results.html(requests.map(documentRequestHistoryRowHtml).join(''));
+            } catch (error) {
+                console.error('Document request history error:', error);
+                $results.html(`<div class="attendance-history-empty">${escapeHtml(error.message || '{% trans "Unable to load requests." %}')}</div>`);
+            } finally {
+                $filterButton.prop('disabled', false);
+            }
+        }
+
+        async function showDocumentRequestHistoryModal() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#document-request-history-btn');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Loading..." %}');
+
+            try {
+                const range = defaultAttendanceHistoryRange();
+                await Swal.fire({
+                    title: '{% trans "Document Requests" %}',
+                    html: documentRequestHistoryModalHtml(range),
+                    showConfirmButton: false,
+                    showCloseButton: true,
+                    customClass: {
+                        container: 'swal-toast-above',
+                        popup: 'leave-history-swal',
+                        htmlContainer: 'leave-history-swal-html'
+                    },
+                    didOpen: function () {
+                        $('#document-request-history-filter-btn').on('click', function () {
+                            loadDocumentRequestHistoryRows();
+                        });
+                        loadDocumentRequestHistoryRows();
+                    }
+                });
+            } catch (error) {
+                console.error('Document request history error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load requests." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function bindPortalDocumentRequestEvents() {
+            $('#portal-document-request-form').on('submit', submitPortalDocumentRequest);
+            $('#document-request-history-btn').on('click', function () {
+                showDocumentRequestHistoryModal();
+            });
+        }
+
+        async function showPortalDocumentRequestStep() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#service-document-request-btn');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Loading..." %}');
+
+            try {
+                const data = await fetchPortalDocumentRequestData();
+                if (!data.success) {
+                    Toast.fire({ icon: 'error', title: data.message || '{% trans "Unable to load document request." %}' });
+                    return;
+                }
+
+                $('#document-request-step-content').html(portalDocumentRequestStepHtml(data));
+                bindPortalDocumentRequestEvents();
+                showStep('document-request');
+            } catch (error) {
+                console.error('Document request load error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load document request." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function portalHelpdeskTypeById(typeId) {
+            return portalHelpdeskModalState.ticketTypes.find(function (type) {
+                return String(type.id) === String(typeId);
+            }) || null;
+        }
+
+        function selectedPortalHelpdeskType() {
+            return portalHelpdeskTypeById(portalHelpdeskModalState.selectedTypeId) || portalHelpdeskModalState.ticketTypes[0] || null;
+        }
+
+        function portalHelpdeskTypeOptionHtml(row) {
+            const isSelected = String(row.id) === String(portalHelpdeskModalState.selectedTypeId);
+            return `<option value="${escapeHtml(row.id)}"${isSelected ? ' selected' : ''}>${escapeHtml(row.title || '')}</option>`;
+        }
+
+        function portalHelpdeskSelectedSummaryHtml(row) {
+            if (!row) {
+                return `<div class="portal-profile-empty">{% trans "No ticket types are available." %}</div>`;
+            }
+
+            return `
+                <div class="portal-leave-selected-name">
+                    <span>{% trans "Selected Ticket Type" %}</span>
+                    <strong>${escapeHtml(row.title || '')}</strong>
+                </div>
+                <div class="portal-leave-summary">
+                    <div class="portal-leave-summary-item">
+                        <strong>${escapeHtml(row.prefix || '--')}</strong>
+                        <span>{% trans "Prefix" %}</span>
+                    </div>
+                    <div class="portal-leave-summary-item">
+                        <strong>${escapeHtml(row.type_label || '--')}</strong>
+                        <span>{% trans "Category" %}</span>
+                    </div>
+                    <div class="portal-leave-summary-item">
+                        <strong>{% trans "New" %}</strong>
+                        <span>{% trans "Status" %}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updatePortalHelpdeskSelection(typeId) {
+            const selectedType = portalHelpdeskTypeById(typeId);
+            if (!selectedType) {
+                return;
+            }
+
+            portalHelpdeskModalState.selectedTypeId = selectedType.id;
+            $('#portal-helpdesk-ticket-type').val(selectedType.id);
+            $('#portal-helpdesk-selected-summary').html(portalHelpdeskSelectedSummaryHtml(selectedType));
+        }
+
+        function portalHelpdeskRaisedOnOptionsHtml(assigningType, selectedValue) {
+            const options = portalHelpdeskModalState.raisedOnOptions[assigningType] || [];
+            return options.map(function (option) {
+                const selected = String(option.id) === String(selectedValue) ? ' selected' : '';
+                return `<option value="${escapeHtml(option.id)}"${selected}>${escapeHtml(option.name || '')}</option>`;
+            }).join('');
+        }
+
+        function updatePortalHelpdeskRaisedOn(assigningType) {
+            const optionsHtml = portalHelpdeskRaisedOnOptionsHtml(assigningType, null);
+            const placeholder = optionsHtml ? '' : `<option value="" selected disabled>{% trans "No options available" %}</option>`;
+            $('#portal-helpdesk-raised-on').html(placeholder + optionsHtml).prop('disabled', !optionsHtml);
+        }
+
+        function portalHelpdeskStepHtml(data) {
+            const employee = data.employee || {};
+            const ticketTypes = Array.isArray(data.ticket_types) ? data.ticket_types : [];
+            const priorityOptions = Array.isArray(data.priority_options) ? data.priority_options : [];
+            const assigningTypeOptions = Array.isArray(data.assigning_type_options) ? data.assigning_type_options : [];
+            const raisedOnOptions = data.raised_on_options || {};
+            const previousSelectedId = portalHelpdeskModalState.selectedTypeId;
+
+            portalHelpdeskModalState.ticketTypes = ticketTypes;
+            portalHelpdeskModalState.raisedOnOptions = raisedOnOptions;
+            portalHelpdeskModalState.selectedTypeId = ticketTypes.some(function (type) {
+                return String(type.id) === String(previousSelectedId);
+            }) ? previousSelectedId : (ticketTypes[0] ? ticketTypes[0].id : null);
+
+            const selectedType = selectedPortalHelpdeskType();
+            const defaultAssigningType = (
+                assigningTypeOptions.find(function (option) {
+                    const rows = raisedOnOptions[option.value] || [];
+                    return rows.length > 0;
+                }) || assigningTypeOptions[0] || {}
+            ).value || '';
+            const raisedOnOptionsHtml = portalHelpdeskRaisedOnOptionsHtml(defaultAssigningType, null);
+
+            return `
+                <div class="portal-profile-head">
+                    <img src="${escapeHtml(employee.avatar || '')}" alt="" />
+                    <div>
+                        <h4>${escapeHtml(employee.name || '')}</h4>
+                        <p>${employee.employee_no ? '#' + escapeHtml(employee.employee_no) : ''}</p>
+                    </div>
+                </div>
+                <div class="portal-leave-layout">
+                    <div class="portal-leave-surface">
+                        <form class="portal-leave-form" id="portal-helpdesk-form">
+                            <div class="portal-leave-field is-full portal-leave-type-block">
+                                <label for="portal-helpdesk-ticket-type">{% trans "Ticket Type" %}</label>
+                                <select id="portal-helpdesk-ticket-type" class="portal-leave-type-select" name="ticket_type" required ${ticketTypes.length ? '' : 'disabled'}>
+                                    ${ticketTypes.length ? ticketTypes.map(portalHelpdeskTypeOptionHtml).join('') : ''}
+                                </select>
+                            </div>
+                            <section class="portal-leave-selected is-full" id="portal-helpdesk-selected-summary">
+                                ${portalHelpdeskSelectedSummaryHtml(selectedType)}
+                            </section>
+                            <div class="portal-leave-field">
+                                <label for="portal-helpdesk-title">{% trans "Title" %}</label>
+                                <input type="text" id="portal-helpdesk-title" name="title" maxlength="50" required />
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-helpdesk-priority">{% trans "Priority" %}</label>
+                                <select id="portal-helpdesk-priority" name="priority" required>
+                                    ${portalLeaveOptionsHtml(priorityOptions, 'low')}
+                                </select>
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-helpdesk-assigning-type">{% trans "Assigning Type" %}</label>
+                                <select id="portal-helpdesk-assigning-type" name="assigning_type" required>
+                                    ${portalLeaveOptionsHtml(assigningTypeOptions, defaultAssigningType)}
+                                </select>
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-helpdesk-raised-on">{% trans "Forward To" %}</label>
+                                <select id="portal-helpdesk-raised-on" name="raised_on" required ${raisedOnOptionsHtml ? '' : 'disabled'}>
+                                    ${raisedOnOptionsHtml || `<option value="" selected disabled>{% trans "No options available" %}</option>`}
+                                </select>
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-helpdesk-deadline">{% trans "Deadline" %}</label>
+                                <input type="date" id="portal-helpdesk-deadline" name="deadline" />
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-helpdesk-attachment">{% trans "Attachment" %}</label>
+                                <input type="file" id="portal-helpdesk-attachment" name="attachment" accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xls,.xlsx" multiple />
+                            </div>
+                            <div class="portal-leave-field is-full">
+                                <label for="portal-helpdesk-description">{% trans "Description" %}</label>
+                                <textarea id="portal-helpdesk-description" name="description" maxlength="255" required></textarea>
+                            </div>
+                            <button type="submit" class="oh-btn oh-btn--secondary portal-leave-submit" id="portal-helpdesk-submit" ${ticketTypes.length && raisedOnOptionsHtml ? '' : 'disabled'}>
+                                <ion-icon name="send-outline"></ion-icon>
+                                {% trans "Submit Helpdesk Ticket" %}
+                            </button>
+                        </form>
+                        <button type="button" class="oh-btn oh-btn--secondary attendance-history-btn" id="helpdesk-history-btn">
+                            <ion-icon name="list-outline"></ion-icon>
+                            {% trans "View Tickets" %}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function fetchPortalHelpdeskData(extraData) {
+            const formData = new FormData();
+            formData.append('employee_id', selectedEmployee.id);
+            if (extraData) {
+                Object.keys(extraData).forEach(function (key) {
+                    formData.append(key, extraData[key] || '');
+                });
+            }
+            const response = await fetch('{% url "portal-helpdesk-data" %}', {
+                method: 'POST',
+                body: formData
+            });
+            return await response.json();
+        }
+
+        async function submitPortalHelpdeskTicket(event) {
+            event.preventDefault();
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#portal-helpdesk-submit');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Submitting..." %}');
+
+            try {
+                const form = document.getElementById('portal-helpdesk-form');
+                const formData = new FormData(form);
+                formData.append('employee_id', selectedEmployee.id);
+
+                const response = await fetch('{% url "portal-helpdesk-ticket-create" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    Toast.fire({ icon: 'error', title: data.message || '{% trans "Unable to submit helpdesk ticket." %}' });
+                    return;
+                }
+
+                Toast.fire({ icon: 'success', title: data.message || '{% trans "Helpdesk ticket submitted." %}' });
+                const refreshedData = await fetchPortalHelpdeskData();
+                if (refreshedData.success) {
+                    $('#helpdesk-step-content').html(portalHelpdeskStepHtml(refreshedData));
+                    bindPortalHelpdeskEvents();
+                }
+            } catch (error) {
+                console.error('Helpdesk ticket error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to submit helpdesk ticket." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function helpdeskHistoryRowHtml(row) {
+            const statusClass = escapeHtml(row.status || '');
+            return `
+                <div class="attendance-history-row">
+                    <p class="attendance-history-date">${escapeHtml(row.title || '')}</p>
+                    <div class="attendance-status-strip" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="pricetag-outline"></ion-icon></span>
+                            <strong class="attendance-status-value">${escapeHtml(row.ticket_type || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Type" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="flag-outline"></ion-icon></span>
+                            <strong class="attendance-status-value">${escapeHtml(row.priority_label || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Priority" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="calendar-outline"></ion-icon></span>
+                            <strong class="attendance-status-value">${escapeHtml(row.created_date || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Created" %}</span>
+                        </div>
+                        <div class="attendance-status-item">
+                            <span class="attendance-status-icon"><ion-icon name="checkmark-circle-outline"></ion-icon></span>
+                            <strong class="attendance-status-value portal-leave-status ${statusClass}">${escapeHtml(row.status_label || '--')}</strong>
+                            <span class="attendance-status-label">{% trans "Status" %}</span>
+                        </div>
+                    </div>
+                    ${row.raised_on ? `<p class="attendance-history-note">{% trans "Forwarded to" %}: ${escapeHtml(row.raised_on)}</p>` : ''}
+                    ${row.description ? `<p class="attendance-history-note">${escapeHtml(row.description)}</p>` : ''}
+                </div>
+            `;
+        }
+
+        function helpdeskHistoryModalHtml(range) {
+            return `
+                <div class="attendance-history-filters">
+                    <div class="attendance-history-filter">
+                        <label for="helpdesk-history-start">{% trans "From" %}</label>
+                        <input type="date" id="helpdesk-history-start" value="${escapeHtml(range.start)}" />
+                    </div>
+                    <div class="attendance-history-filter">
+                        <label for="helpdesk-history-end">{% trans "To" %}</label>
+                        <input type="date" id="helpdesk-history-end" value="${escapeHtml(range.end)}" />
+                    </div>
+                    <button type="button" class="oh-btn oh-btn--secondary attendance-history-filter-btn" id="helpdesk-history-filter-btn" title="{% trans 'Load tickets' %}">
+                        <ion-icon name="search-outline"></ion-icon>
+                    </button>
+                </div>
+                <div class="leave-history-modal" id="helpdesk-history-results">
+                    <div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>
+                </div>
+            `;
+        }
+
+        async function loadHelpdeskHistoryRows() {
+            const $results = $('#helpdesk-history-results');
+            const $filterButton = $('#helpdesk-history-filter-btn');
+            $filterButton.prop('disabled', true);
+            $results.html('<div class="attendance-history-loading"><span class="loading"></span> {% trans "Loading..." %}</div>');
+            try {
+                const data = await fetchPortalHelpdeskData({
+                    start_date: $('#helpdesk-history-start').val() || '',
+                    end_date: $('#helpdesk-history-end').val() || ''
+                });
+
+                if (!data.success) {
+                    $results.html(`<div class="attendance-history-empty">${escapeHtml(data.message || '{% trans "Unable to load tickets." %}')}</div>`);
+                    return;
+                }
+                const tickets = Array.isArray(data.recent_requests) ? data.recent_requests : [];
+                if (!tickets.length) {
+                    $results.html('<div class="attendance-history-empty">{% trans "No helpdesk tickets found." %}</div>');
+                    return;
+                }
+                $results.html(tickets.map(helpdeskHistoryRowHtml).join(''));
+            } catch (error) {
+                console.error('Helpdesk history error:', error);
+                $results.html(`<div class="attendance-history-empty">${escapeHtml(error.message || '{% trans "Unable to load tickets." %}')}</div>`);
+            } finally {
+                $filterButton.prop('disabled', false);
+            }
+        }
+
+        async function showHelpdeskHistoryModal() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#helpdesk-history-btn');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Loading..." %}');
+
+            try {
+                const range = defaultAttendanceHistoryRange();
+                await Swal.fire({
+                    title: '{% trans "Helpdesk Tickets" %}',
+                    html: helpdeskHistoryModalHtml(range),
+                    showConfirmButton: false,
+                    showCloseButton: true,
+                    customClass: {
+                        container: 'swal-toast-above',
+                        popup: 'leave-history-swal',
+                        htmlContainer: 'leave-history-swal-html'
+                    },
+                    didOpen: function () {
+                        $('#helpdesk-history-filter-btn').on('click', function () {
+                            loadHelpdeskHistoryRows();
+                        });
+                        loadHelpdeskHistoryRows();
+                    }
+                });
+            } catch (error) {
+                console.error('Helpdesk history error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load tickets." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
+        function bindPortalHelpdeskEvents() {
+            $('#portal-helpdesk-ticket-type').on('change', function () {
+                updatePortalHelpdeskSelection($(this).val());
+            });
+            $('#portal-helpdesk-assigning-type').on('change', function () {
+                updatePortalHelpdeskRaisedOn($(this).val());
+            });
+            $('#portal-helpdesk-form').on('submit', submitPortalHelpdeskTicket);
+            $('#helpdesk-history-btn').on('click', function () {
+                showHelpdeskHistoryModal();
+            });
+        }
+
+        async function showPortalHelpdeskStep() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#service-helpdesk-btn');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Loading..." %}');
+
+            try {
+                const data = await fetchPortalHelpdeskData();
+                if (!data.success) {
+                    Toast.fire({ icon: 'error', title: data.message || '{% trans "Unable to load helpdesk." %}' });
+                    return;
+                }
+
+                $('#helpdesk-step-content').html(portalHelpdeskStepHtml(data));
+                bindPortalHelpdeskEvents();
+                showStep('helpdesk');
+            } catch (error) {
+                console.error('Helpdesk load error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to load helpdesk." %}' });
             } finally {
                 $button.prop('disabled', false).html(originalHtml);
             }
@@ -3312,11 +5004,59 @@
                 showEmployeeProfileModal();
             });
 
+            $('#service-leave-btn').on('click', function () {
+                if ($(this).prop('disabled')) {
+                    return;
+                }
+                showPortalLeaveModal();
+            });
+
+            $('#service-document-request-btn').on('click', function () {
+                if ($(this).prop('disabled')) {
+                    return;
+                }
+                showPortalDocumentRequestStep();
+            });
+
+            $('#service-helpdesk-btn').on('click', function () {
+                if ($(this).prop('disabled')) {
+                    return;
+                }
+                showPortalHelpdeskStep();
+            });
+
+            $('#service-faq-btn').on('click', function () {
+                if ($(this).prop('disabled')) {
+                    return;
+                }
+                showPortalFaqStep();
+            });
+
             $('#service-back-btn').on('click', function () {
                 selectedAttendanceAction = null;
                 clearPinInput();
                 setPinMessage('{% trans "Use the keypad to enter PIN." %}');
                 showStep('pin');
+            });
+
+            $('#profile-back-btn').on('click', function () {
+                openServiceMenuStep();
+            });
+
+            $('#faq-back-btn').on('click', function () {
+                openServiceMenuStep();
+            });
+
+            $('#leave-back-btn').on('click', function () {
+                openServiceMenuStep();
+            });
+
+            $('#document-request-back-btn').on('click', function () {
+                openServiceMenuStep();
+            });
+
+            $('#helpdesk-back-btn').on('click', function () {
+                openServiceMenuStep();
             });
 
             $('#attendance-back-btn').on('click', function () {

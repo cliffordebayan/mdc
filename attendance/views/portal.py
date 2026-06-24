@@ -6,6 +6,7 @@ No authentication required - suitable for kiosk-style access.
 Employees identify themselves by badge ID or name.
 """
 
+import os
 import ipaddress
 import logging
 import re
@@ -15,8 +16,10 @@ from datetime import date, datetime, time, timedelta
 
 import pytz
 from django import forms
+from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.core import signing
 from django.core.mail import EmailMessage
 from django.core.signing import BadSignature, SignatureExpired
@@ -26,6 +29,7 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.html import strip_tags
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare, salted_hmac
 from django.utils.translation import gettext as _
@@ -65,6 +69,17 @@ PORTAL_LUNCH_ACTIVITY = "lunch"
 PORTAL_DEFAULT_BREAK_LIMIT = 2
 PORTAL_DEFAULT_BREAK_MINUTES = 15
 PORTAL_DEFAULT_LUNCH_MINUTES = 60
+PORTAL_HELPDESK_BLOCKED_EXTENSIONS = {
+    ".html",
+    ".htm",
+    ".js",
+    ".svg",
+    ".xml",
+    ".php",
+    ".py",
+    ".sh",
+    ".exe",
+}
 PORTAL_NON_WORK_ACTIVITY_TYPES = {
     PORTAL_BREAK_ACTIVITY: _("Break"),
     PORTAL_LUNCH_ACTIVITY: _("Lunch"),
@@ -1091,6 +1106,128 @@ def _portal_employee_profile_payload(employee):
     }
 
 
+def _portal_validation_messages(error):
+    if hasattr(error, "message_dict"):
+        messages = []
+        for field_errors in error.message_dict.values():
+            messages.extend(str(item) for item in field_errors)
+        return messages
+    if hasattr(error, "messages"):
+        return [str(item) for item in error.messages]
+    return [str(error)]
+
+
+def _portal_parse_date(value):
+    try:
+        return datetime.strptime(value or "", "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _portal_leave_breakdown_options():
+    from leave.models import BREAKDOWN
+
+    return [{"value": value, "label": str(label)} for value, label in BREAKDOWN]
+
+
+def _portal_leave_type_payload(available_leave):
+    leave_type = available_leave.leave_type_id
+    return {
+        "id": leave_type.id,
+        "name": leave_type.name,
+        "available_days": available_leave.available_days,
+        "carryforward_days": available_leave.carryforward_days,
+        "total_leave_days": available_leave.total_leave_days,
+        "require_attachment": leave_type.require_attachment == "yes",
+    }
+
+
+def _portal_leave_request_payload(leave_request):
+    return {
+        "id": leave_request.id,
+        "leave_type": str(leave_request.leave_type_id),
+        "start_date": leave_request.start_date.strftime("%b %d, %Y"),
+        "end_date": (leave_request.end_date or leave_request.start_date).strftime(
+            "%b %d, %Y"
+        ),
+        "requested_days": leave_request.requested_days,
+        "status": leave_request.status,
+        "status_label": leave_request.get_status_display(),
+    }
+
+
+def _portal_form_error_message(form):
+    messages = []
+    for field_errors in form.errors.values():
+        messages.extend(str(error) for error in field_errors)
+    return " ".join(messages) or _("Please check the form and try again.")
+
+
+def _portal_document_request_payload(document_request):
+    created_at = getattr(document_request, "created_at", None)
+    return {
+        "id": document_request.id,
+        "title": document_request.title,
+        "description": document_request.description or "",
+        "status": document_request.status,
+        "status_label": document_request.get_status_display(),
+        "issue_date": _portal_display_value(document_request.issue_date),
+        "expiry_date": _portal_display_value(document_request.expiry_date),
+        "created_at": _portal_display_value(created_at),
+        "has_attachment": bool(document_request.attachment),
+        "has_fulfilled_document": bool(document_request.fulfilled_document),
+    }
+
+
+def _portal_ticket_type_payload(ticket_type):
+    return {
+        "id": ticket_type.id,
+        "title": ticket_type.title,
+        "type": ticket_type.type,
+        "type_label": ticket_type.get_type_display(),
+        "prefix": ticket_type.prefix,
+    }
+
+
+def _portal_ticket_payload(ticket):
+    try:
+        raised_on = ticket.get_raised_on()
+    except Exception:
+        raised_on = ""
+
+    return {
+        "id": ticket.id,
+        "title": ticket.title,
+        "description": ticket.description or "",
+        "ticket_type": str(ticket.ticket_type) if ticket.ticket_type_id else "",
+        "priority": ticket.priority,
+        "priority_label": ticket.get_priority_display(),
+        "assigning_type": ticket.assigning_type,
+        "assigning_type_label": ticket.get_assigning_type_display(),
+        "raised_on": raised_on,
+        "deadline": _portal_display_value(ticket.deadline),
+        "created_date": _portal_display_value(ticket.created_date),
+        "status": ticket.status,
+        "status_label": ticket.get_status_display(),
+        "attachment_count": ticket.ticket_attachment.count(),
+    }
+
+
+def _portal_faq_payload(faq):
+    tags = []
+    try:
+        tags = [str(tag) for tag in faq.tags.all()]
+    except Exception:
+        tags = []
+
+    return {
+        "id": faq.id,
+        "question": faq.question,
+        "answer": strip_tags(faq.answer or ""),
+        "tags": tags,
+    }
+
+
 def public_portal(request):
     """
     Render the public portal clock in/out page.
@@ -1581,6 +1718,772 @@ def employee_profile(request):
         {
             "success": True,
             **_portal_employee_profile_payload(employee),
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def faq_data(request):
+    """
+    Return Helpdesk FAQ categories and questions for the selected portal employee.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    if not apps.is_installed("helpdesk"):
+        return JsonResponse(
+            {"success": False, "message": "FAQ is not available."},
+            status=200,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    from helpdesk.models import FAQ, FAQCategory
+
+    faqs = (
+        FAQ.objects.select_related("category")
+        .prefetch_related("tags")
+        .filter(is_active=True, category__is_active=True)
+        .order_by("category__title", "question", "id")
+    )
+    category_map = {}
+    for faq in faqs:
+        category = faq.category
+        key = category.id
+        if key not in category_map:
+            category_map[key] = {
+                "id": category.id,
+                "title": category.title,
+                "description": category.description or "",
+                "faqs": [],
+            }
+        category_map[key]["faqs"].append(_portal_faq_payload(faq))
+
+    uncategorized_categories = FAQCategory.objects.filter(
+        is_active=True,
+        faq__isnull=True,
+    ).order_by("title")
+    for category in uncategorized_categories:
+        category_map.setdefault(
+            category.id,
+            {
+                "id": category.id,
+                "title": category.title,
+                "description": category.description or "",
+                "faqs": [],
+            },
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "employee": {
+                "name": employee.get_full_name(),
+                "employee_no": employee.employee_no or "",
+                "avatar": employee.get_avatar(),
+            },
+            "categories": list(category_map.values()),
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def leave_data(request):
+    """
+    Return leave balances and recent leave requests for the selected portal employee.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    if not apps.is_installed("leave"):
+        return JsonResponse(
+            {"success": False, "message": "Leave is not available."},
+            status=200,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    from leave.models import AvailableLeave, LeaveRequest
+
+    available_leaves = (
+        AvailableLeave.objects.select_related("leave_type_id")
+        .filter(employee_id=employee, leave_type_id__is_compensatory_leave=False)
+        .order_by("leave_type_id__name")
+    )
+    leave_requests_qs = (
+        LeaveRequest.objects.select_related("leave_type_id")
+        .filter(employee_id=employee)
+        .order_by("-start_date", "-id")
+    )
+    filter_start = _portal_parse_date(request.POST.get("start_date"))
+    filter_end = _portal_parse_date(request.POST.get("end_date"))
+    if filter_start or filter_end:
+        if filter_start:
+            leave_requests_qs = leave_requests_qs.filter(start_date__gte=filter_start)
+        if filter_end:
+            leave_requests_qs = leave_requests_qs.filter(start_date__lte=filter_end)
+        leave_requests = leave_requests_qs
+    else:
+        leave_requests = leave_requests_qs[:8]
+
+    return JsonResponse(
+        {
+            "success": True,
+            "employee": {
+                "name": employee.get_full_name(),
+                "employee_no": employee.employee_no or "",
+                "avatar": employee.get_avatar(),
+            },
+            "leave_types": [
+                _portal_leave_type_payload(available_leave)
+                for available_leave in available_leaves
+                if available_leave.leave_type_id
+            ],
+            "breakdown_options": _portal_leave_breakdown_options(),
+            "recent_requests": [
+                _portal_leave_request_payload(leave_request)
+                for leave_request in leave_requests
+            ],
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def leave_request_create(request):
+    """
+    Create a leave request from the public attendance portal.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    if not apps.is_installed("leave"):
+        return JsonResponse(
+            {"success": False, "message": "Leave is not available."},
+            status=200,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    from leave.models import (
+        AvailableLeave,
+        LeaveRequest,
+        LeaveRequestConditionApproval,
+        LeaveType,
+    )
+
+    leave_type_id = request.POST.get("leave_type_id", "").strip()
+    start_date = _portal_parse_date(request.POST.get("start_date"))
+    end_date = _portal_parse_date(request.POST.get("end_date")) or start_date
+    description = (request.POST.get("description") or "").strip()
+    start_breakdown = request.POST.get("start_date_breakdown") or "full_day"
+    end_breakdown = request.POST.get("end_date_breakdown") or "full_day"
+
+    if not leave_type_id or not start_date or not end_date:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Leave type, start date, and end date are required.",
+            },
+            status=200,
+        )
+
+    try:
+        leave_type = LeaveType.objects.get(id=leave_type_id)
+    except (LeaveType.DoesNotExist, ValueError):
+        return JsonResponse(
+            {"success": False, "message": "Selected leave type was not found."},
+            status=200,
+        )
+
+    if not AvailableLeave.objects.filter(
+        employee_id=employee,
+        leave_type_id=leave_type,
+    ).exists():
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "The selected leave type is not assigned to this employee.",
+            },
+            status=200,
+        )
+
+    leave_request = LeaveRequest(
+        employee_id=employee,
+        leave_type_id=leave_type,
+        start_date=start_date,
+        end_date=end_date,
+        start_date_breakdown=start_breakdown,
+        end_date_breakdown=end_breakdown,
+        description=description,
+        attachment=request.FILES.get("attachment"),
+        created_by=employee,
+    )
+
+    try:
+        leave_request.full_clean()
+        leave_request.save()
+        if leave_type.require_approval == "no":
+            leave_request.no_approval()
+            leave_request.save()
+            LeaveRequestConditionApproval.objects.filter(
+                leave_request_id=leave_request
+            ).delete()
+    except ValidationError as error:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": " ".join(_portal_validation_messages(error)),
+            },
+            status=200,
+        )
+    except Exception as error:
+        logger.error("Portal leave request creation failed: %s", error, exc_info=True)
+        return JsonResponse(
+            {"success": False, "message": f"Leave request failed: {error}"},
+            status=200,
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "Leave request created successfully.",
+            "request": _portal_leave_request_payload(leave_request),
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def document_request_data(request):
+    """
+    Return recent document requests for the selected public portal employee.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    if not apps.is_installed("horilla_documents"):
+        return JsonResponse(
+            {"success": False, "message": "Document requests are not available."},
+            status=200,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    from horilla_documents.models import EmployeeDocumentRequest
+
+    document_requests_qs = EmployeeDocumentRequest.objects.filter(
+        employee_id=employee
+    ).order_by("-created_at", "-id")
+
+    filter_start = _portal_parse_date(request.POST.get("start_date"))
+    filter_end = _portal_parse_date(request.POST.get("end_date"))
+    if filter_start:
+        document_requests_qs = document_requests_qs.filter(
+            created_at__date__gte=filter_start
+        )
+    if filter_end:
+        document_requests_qs = document_requests_qs.filter(
+            created_at__date__lte=filter_end
+        )
+
+    document_requests = (
+        document_requests_qs if (filter_start or filter_end) else document_requests_qs[:8]
+    )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "employee": {
+                "name": employee.get_full_name(),
+                "employee_no": employee.employee_no or "",
+                "avatar": employee.get_avatar(),
+            },
+            "recent_requests": [
+                _portal_document_request_payload(document_request)
+                for document_request in document_requests
+            ],
+        },
+        status=200,
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def document_request_create(request):
+    """
+    Create an employee document request from the public attendance portal.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    if not apps.is_installed("horilla_documents"):
+        return JsonResponse(
+            {"success": False, "message": "Document requests are not available."},
+            status=200,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    from horilla_documents.forms import EmployeeDocumentRequestForm
+
+    form = EmployeeDocumentRequestForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return JsonResponse(
+            {
+                "success": False,
+                "message": _portal_form_error_message(form),
+            },
+            status=200,
+        )
+
+    try:
+        document_request = form.save(commit=False)
+        document_request.employee_id = employee
+        document_request.save()
+    except ValidationError as error:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": " ".join(_portal_validation_messages(error)),
+            },
+            status=200,
+        )
+    except Exception as error:
+        logger.error(
+            "Portal document request creation failed: %s",
+            error,
+            exc_info=True,
+        )
+        return JsonResponse(
+            {"success": False, "message": f"Document request failed: {error}"},
+            status=200,
+        )
+
+    try:
+        from notifications.signals import notify
+
+        admins = User.objects.filter(is_superuser=True)
+        if admins.exists():
+            notify.send(
+                employee,
+                recipient=list(admins),
+                verb=f"{employee} submitted a document request: {document_request.title}",
+                redirect=reverse("employee-document-request-view"),
+                icon="chatbox-ellipses",
+            )
+    except Exception:
+        logger.debug("Portal document request notification failed.", exc_info=True)
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "Document request submitted successfully.",
+            "request": _portal_document_request_payload(document_request),
+        },
+        status=200,
+    )
+
+
+def _portal_helpdesk_raised_on_options():
+    from base.models import Department, JobPosition
+
+    employees = Employee.objects.filter(is_active=True).order_by(
+        "employee_first_name",
+        "employee_last_name",
+        "employee_no",
+    )
+    return {
+        "department": [
+            {"id": department.id, "name": department.department}
+            for department in Department.objects.all().order_by("department")
+        ],
+        "job_position": [
+            {"id": job_position.id, "name": job_position.job_position}
+            for job_position in JobPosition.objects.all().order_by("job_position")
+        ],
+        "individual": [
+            {
+                "id": employee.id,
+                "name": employee.get_full_name() or employee.employee_no or str(employee),
+            }
+            for employee in employees
+        ],
+    }
+
+
+def _portal_helpdesk_choice_payload(choices):
+    return [{"value": value, "label": str(label)} for value, label in choices]
+
+
+def _portal_helpdesk_employee_response(employee, tickets, ticket_types):
+    from helpdesk.models import MANAGER_TYPES, PRIORITY
+
+    return {
+        "success": True,
+        "employee": {
+            "name": employee.get_full_name(),
+            "employee_no": employee.employee_no or "",
+            "avatar": employee.get_avatar(),
+        },
+        "ticket_types": [
+            _portal_ticket_type_payload(ticket_type) for ticket_type in ticket_types
+        ],
+        "priority_options": _portal_helpdesk_choice_payload(PRIORITY),
+        "assigning_type_options": _portal_helpdesk_choice_payload(MANAGER_TYPES),
+        "raised_on_options": _portal_helpdesk_raised_on_options(),
+        "recent_requests": [_portal_ticket_payload(ticket) for ticket in tickets],
+    }
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def helpdesk_data(request):
+    """
+    Return helpdesk ticket choices and recent tickets for the selected portal employee.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    if not apps.is_installed("helpdesk"):
+        return JsonResponse(
+            {"success": False, "message": "Helpdesk is not available."},
+            status=200,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    from helpdesk.models import Ticket, TicketType
+
+    tickets_qs = (
+        Ticket.objects.entire()
+        .select_related("ticket_type")
+        .prefetch_related("ticket_attachment")
+        .filter(employee_id=employee)
+        .order_by("-created_at", "-created_date", "-id")
+    )
+    filter_start = _portal_parse_date(request.POST.get("start_date"))
+    filter_end = _portal_parse_date(request.POST.get("end_date"))
+    if filter_start:
+        tickets_qs = tickets_qs.filter(created_date__gte=filter_start)
+    if filter_end:
+        tickets_qs = tickets_qs.filter(created_date__lte=filter_end)
+
+    tickets = tickets_qs if (filter_start or filter_end) else tickets_qs[:8]
+    ticket_types = TicketType.objects.entire().order_by("title")
+
+    return JsonResponse(
+        _portal_helpdesk_employee_response(employee, tickets, ticket_types),
+        status=200,
+    )
+
+
+def _portal_helpdesk_raised_on_exists(assigning_type, raised_on):
+    from base.models import Department, JobPosition
+
+    if assigning_type == "department":
+        return Department.objects.filter(id=raised_on).exists()
+    if assigning_type == "job_position":
+        return JobPosition.objects.filter(id=raised_on).exists()
+    if assigning_type == "individual":
+        return Employee.objects.filter(id=raised_on, is_active=True).exists()
+    return False
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def helpdesk_ticket_create(request):
+    """
+    Create a helpdesk ticket from the public attendance portal.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    if not apps.is_installed("helpdesk"):
+        return JsonResponse(
+            {"success": False, "message": "Helpdesk is not available."},
+            status=200,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    from helpdesk.models import Attachment, MANAGER_TYPES, PRIORITY, Ticket, TicketType
+
+    title = (request.POST.get("title") or "").strip()
+    description = (request.POST.get("description") or "").strip()
+    ticket_type_id = (request.POST.get("ticket_type") or "").strip()
+    priority = (request.POST.get("priority") or "low").strip()
+    assigning_type = (request.POST.get("assigning_type") or "").strip()
+    raised_on = (request.POST.get("raised_on") or "").strip()
+    deadline = _portal_parse_date(request.POST.get("deadline"))
+
+    manager_type_values = {value for value, _label in MANAGER_TYPES}
+    priority_values = {value for value, _label in PRIORITY}
+
+    if not title or not description or not ticket_type_id or not assigning_type or not raised_on:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Title, description, ticket type, assigning type, and forward to are required.",
+            },
+            status=200,
+        )
+
+    if priority not in priority_values:
+        return JsonResponse(
+            {"success": False, "message": "Selected priority is invalid."},
+            status=200,
+        )
+
+    if assigning_type not in manager_type_values:
+        return JsonResponse(
+            {"success": False, "message": "Selected assigning type is invalid."},
+            status=200,
+        )
+
+    if not _portal_helpdesk_raised_on_exists(assigning_type, raised_on):
+        return JsonResponse(
+            {"success": False, "message": "Selected forward-to option was not found."},
+            status=200,
+        )
+
+    if deadline and deadline < timezone.localdate():
+        return JsonResponse(
+            {"success": False, "message": "Deadline should be greater than today."},
+            status=200,
+        )
+
+    try:
+        ticket_type = TicketType.objects.entire().get(id=ticket_type_id)
+    except (TicketType.DoesNotExist, ValueError):
+        return JsonResponse(
+            {"success": False, "message": "Selected ticket type was not found."},
+            status=200,
+        )
+
+    files = request.FILES.getlist("attachment")
+    blocked_exts = sorted(
+        {
+            os.path.splitext(file.name)[1].lower()
+            for file in files
+            if os.path.splitext(file.name)[1].lower()
+            in PORTAL_HELPDESK_BLOCKED_EXTENSIONS
+        }
+    )
+    if blocked_exts:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": _("File type(s) %(ext)s are not allowed.")
+                % {"ext": ", ".join(blocked_exts)},
+            },
+            status=200,
+        )
+
+    ticket = Ticket(
+        title=title,
+        employee_id=employee,
+        description=description,
+        ticket_type=ticket_type,
+        priority=priority,
+        assigning_type=assigning_type,
+        raised_on=raised_on,
+        deadline=deadline,
+        status="new",
+    )
+
+    try:
+        ticket.full_clean()
+        ticket.save()
+        for file in files:
+            Attachment(file=file, ticket=ticket).save()
+    except ValidationError as error:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": " ".join(_portal_validation_messages(error)),
+            },
+            status=200,
+        )
+    except Exception as error:
+        logger.error("Portal helpdesk ticket creation failed: %s", error, exc_info=True)
+        return JsonResponse(
+            {"success": False, "message": f"Helpdesk request failed: {error}"},
+            status=200,
+        )
+
+    try:
+        from notifications.signals import notify
+
+        recipients = list(User.objects.filter(is_superuser=True))
+        if assigning_type == "individual":
+            raised_employee = Employee.objects.filter(id=raised_on).first()
+            if raised_employee and raised_employee.employee_user_id:
+                recipients.append(raised_employee.employee_user_id)
+        if employee.employee_user_id:
+            recipients.append(employee.employee_user_id)
+        if recipients:
+            notify.send(
+                employee,
+                recipient=recipients,
+                verb=f"{employee} submitted a helpdesk ticket: {ticket.title}",
+                redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+                icon="infinite",
+            )
+    except Exception:
+        logger.debug("Portal helpdesk notification failed.", exc_info=True)
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "Helpdesk ticket submitted successfully.",
+            "request": _portal_ticket_payload(ticket),
         },
         status=200,
     )

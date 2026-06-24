@@ -73,6 +73,41 @@ urlpatterns = [
         name="portal-employee-profile",
     ),
     path(
+        "portal/faq-data/",
+        attendance.views.portal.faq_data,
+        name="portal-faq-data",
+    ),
+    path(
+        "portal/leave-data/",
+        attendance.views.portal.leave_data,
+        name="portal-leave-data",
+    ),
+    path(
+        "portal/leave-request-create/",
+        attendance.views.portal.leave_request_create,
+        name="portal-leave-request-create",
+    ),
+    path(
+        "portal/document-request-data/",
+        attendance.views.portal.document_request_data,
+        name="portal-document-request-data",
+    ),
+    path(
+        "portal/document-request-create/",
+        attendance.views.portal.document_request_create,
+        name="portal-document-request-create",
+    ),
+    path(
+        "portal/helpdesk-data/",
+        attendance.views.portal.helpdesk_data,
+        name="portal-helpdesk-data",
+    ),
+    path(
+        "portal/helpdesk-ticket-create/",
+        attendance.views.portal.helpdesk_ticket_create,
+        name="portal-helpdesk-ticket-create",
+    ),
+    path(
         "portal/server-time/",
         attendance.views.portal.server_time,
         name="portal-server-time",

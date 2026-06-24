@@ -148,6 +148,16 @@
                             <!-- End of check in/out button in nav bar -->
                         {% endif %}
 
+                        {% if "attendance"|app_installed %}
+                            <!-- Start of attendance portal button in nav bar -->
+                            <div class="oh-navbar__action-icons" title="{% trans 'Attendance Portal' %}">
+                                <a href="{% url 'public-portal' %}" target="_blank" class="oh-navbar__action-icons-link">
+                                    <ion-icon name="finger-print-outline" class="oh-navbar__icon"></ion-icon>
+                                </a>
+                            </div>
+                            <!-- End of attendance portal button in nav bar -->
+                        {% endif %}
+
                         {% if request.user|any_permission:'base' or perms.attendance.view_attendancevalidationcondition %}
                             <!-- Start of settings button in nav bar -->
                             <div class="oh-navbar__action-icons" title="{% trans 'Settings' %}">
