@@ -6,12 +6,22 @@ from unittest.mock import patch
 
 from django.conf import settings as django_settings
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.mail import EmailMessage
+from django.test import RequestFactory
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from base.backends import ConfiguredEmailBackend
 from base.forms import CompanyForm
-from base.models import Company, EmployeeShift, EmployeeShiftDay, EmployeeShiftSchedule
+from base.models import (
+    Company,
+    DynamicEmailConfiguration,
+    EmployeeShift,
+    EmployeeShiftDay,
+    EmployeeShiftSchedule,
+)
 from employee.forms import EmployeeForm
 from employee.models import Employee
 from horilla.horilla_middlewares import _thread_locals
@@ -111,6 +121,73 @@ class PhilippinesPlaceholderFormTests(TestCase):
         )
         self.assertEqual(form.fields["state"].label, "Province")
         self.assertEqual(form.fields["zip"].widget.attrs.get("placeholder"), "e.g. 2900")
+
+
+class DynamicEmailBackendSenderTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        _thread_locals.request = None
+        self.factory = RequestFactory()
+        self.config = DynamicEmailConfiguration.objects.create(
+            host="smtp.example.com",
+            port=587,
+            from_email="smtp@example.com",
+            username="smtp@example.com",
+            display_name="MDC",
+            password="secret",
+            use_tls=True,
+            use_ssl=False,
+            use_dynamic_display_name=True,
+        )
+
+    def tearDown(self):
+        cache.clear()
+        _thread_locals.request = None
+        super().tearDown()
+
+    def _set_request_user(self, user):
+        request = self.factory.get("/")
+        request.user = user
+        _thread_locals.request = request
+
+    def test_employee_display_name_keeps_configured_smtp_sender(self):
+        user = User.objects.create_user(
+            username="manager",
+            email="manager@example.com",
+            password="test",
+        )
+        Employee.objects.create(
+            employee_user_id=user,
+            employee_first_name="Manager",
+            employee_last_name="User",
+            email="manager@example.com",
+            phone="09170000000",
+            gender="male",
+            is_active=True,
+        )
+        self._set_request_user(user)
+
+        message = EmailMessage("Subject", "Body", to=["to@example.com"])
+
+        self.assertEqual(message.from_email, "Manager User <smtp@example.com>")
+        self.assertEqual(message.reply_to, ["Manager User <manager@example.com>"])
+
+    def test_user_without_employee_profile_uses_configured_sender(self):
+        user = User.objects.create_user(
+            username="staff",
+            email="staff@example.com",
+            password="test",
+        )
+        self._set_request_user(user)
+
+        message = EmailMessage("Subject", "Body", to=["to@example.com"])
+
+        self.assertEqual(message.from_email, "MDC <smtp@example.com>")
+        self.assertEqual(message.reply_to, [])
+        self.assertEqual(
+            ConfiguredEmailBackend().dynamic_from_email_with_display_name,
+            "MDC <smtp@example.com>",
+        )
 
 
 @override_settings(

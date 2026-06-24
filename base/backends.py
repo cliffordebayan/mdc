@@ -60,11 +60,27 @@ class DefaultHorillaMailBackend(EmailBackend):
         )
 
     @staticmethod
+    def _format_email(display_name=None, email=None):
+        if display_name and email:
+            return f"{display_name} <{email}>"
+        return email or display_name
+
+    @staticmethod
+    def _get_request_employee(request):
+        if not request or not getattr(request, "user", None):
+            return None
+        try:
+            if request.user.is_authenticated:
+                return request.user.employee_get
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
     def get_dynamic_email_config():
         request = getattr(_thread_locals, "request", None)
-        company = None
-        if request and not request.user.is_anonymous:
-            company = request.user.employee_get.get_company()
+        employee = DefaultHorillaMailBackend._get_request_employee(request)
+        company = employee.get_company() if employee else None
         configuration = DynamicEmailConfiguration.objects.filter(
             company_id=company
         ).first()
@@ -73,8 +89,9 @@ class DefaultHorillaMailBackend(EmailBackend):
                 is_primary=True
             ).first()
         if configuration:
-            display_email_name = (
-                f"{configuration.display_name} <{configuration.from_email}>"
+            display_email_name = DefaultHorillaMailBackend._format_email(
+                configuration.display_name,
+                configuration.from_email,
             )
 
             user_id = ""
@@ -82,14 +99,24 @@ class DefaultHorillaMailBackend(EmailBackend):
                 if (
                     configuration.use_dynamic_display_name
                     and request.user.is_authenticated
+                    and employee
                 ):
-                    display_email_name = f"{request.user.employee_get.get_full_name()} <{request.user.employee_get.get_email()}>"
+                    display_email_name = DefaultHorillaMailBackend._format_email(
+                        employee.get_full_name(),
+                        configuration.from_email,
+                    )
                 if request.user.is_authenticated:
                     user_id = request.user.pk
-                    reply_to = [
-                        f"{request.user.employee_get.get_full_name()} <{request.user.employee_get.get_email()}>",
-                    ]
-                    cache.set(f"reply_to{request.user.pk}", reply_to)
+                    if employee and employee.get_email():
+                        reply_to = [
+                            DefaultHorillaMailBackend._format_email(
+                                employee.get_full_name(),
+                                employee.get_email(),
+                            ),
+                        ]
+                        cache.set(f"reply_to{request.user.pk}", reply_to)
+                    else:
+                        cache.delete(f"reply_to{request.user.pk}")
 
             cache.set(f"dynamic_display_name{user_id}", display_email_name)
 
@@ -133,10 +160,9 @@ class DefaultHorillaMailBackend(EmailBackend):
 
     @property
     def dynamic_from_email_with_display_name(self):
-        return (
-            f"{self.dynamic_display_name} <{self.dynamic_mail_sent_from}>"
-            if self.dynamic_display_name
-            else self.dynamic_mail_sent_from
+        return self._format_email(
+            self.dynamic_display_name,
+            self.dynamic_mail_sent_from,
         )
 
     @property
