@@ -541,6 +541,29 @@
             font-weight: 700;
         }
 
+        .btn-attendance-request {
+            width: 100%;
+            min-height: 44px;
+            margin: 0 0 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            font-weight: 700;
+            background: #fffbeb;
+            color: #b45309;
+            border: 1.5px dashed #f59e0b;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .btn-attendance-request:hover {
+            background: #fef3c7;
+            border-color: #d97706;
+            color: #92400e;
+        }
+
         .attendance-history-swal {
             width: min(98vw, 760px) !important;
             max-height: min(94vh, 760px);
@@ -754,6 +777,25 @@
             max-height: min(78vh, 620px);
             overflow: hidden !important;
             margin: 0 0 1em !important;
+        }
+
+        .attendance-request-swal-html {
+            display: flex !important;
+            flex-direction: column;
+            width: 100% !important;
+            max-height: min(82vh, 680px);
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            margin: 0 0 1em !important;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .attendance-request-swal .swal2-title {
+            font-size: 17px !important;
+            font-weight: 700;
+            color: #111827 !important;
+            padding: 10px 44px !important;
+            margin-bottom: 4px !important;
         }
 
         .leave-history-swal .swal2-content,
@@ -1290,6 +1332,16 @@
             justify-content: center;
             gap: 7px;
             font-weight: 700;
+        }
+
+        /* Single-column layout for the attendance request modal form */
+        .portal-ar-form {
+            grid-template-columns: 1fr !important;
+        }
+
+        .portal-ar-form .portal-leave-submit {
+            margin: 0 !important;
+            box-sizing: border-box;
         }
 
         @media (max-width: 720px) {
@@ -2621,6 +2673,10 @@
                                 </button>
                             </div>
 
+                            <button type="button" class="btn-attendance-request" id="attendance-request-btn">
+                                <ion-icon name="create-outline"></ion-icon>
+                                {% trans "Request Attendance" %}
+                            </button>
                             <button type="button" class="oh-btn oh-btn--secondary attendance-history-btn" id="attendance-history-btn">
                                 <ion-icon name="list-outline"></ion-icon>
                                 {% trans "View Attendance" %}
@@ -2645,6 +2701,12 @@
 
                             <!-- Face detection oval guide — SEPARATE from #canvas so captured selfies stay clean -->
                             <canvas id="face-overlay-canvas"></canvas>
+
+                            <!-- Face detection loading indicator -->
+                            <div id="face-loading-status" style="display:none; position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.65); color:#fff; border-radius:20px; padding:6px 16px; font-size:13px; white-space:nowrap; z-index:10; align-items:center; gap:8px;">
+                                <span class="loading" style="display:inline-block; width:13px; height:13px; border-width:2px; vertical-align:middle; margin-right:6px; border-color:rgba(255,255,255,0.3); border-top-color:#fff;"></span>
+                                <span>{% trans "Loading face detection..." %}</span>
+                            </div>
 
                             <!-- Location overlay on photo -->
                             <div class="location-overlay" id="location-overlay" style="display:none;">
@@ -3194,7 +3256,7 @@
                         navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
                             enableHighAccuracy: false,
                             timeout: 15000,
-                            maximumAge: 0
+                            maximumAge: 30000
                         });
                         return;
                     }
@@ -3204,7 +3266,7 @@
                 navigator.geolocation.getCurrentPosition(onSuccess, onError, {
                     enableHighAccuracy: true,
                     timeout: 15000,
-                    maximumAge: 0
+                    maximumAge: 30000
                 });
             } else {
                 latitude = null;
@@ -4495,6 +4557,118 @@
             }
         }
 
+        function portalAttendanceRequestStepHtml(employee) {
+            const today = formatDateInputValue(new Date());
+            const empNo = employee.employee_no || employee.badge;
+            return `
+                <div class="portal-profile-head">
+                    <img src="${escapeHtml(employee.avatar || '')}" alt="" />
+                    <div>
+                        <h4>${escapeHtml(employee.name || '')}</h4>
+                        <p>${empNo ? '#' + escapeHtml(empNo) : ''}</p>
+                    </div>
+                </div>
+                <div class="portal-leave-layout">
+                    <div class="portal-leave-surface">
+                        <form class="portal-leave-form portal-ar-form" id="portal-attendance-request-form">
+                            <div class="portal-leave-field is-full">
+                                <label for="portal-ar-date">{% trans "Attendance Date" %} *</label>
+                                <input type="date" id="portal-ar-date" name="attendance_date" value="${today}" required />
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-ar-clock-in-date">{% trans "Clock In Date" %} *</label>
+                                <input type="date" id="portal-ar-clock-in-date" name="attendance_clock_in_date" value="${today}" required />
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-ar-clock-in">{% trans "Clock In Time" %} *</label>
+                                <input type="time" id="portal-ar-clock-in" name="attendance_clock_in" required />
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-ar-clock-out-date">{% trans "Clock Out Date" %}</label>
+                                <input type="date" id="portal-ar-clock-out-date" name="attendance_clock_out_date" value="${today}" />
+                            </div>
+                            <div class="portal-leave-field">
+                                <label for="portal-ar-clock-out">{% trans "Clock Out Time" %}</label>
+                                <input type="time" id="portal-ar-clock-out" name="attendance_clock_out" />
+                            </div>
+                            <div class="portal-leave-field is-full">
+                                <label for="portal-ar-reason">{% trans "Reason" %} *</label>
+                                <textarea id="portal-ar-reason" name="request_description" maxlength="500" required placeholder="{% trans 'Describe why this attendance correction is needed...' %}"></textarea>
+                            </div>
+                            <div class="portal-leave-field is-full">
+                                <label for="portal-ar-proof">{% trans "Proof Image" %} *</label>
+                                <input type="file" id="portal-ar-proof" name="proof_image" accept="image/jpeg,image/png,image/jpg" required />
+                            </div>
+                            <button type="submit" class="oh-btn oh-btn--secondary portal-leave-submit" id="portal-attendance-request-submit">
+                                <ion-icon name="send-outline"></ion-icon>
+                                {% trans "Submit Attendance Request" %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function showPortalAttendanceRequestModal() {
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            await Swal.fire({
+                title: '{% trans "Request Attendance" %}',
+                html: portalAttendanceRequestStepHtml(selectedEmployee),
+                showConfirmButton: false,
+                showCloseButton: true,
+                customClass: {
+                    container: 'swal-toast-above',
+                    popup: 'leave-history-swal attendance-request-swal',
+                    htmlContainer: 'attendance-request-swal-html'
+                },
+                didOpen: function () {
+                    $('#portal-attendance-request-form').on('submit', submitPortalAttendanceRequest);
+                }
+            });
+        }
+
+        async function submitPortalAttendanceRequest(event) {
+            event.preventDefault();
+            if (!selectedEmployee) {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+
+            const $button = $('#portal-attendance-request-submit');
+            const originalHtml = $button.html();
+            $button.prop('disabled', true).html('<span class="loading"></span> {% trans "Submitting..." %}');
+
+            try {
+                const form = document.getElementById('portal-attendance-request-form');
+                const formData = new FormData(form);
+                formData.append('employee_id', selectedEmployee.id);
+                formData.append('csrfmiddlewaretoken', CSRF_TOKEN);
+
+                const response = await fetch('{% url "portal-attendance-request-create" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    Toast.fire({ icon: 'error', title: data.message || '{% trans "Unable to submit attendance request." %}' });
+                    return;
+                }
+
+                Swal.close();
+                Toast.fire({ icon: 'success', title: data.message || '{% trans "Attendance request submitted." %}' });
+            } catch (error) {
+                console.error('Attendance request error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to submit attendance request." %}' });
+            } finally {
+                $button.prop('disabled', false).html(originalHtml);
+            }
+        }
+
         function portalHelpdeskTypeById(typeId) {
             return portalHelpdeskModalState.ticketTypes.find(function (type) {
                 return String(type.id) === String(typeId);
@@ -5018,6 +5192,13 @@
                 showPortalDocumentRequestStep();
             });
 
+            $('#attendance-request-btn').on('click', function () {
+                if ($(this).prop('disabled')) {
+                    return;
+                }
+                showPortalAttendanceRequestModal();
+            });
+
             $('#service-helpdesk-btn').on('click', function () {
                 if ($(this).prop('disabled')) {
                     return;
@@ -5467,6 +5648,7 @@
         async function loadFaceApiModels() {
             if (faceApiModelsLoaded || faceApiModelsLoading) return;
             faceApiModelsLoading = true;
+            $('#face-loading-status').css('display', 'flex');
             try {
                 await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS_CDN);
                 faceApiModelsLoaded = true;
@@ -5474,6 +5656,7 @@
                 console.error('face-api model load failed:', err);
             } finally {
                 faceApiModelsLoading = false;
+                $('#face-loading-status').hide();
             }
         }
 

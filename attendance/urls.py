@@ -98,6 +98,11 @@ urlpatterns = [
         name="portal-document-request-create",
     ),
     path(
+        "portal/attendance-request-create/",
+        attendance.views.portal.attendance_request_create,
+        name="portal-attendance-request-create",
+    ),
+    path(
         "portal/helpdesk-data/",
         attendance.views.portal.helpdesk_data,
         name="portal-helpdesk-data",

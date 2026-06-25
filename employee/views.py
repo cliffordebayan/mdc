@@ -4690,6 +4690,7 @@ def send_employee_portal_link(request, obj_id):
         protocol = "https" if request.is_secure() else "http"
         host = request.get_host()
         portal_url = f"{protocol}://{host}/employee/employee-portal/set-password/{token}"
+        attendance_portal_url = request.build_absolute_uri(reverse("public-portal"))
 
         send_to = (
             getattr(getattr(employee, "employee_work_info", None), "email", None)
@@ -4711,6 +4712,7 @@ def send_employee_portal_link(request, obj_id):
             {
                 "employee": employee,
                 "portal_url": portal_url,
+                "attendance_portal_url": attendance_portal_url,
                 "host": host,
                 "protocol": protocol,
                 "logo_url": logo_url,
@@ -4766,6 +4768,7 @@ def send_bulk_portal_link(request):
         protocol = "https" if request.is_secure() else "http"
         host = request.get_host()
         portal_url = f"{protocol}://{host}/employee/employee-portal/set-password/{token}"
+        attendance_portal_url = request.build_absolute_uri(reverse("public-portal"))
 
         send_to = (
             getattr(getattr(employee, "employee_work_info", None), "email", None)
@@ -4790,6 +4793,7 @@ def send_bulk_portal_link(request):
             {
                 "employee": employee,
                 "portal_url": portal_url,
+                "attendance_portal_url": attendance_portal_url,
                 "host": host,
                 "protocol": protocol,
                 "logo_url": logo_url,
@@ -5044,6 +5048,7 @@ def send_single_bulk_email(request):
             portal_url = (
                 f"{protocol}://{host}/employee/employee-portal/set-password/{token}"
             )
+            attendance_portal_url = request.build_absolute_uri(reverse("public-portal"))
 
             send_to = (
                 getattr(
@@ -5072,6 +5077,7 @@ def send_single_bulk_email(request):
                 {
                     "employee": employee,
                     "portal_url": portal_url,
+                    "attendance_portal_url": attendance_portal_url,
                     "host": host,
                     "protocol": protocol,
                     "logo_url": logo_url,

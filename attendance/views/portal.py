@@ -47,6 +47,8 @@ from attendance.models import (
     Attendance,
     AttendanceActivity,
     AttendanceGeneralSetting,
+    AttendanceRequestComment,
+    AttendanceRequestFile,
 )
 from attendance.views.clock_in_out import (
     clock_in_attendance_and_activity,
@@ -2195,6 +2197,153 @@ def document_request_create(request):
             "success": True,
             "message": "Document request submitted successfully.",
             "request": _portal_document_request_payload(document_request),
+        },
+        status=200,
+    )
+
+
+def attendance_request_create(request):
+    """
+    Create a manual attendance correction request from the public attendance portal.
+    """
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse(
+            {"success": False, "message": "Employee ID required"},
+            status=200,
+        )
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": "Employee not found"},
+            status=200,
+        )
+
+    attendance_date = _portal_parse_date(request.POST.get("attendance_date"))
+    clock_in_date = _portal_parse_date(request.POST.get("attendance_clock_in_date"))
+    clock_in_time_str = (request.POST.get("attendance_clock_in") or "").strip()
+    clock_out_date = _portal_parse_date(request.POST.get("attendance_clock_out_date"))
+    clock_out_time_str = (request.POST.get("attendance_clock_out") or "").strip()
+    reason = (request.POST.get("request_description") or "").strip()
+
+    if not attendance_date or not clock_in_date or not clock_in_time_str:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Attendance date, clock-in date, and clock-in time are required.",
+            },
+            status=200,
+        )
+
+    if not reason:
+        return JsonResponse(
+            {"success": False, "message": "A reason for the attendance request is required."},
+            status=200,
+        )
+
+    try:
+        clock_in_time = time.fromisoformat(clock_in_time_str)
+    except ValueError:
+        return JsonResponse(
+            {"success": False, "message": "Invalid clock-in time format."},
+            status=200,
+        )
+
+    clock_out_time = None
+    if clock_out_time_str:
+        try:
+            clock_out_time = time.fromisoformat(clock_out_time_str)
+        except ValueError:
+            return JsonResponse(
+                {"success": False, "message": "Invalid clock-out time format."},
+                status=200,
+            )
+
+    work_info = getattr(employee, "employee_work_info", None)
+    shift = getattr(work_info, "shift_id", None)
+    work_type = getattr(work_info, "work_type_id", None)
+
+    clock_in_date = clock_in_date or attendance_date
+    clock_out_date_final = clock_out_date if clock_out_time else None
+
+    try:
+        attendance = Attendance(
+            employee_id=employee,
+            attendance_date=attendance_date,
+            attendance_clock_in_date=clock_in_date,
+            attendance_clock_in=clock_in_time,
+            attendance_clock_out_date=clock_out_date_final,
+            attendance_clock_out=clock_out_time,
+            request_description=reason,
+            is_validate_request=True,
+            request_type="create_request",
+            shift_id=shift,
+            work_type_id=work_type,
+        )
+        attendance.save()
+    except ValidationError as error:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": " ".join(_portal_validation_messages(error)),
+            },
+            status=200,
+        )
+    except Exception as error:
+        logger.error(
+            "Portal attendance request creation failed: %s", error, exc_info=True
+        )
+        return JsonResponse(
+            {"success": False, "message": f"Attendance request failed: {error}"},
+            status=200,
+        )
+
+    proof_image = request.FILES.get("proof_image")
+    if proof_image:
+        try:
+            proof_file = AttendanceRequestFile(file=proof_image)
+            proof_file.save()
+            comment = AttendanceRequestComment(
+                request_id=attendance,
+                employee_id=employee,
+                comment=reason,
+            )
+            comment.save()
+            comment.files.add(proof_file)
+        except Exception:
+            logger.debug("Portal attendance request proof save failed.", exc_info=True)
+
+    try:
+        from notifications.signals import notify
+
+        admins = User.objects.filter(is_superuser=True)
+        if admins.exists():
+            notify.send(
+                employee,
+                recipient=list(admins),
+                verb=f"{employee} submitted an attendance request for {attendance_date}",
+                redirect=reverse("request-attendance-view"),
+                icon="time",
+            )
+    except Exception:
+        logger.debug("Portal attendance request notification failed.", exc_info=True)
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "Attendance request submitted successfully.",
         },
         status=200,
     )
