@@ -114,8 +114,8 @@ class Employee(models.Model):
     )
     children = models.IntegerField(blank=True, null=True)
     emergency_contact = models.CharField(max_length=15, null=True, blank=True)
-    emergency_contact_name = models.CharField(max_length=20, null=True, blank=True)
-    emergency_contact_relation = models.CharField(max_length=20, null=True, blank=True)
+    emergency_contact_name = models.CharField(max_length=100, null=True, blank=True)
+    emergency_contact_relation = models.CharField(max_length=50, null=True, blank=True)
     tin_number = models.CharField(
         max_length=50, null=True, blank=True, verbose_name=_("TIN Number")
     )
