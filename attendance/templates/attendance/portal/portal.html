@@ -1776,6 +1776,10 @@
             display: none !important;
         }
 
+        #refresh-location-fab {
+            display: none;
+        }
+
         .clock-action-buttons {
             display: flex;
             flex-direction: column;
@@ -2363,6 +2367,56 @@
             #step-clock #back-btn .back-btn-text {
                 display: none;
             }
+
+            #refresh-location-fab {
+                position: fixed;
+                top: max(12px, env(safe-area-inset-top));
+                right: 12px;
+                z-index: 7;
+                align-items: center;
+                gap: 5px;
+                padding: 0 14px 0 10px;
+                height: 42px;
+                min-width: 0;
+                border-radius: 999px;
+                border: 0;
+                background: rgba(255, 255, 255, 0.96);
+                color: #111827;
+                font-size: 12px;
+                font-weight: 600;
+                letter-spacing: 0.01em;
+                box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+                cursor: pointer;
+                white-space: nowrap;
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+                transition: opacity 0.15s ease, transform 0.12s ease;
+                -webkit-tap-highlight-color: transparent;
+                outline: none;
+            }
+
+            #refresh-location-fab.fab-visible {
+                display: inline-flex;
+            }
+
+            #refresh-location-fab ion-icon {
+                font-size: 17px;
+                flex-shrink: 0;
+            }
+
+            #refresh-location-fab:active {
+                transform: scale(0.93);
+                background: rgba(235, 235, 235, 0.98);
+            }
+
+            #refresh-location-fab.fab-loading {
+                opacity: 0.6;
+                pointer-events: none;
+            }
+
+            #refresh-location-fab.fab-loading ion-icon {
+                animation: spin 0.9s linear infinite;
+            }
         }
 
         /* Very small phones */
@@ -2804,6 +2858,12 @@
                         </div>
                         </div><!-- /.clock-scroll-inner -->
 
+                        <!-- Refresh Location FAB — mobile top-right fixed pill -->
+                        <button type="button" id="refresh-location-fab" aria-label="{% trans 'Refresh Location' %}">
+                            <ion-icon name="refresh-outline"></ion-icon>
+                            <span>{% trans "Refresh Location" %}</span>
+                        </button>
+
                         <!-- Geo Fence Violation Overlay (shown immediately on clock step) -->
                         <div id="geofence-error-overlay" style="display:none; position:absolute; inset:0; z-index:300; background:#fff; overflow-y:auto; padding:24px;">
                             <div style="max-width:500px; margin:0 auto;">
@@ -3200,6 +3260,8 @@
                     $('#location-coordinates').text('');
                     $('#retry-location-btn').hide();
                     $('#reload-location-btn').hide();
+                    $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
+                    $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
                     $('#location-status').removeClass('warning').addClass('success');
                     updateFaceGatedButtons();
                     initClockPreviewMap();
@@ -3241,6 +3303,7 @@
                     if (showReload) {
                         $('#reload-location-btn').show();
                     }
+                    $('#refresh-location-fab').removeClass('fab-visible fab-loading');
                     $('#location-status').removeClass('success').addClass('warning');
                     disableClockButtons();
 
@@ -3256,7 +3319,7 @@
                         navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
                             enableHighAccuracy: false,
                             timeout: 15000,
-                            maximumAge: 30000
+                            maximumAge: 0
                         });
                         return;
                     }
@@ -3266,7 +3329,7 @@
                 navigator.geolocation.getCurrentPosition(onSuccess, onError, {
                     enableHighAccuracy: true,
                     timeout: 15000,
-                    maximumAge: 30000
+                    maximumAge: 0
                 });
             } else {
                 latitude = null;
@@ -5295,6 +5358,17 @@
                 initializeLocationCapture();
             });
 
+            // Refresh Location FAB (mobile top-right)
+            $('#refresh-location-fab').on('click', function () {
+                $(this).addClass('fab-loading');
+                $(this).find('ion-icon').attr('name', 'refresh-outline');
+                setPortalLocationText('{% trans "Getting location..." %}');
+                setPortalCoordinatesText(null, null);
+                $('#location-coordinates').text('');
+                disableClockButtons();
+                initializeLocationCapture();
+            });
+
             // Geo fence error overlay buttons
             $('#geofence-retry-btn').on('click', function () {
                 $('#geofence-error-overlay').css('display', 'none');
@@ -6815,6 +6889,7 @@
             $('#clock-in-btn').css('display', 'none');
             $('#clock-out-btn').css('display', 'none');
             $('#activity-transition-btn').css('display', 'none');
+            $('#refresh-location-fab').removeClass('fab-visible fab-loading');
 
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
