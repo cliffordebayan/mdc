@@ -1652,11 +1652,11 @@ def _add_export_totals_per_employee(df, selected_columns):
 
     # Group consecutive rows by employee, preserving order
     result_frames = []
-    prev_emp = object()
+    prev_emp = None
     group_start = 0
     rows = df[emp_col].tolist()
     for i, emp_val in enumerate(rows):
-        if emp_val != prev_emp and prev_emp is not object():
+        if i > 0 and emp_val != prev_emp:
             group_df = df.iloc[group_start:i]
             result_frames.append(group_df)
             result_frames.append(pd.DataFrame([_build_totals_row(group_df, selected_columns)]))
