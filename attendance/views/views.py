@@ -1585,7 +1585,7 @@ def export_attendance_by_payroll_group(request):
         date_col = str(_("Attendance Date"))
         sort_cols = [c for c in [emp_no_col, date_col] if c in df.columns]
         if sort_cols:
-            ascending = [True if c == emp_no_col else False for c in sort_cols]
+            ascending = [True for _ in sort_cols]
             df = df.sort_values(by=sort_cols, ascending=ascending).reset_index(drop=True)
         styled_df = df.style.map(
             lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
