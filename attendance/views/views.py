@@ -1558,7 +1558,7 @@ def export_attendance_activity_data(request):
         export_objects, selected_columns, employee
     )
     data_frame = pd.DataFrame(data=data_export)
-    data_frame = _add_export_totals_row(data_frame, selected_columns)
+    data_frame = _add_export_totals_per_employee(data_frame, selected_columns)
     styled_data_frame = data_frame.style.map(
         lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
     )
@@ -1592,8 +1592,8 @@ def _parse_hhmm_to_minutes(val):
         return 0
 
 
-def _add_export_totals_row(df, selected_columns):
-    """Append a totals row: time fields sum as minutes, work hours sums as HH:MM hr."""
+def _build_totals_row(group_df, selected_columns):
+    """Build a single totals dict for a slice of the dataframe."""
     MINUTE_FIELDS = {
         "daily_late_come",
         "daily_early_out",
@@ -1610,9 +1610,6 @@ def _add_export_totals_row(df, selected_columns):
         except (TypeError, ValueError):
             return 0.0
 
-    # Convert lazy translation strings to plain str so pandas column lookups work reliably
-    df.columns = [str(c) for c in df.columns]
-
     totals_row = {}
     first = True
     for field_name, verbose_name in selected_columns:
@@ -1620,20 +1617,57 @@ def _add_export_totals_row(df, selected_columns):
         if first:
             totals_row[col] = str(_("Total"))
             first = False
-        elif field_name in MINUTE_FIELDS and col in df.columns:
-            total_mins = int(df[col].apply(_parse_hhmm_to_minutes).sum())
+        elif field_name in MINUTE_FIELDS and col in group_df.columns:
+            total_mins = int(group_df[col].apply(_parse_hhmm_to_minutes).sum())
             totals_row[col] = f"{total_mins} min"
-        elif field_name in HOUR_FIELDS and col in df.columns:
-            total_mins = int(df[col].apply(_parse_hhmm_to_minutes).sum())
+        elif field_name in HOUR_FIELDS and col in group_df.columns:
+            total_mins = int(group_df[col].apply(_parse_hhmm_to_minutes).sum())
             h, m = divmod(total_mins, 60)
             totals_row[col] = f"{h:02d}:{m:02d} hr"
-        elif field_name in NUMERIC_FIELDS and col in df.columns:
-            total = df[col].apply(_parse_numeric).sum()
+        elif field_name in NUMERIC_FIELDS and col in group_df.columns:
+            total = group_df[col].apply(_parse_numeric).sum()
             totals_row[col] = int(total) if total == int(total) else total
         else:
             totals_row[col] = ""
+    return totals_row
 
-    return pd.concat([df, pd.DataFrame([totals_row])], ignore_index=True)
+
+def _add_export_totals_per_employee(df, selected_columns):
+    """Append a subtotal row after each employee's block of rows."""
+    df.columns = [str(c) for c in df.columns]
+
+    # Determine the employee identifier column (prefer Employee No., fall back to Employee)
+    emp_col = None
+    for fn, vn in selected_columns:
+        if fn in ("employee_number", "employee_id"):
+            candidate = str(vn)
+            if candidate in df.columns:
+                emp_col = candidate
+                if fn == "employee_number":
+                    break
+
+    if emp_col is None or df.empty:
+        totals_row = _build_totals_row(df, selected_columns)
+        return pd.concat([df, pd.DataFrame([totals_row])], ignore_index=True)
+
+    # Group consecutive rows by employee, preserving order
+    result_frames = []
+    prev_emp = object()
+    group_start = 0
+    rows = df[emp_col].tolist()
+    for i, emp_val in enumerate(rows):
+        if emp_val != prev_emp and prev_emp is not object():
+            group_df = df.iloc[group_start:i]
+            result_frames.append(group_df)
+            result_frames.append(pd.DataFrame([_build_totals_row(group_df, selected_columns)]))
+            group_start = i
+        prev_emp = emp_val
+    # Last group
+    group_df = df.iloc[group_start:]
+    result_frames.append(group_df)
+    result_frames.append(pd.DataFrame([_build_totals_row(group_df, selected_columns)]))
+
+    return pd.concat(result_frames, ignore_index=True)
 
 
 @login_required
@@ -1723,7 +1757,7 @@ def export_attendance_by_payroll_group(request):
         if sort_cols:
             ascending = [True for _ in sort_cols]
             df = df.sort_values(by=sort_cols, ascending=ascending).reset_index(drop=True)
-        df = _add_export_totals_row(df, selected_columns)
+        df = _add_export_totals_per_employee(df, selected_columns)
         styled_df = df.style.map(
             lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
         )
