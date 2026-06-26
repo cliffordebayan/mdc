@@ -2710,6 +2710,11 @@
                                     <strong>{% trans "Clock In" %}</strong>
                                     <span id="attendance-clock-in-note"></span>
                                 </button>
+                                <button type="button" class="selection-option btn-clock-out-option" id="attendance-clock-out-option" data-attendance-action="clock_out">
+                                    <ion-icon name="log-out-outline"></ion-icon>
+                                    <strong>{% trans "Clock Out" %}</strong>
+                                    <span id="attendance-clock-out-note"></span>
+                                </button>
                                 <button type="button" class="selection-option" id="attendance-break-option" data-attendance-action="break_start">
                                     <ion-icon name="pause-circle-outline"></ion-icon>
                                     <strong id="attendance-break-title">{% trans "Break" %}</strong>
@@ -2719,11 +2724,6 @@
                                     <ion-icon name="restaurant-outline"></ion-icon>
                                     <strong id="attendance-lunch-title">{% trans "Lunch" %}</strong>
                                     <span id="attendance-lunch-note"></span>
-                                </button>
-                                <button type="button" class="selection-option btn-clock-out-option" id="attendance-clock-out-option" data-attendance-action="clock_out">
-                                    <ion-icon name="log-out-outline"></ion-icon>
-                                    <strong>{% trans "Clock Out" %}</strong>
-                                    <span id="attendance-clock-out-note"></span>
                                 </button>
                             </div>
 
@@ -3420,9 +3420,10 @@
         function updateAttendanceSummaryStrip() {
             stopAttendanceSummaryTimer();
 
-            const hasClockInTime = selectedEmployee && selectedEmployee.is_clocked_in && selectedEmployee.clock_in_datetime;
+            const hasClockInTime = selectedEmployee && selectedEmployee.clock_in_datetime;
+            const hasClockOutTime = selectedEmployee && selectedEmployee.clock_out_datetime;
             $('#attendance-summary-clock-in').text(hasClockInTime ? formatAttendanceSummaryTime(selectedEmployee.clock_in_datetime) : '--:--');
-            $('#attendance-summary-clock-out').text('--:--');
+            $('#attendance-summary-clock-out').text(hasClockOutTime ? formatAttendanceSummaryTime(selectedEmployee.clock_out_datetime) : '--:--');
             $('#attendance-summary-working-hours').text(selectedEmployee ? attendanceWorkedStatusText(selectedEmployee) : '--:--');
             $('#attendance-summary-breaks').text(selectedEmployee ? attendanceActivityStatusText('break') : '--:--');
             $('#attendance-summary-lunch').text(selectedEmployee ? attendanceActivityStatusText('lunch') : '--:--');
@@ -3478,10 +3479,11 @@
                 .prop('disabled', isClockedIn)
                 .attr('aria-disabled', isClockedIn ? 'true' : 'false')
                 .toggleClass('is-disabled', isClockedIn);
+            const clockOutDisabled = isClockedIn && !isWorking;
             $('#attendance-clock-out-option')
-                .prop('disabled', !isWorking)
-                .attr('aria-disabled', !isWorking ? 'true' : 'false')
-                .toggleClass('is-disabled', !isWorking);
+                .prop('disabled', clockOutDisabled)
+                .attr('aria-disabled', clockOutDisabled ? 'true' : 'false')
+                .toggleClass('is-disabled', clockOutDisabled);
             $('#attendance-break-option')
                 .attr('data-attendance-action', breakAction)
                 .prop('disabled', breakDisabled)
@@ -3498,7 +3500,7 @@
                 isClockedIn ? '{% trans "Already clocked in" %}' : '{% trans "Capture selfie to clock in" %}'
             );
             $('#attendance-clock-out-note').text(
-                isWorking ? '{% trans "Capture selfie to clock out" %}' : (isClockedIn ? '{% trans "End break or lunch first" %}' : '{% trans "Clock in first" %}')
+                isWorking ? '{% trans "Capture selfie to clock out" %}' : (isClockedIn ? '{% trans "End break or lunch first" %}' : '{% trans "Capture selfie to clock out" %}')
             );
             $('#attendance-break-note').text(
                 isOnBreak ? '{% trans "Capture selfie to resume work" %}' : (isClockedIn ? (isOnLunch ? '{% trans "End lunch first" %}' : (breakLimitReached ? `{% trans "Break limit reached" %} (${breaksTaken}/${breaksAllowed})` : '{% trans "Capture selfie to start break" %}')) : '{% trans "Clock in first" %}')
@@ -3532,8 +3534,8 @@
                 Toast.fire({ icon: 'warning', title: '{% trans "This employee is already clocked in." %}' });
                 return;
             }
-            if (action === 'clock_out' && (!selectedEmployee.is_clocked_in || activeType !== 'work')) {
-                Toast.fire({ icon: 'warning', title: '{% trans "This employee must clock in first." %}' });
+            if (action === 'clock_out' && selectedEmployee.is_clocked_in && activeType !== 'work') {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please end your break or lunch before clocking out." %}' });
                 return;
             }
             if (activityActionConfig(action)) {

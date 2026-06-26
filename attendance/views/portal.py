@@ -3310,11 +3310,57 @@ def public_clock_out(request):
         ).order_by("attendance_date", "id").last()
 
         if not open_activity:
-            logger.info(f"Clock out - Employee not clocked in: {employee_id}")
-            return JsonResponse(
-                {"success": False, "message": f"{employee.get_full_name()} is not clocked in"},
-                status=200,
+            # Auto clock-in with the current time so clock-in == clock-out
+            work_info_ci = getattr(employee, "employee_work_info", None)
+            shift_ci = getattr(work_info_ci, "shift_id", None)
+            if not shift_ci:
+                return JsonResponse(
+                    {"success": False, "message": "Employee shift not configured"}, status=200
+                )
+            datetime_now_ci = get_real_now()
+            date_today_ci = datetime_now_ci.date()
+            day_name_ci = date_today_ci.strftime("%A").lower()
+            day_ci = EmployeeShiftDay.objects.filter(day=day_name_ci).first()
+            if not day_ci:
+                return JsonResponse(
+                    {"success": False, "message": "Shift day configuration error"}, status=200
+                )
+            now_str_ci = datetime_now_ci.strftime("%H:%M")
+            now_sec_ci = strtime_seconds(now_str_ci)
+            mid_day_sec_ci = strtime_seconds("12:00")
+            minimum_hour_ci, start_time_sec_ci, end_time_sec_ci = shift_schedule_today(
+                day=day_ci, shift=shift_ci
             )
+            attendance_date_ci = date_today_ci
+            if start_time_sec_ci > end_time_sec_ci and mid_day_sec_ci > now_sec_ci:
+                attendance_date_ci = date_today_ci - timedelta(days=1)
+                day_name_ci = attendance_date_ci.strftime("%A").lower()
+                day_ci = EmployeeShiftDay.objects.filter(day=day_name_ci).first() or day_ci
+            try:
+                clock_in_attendance_and_activity(
+                    employee=employee,
+                    date_today=date_today_ci,
+                    attendance_date=attendance_date_ci,
+                    day=day_ci,
+                    now=now_str_ci,
+                    shift=shift_ci,
+                    minimum_hour=minimum_hour_ci,
+                    start_time=start_time_sec_ci,
+                    end_time=end_time_sec_ci,
+                    in_datetime=datetime_now_ci,
+                )
+            except Exception as e:
+                logger.error(f"Auto clock-in during clock-out failed for {employee.id}: {e}", exc_info=True)
+                return JsonResponse(
+                    {"success": False, "message": f"Clock out failed: {str(e)}"}, status=200
+                )
+            open_activity = AttendanceActivity.objects.filter(
+                employee_id=employee, clock_out__isnull=True
+            ).order_by("attendance_date", "id").last()
+            if not open_activity:
+                return JsonResponse(
+                    {"success": False, "message": "Failed to create attendance record"}, status=200
+                )
 
         active_activity_type = _portal_activity_type(open_activity)
         if active_activity_type != PORTAL_WORK_ACTIVITY:
