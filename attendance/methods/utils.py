@@ -552,20 +552,33 @@ def recalculate_attendance_for_shift(shift):
             attendance_date=attendance.attendance_date,
             activity_type="work",
         ).order_by("clock_in_date", "clock_in", "id")
-        first_work_activity = work_activities.first()
-        last_work_activity = (
-            work_activities.filter(clock_out__isnull=False)
-            .order_by("clock_out_date", "clock_out", "id")
-            .last()
-        )
         has_work_activities = work_activities.exists()
+        has_any_clock_out = work_activities.filter(clock_out__isnull=False).exists()
 
-        if first_work_activity:
-            attendance.attendance_clock_in = first_work_activity.clock_in
-            attendance.attendance_clock_in_date = first_work_activity.clock_in_date
-        if last_work_activity:
-            attendance.attendance_clock_out = last_work_activity.clock_out
-            attendance.attendance_clock_out_date = last_work_activity.clock_out_date
+        # Collect all event timestamps (both clock_in and clock_out) to find the
+        # true first and last recorded times for the day. This ensures that if an
+        # employee clocks in after their last clock-out and forgets to clock out,
+        # that later clock-in is still captured as the effective clock-out time.
+        all_event_times = []
+        for activity in work_activities:
+            if activity.clock_in and activity.clock_in_date:
+                all_event_times.append((activity.clock_in_date, activity.clock_in))
+            if activity.clock_out and activity.clock_out_date:
+                all_event_times.append((activity.clock_out_date, activity.clock_out))
+        all_event_times.sort()
+
+        if all_event_times:
+            first_date, first_time = all_event_times[0]
+            attendance.attendance_clock_in = first_time
+            attendance.attendance_clock_in_date = first_date
+
+            if has_any_clock_out:
+                last_date, last_time = all_event_times[-1]
+                attendance.attendance_clock_out = last_time
+                attendance.attendance_clock_out_date = last_date
+            else:
+                attendance.attendance_clock_out = None
+                attendance.attendance_clock_out_date = None
         elif has_work_activities:
             attendance.attendance_clock_out = None
             attendance.attendance_clock_out_date = None

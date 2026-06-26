@@ -469,6 +469,22 @@ def _daily_activity_segment(activity):
     )
 
 
+def _effective_work_out_segment(work_out, latest_unclosed):
+    """
+    Build the work_out display segment. When an employee clocked in after their
+    last clock_out and never clocked out (e.g., forgot to clock out after overtime),
+    use that later clock_in time as the effective clock_out for display.
+    latest_unclosed is pre-validated to be more recent than work_out's clock_out.
+    """
+    if work_out is None:
+        return None
+    seg = _daily_activity_segment(work_out)
+    if latest_unclosed and latest_unclosed.clock_in_date and latest_unclosed.clock_in:
+        seg.clock_out = latest_unclosed.clock_in
+        seg.clock_out_date = latest_unclosed.clock_in_date
+    return seg
+
+
 def _activity_duration_seconds(activity):
     if not activity or not activity.clock_out:
         return 0
@@ -835,6 +851,21 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
             if latest_work_activity and latest_work_activity.clock_out
             else None
         )
+        # Find the latest unclosed clock-in that is more recent than the last clock-out.
+        # This handles the case where an employee clocked in after their last clock-out
+        # (e.g., returned for overtime) and forgot to clock out.
+        unclosed_work = [a for a in work_activities if not a.clock_out]
+        latest_unclosed = None
+        if unclosed_work and work_out and work_out.clock_out_date and work_out.clock_out:
+            last_out_dt = datetime.combine(work_out.clock_out_date, work_out.clock_out)
+            for act in unclosed_work:
+                if act.clock_in_date and act.clock_in:
+                    act_in_dt = datetime.combine(act.clock_in_date, act.clock_in)
+                    if act_in_dt > last_out_dt:
+                        if latest_unclosed is None or act_in_dt > datetime.combine(
+                            latest_unclosed.clock_in_date, latest_unclosed.clock_in
+                        ):
+                            latest_unclosed = act
         attendance = attendance_by_key.get((employee_id, attendance_date))
         hours = _attendance_row_hours(attendance)
         shift = _row_shift(attendance, row_data["employee"])
@@ -858,6 +889,7 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
                 "lunch_activities": lunch_activities,
                 "work_in": work_in,
                 "work_out": work_out,
+                "latest_unclosed_work_activity": latest_unclosed,
                 "first_work_clock_in": work_in,
                 "last_work_clock_out": early_out_work_out,
                 "attendance": attendance,
@@ -924,7 +956,7 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
                 break_segments=break_segments,
                 lunch_segments=lunch_segments,
                 work_in=_daily_activity_segment(work_in) if work_in else None,
-                work_out=_daily_activity_segment(work_out) if work_out else None,
+                work_out=_effective_work_out_segment(work_out, row_context.get("latest_unclosed_work_activity")),
                 has_work_images=any(
                     segment.clock_in_selfie or segment.clock_out_selfie
                     for segment in work_segments

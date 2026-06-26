@@ -612,6 +612,17 @@ def _latest_portal_activity(employee):
     )
 
 
+def _latest_portal_activity_for_date(employee, attendance_date):
+    return (
+        AttendanceActivity.objects.filter(
+            employee_id=employee,
+            attendance_date=attendance_date,
+        )
+        .order_by("-clock_out_date", "-clock_out", "-clock_in_date", "-clock_in", "-id")
+        .first()
+    )
+
+
 def _make_naive_datetime(value):
     if isinstance(value, datetime) and timezone.is_aware(value):
         return timezone.make_naive(value, timezone.get_current_timezone())
@@ -1487,12 +1498,15 @@ def employee_lookup(request):
             is_active=True,
         )[:10]
 
+        today = date.today()
         results = []
         for emp in employees:
             _maybe_auto_checkout_employee(emp)
             active_activity = _open_portal_activity(emp)
-            latest_activity = active_activity or _latest_portal_activity(emp)
-            attendance_date = getattr(active_activity or latest_activity, "attendance_date", None)
+            # When not clocked in, only use today's activities so the summary strip
+            # shows --:-- instead of the previous day's times.
+            latest_activity = active_activity or _latest_portal_activity_for_date(emp, today)
+            attendance_date = getattr(latest_activity, "attendance_date", None)
             attendance = None
             if attendance_date:
                 attendance = Attendance.objects.filter(

@@ -185,8 +185,11 @@ def clock_in_attendance_and_activity(
         )
     else:
         attendance = attendance[0]
-        attendance.attendance_clock_out = None
-        attendance.attendance_clock_out_date = None
+        # Track this clock-in as the current last event. If the employee forgets to
+        # clock out, this time will remain as attendance_clock_out. If they do clock
+        # out, clock_out_attendance_and_activity will overwrite it with the actual time.
+        attendance.attendance_clock_out = in_datetime.time()
+        attendance.attendance_clock_out_date = date_today
         attendance.save()
         # delete if the attendance marked the early out
         early_out_instance = attendance.late_come_early_out.filter(type="early_out")
