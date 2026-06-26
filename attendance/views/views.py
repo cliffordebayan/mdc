@@ -25,7 +25,7 @@ import contextlib
 import io
 import json
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from types import SimpleNamespace
 from urllib.parse import parse_qs
 
@@ -930,6 +930,7 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
                     for segment in work_segments
                 ),
                 shift=row_context["shift"],
+                schedule=schedule,
                 work_type=hours.work_type,
                 min_hour=hours.min_hour,
                 late_come_duration=late_early_durations["late_come"],
@@ -993,6 +994,7 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
                     work_out=None,
                     has_work_images=False,
                     shift=None,
+                    schedule=None,
                     work_type=None,
                     min_hour=None,
                     late_come_duration=None,
@@ -1117,6 +1119,9 @@ ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS = {
     "daily_break_image",
     "daily_lunch_image",
     "daily_shift",
+    "daily_shift_start",
+    "daily_shift_end",
+    "daily_shift_day",
     "daily_late_come",
     "daily_early_out",
     "daily_work_hours",
@@ -1182,13 +1187,32 @@ def _format_attendance_activity_export_value(value, employee):
     return "" if value is None else value
 
 
+def _drop_time_seconds(t):
+    """Return a time with seconds/microseconds zeroed so export formats omit them."""
+    if isinstance(t, time):
+        return t.replace(second=0, microsecond=0)
+    return t
+
+
+def _strip_time_seconds_str(val):
+    """Remove :SS from a formatted time string, or format a time object as HH:MM."""
+    if isinstance(val, time):
+        return val.strftime("%H:%M")
+    if not isinstance(val, str):
+        return val
+    parts = val.split(":")
+    if len(parts) < 3:
+        return val
+    return f"{parts[0]}:{parts[1]}"
+
+
 def _attendance_activity_export_times(segments, field_name, employee):
     return "; ".join(
-        str(formatted_time)
+        str(_strip_time_seconds_str(formatted_time))
         for segment in segments
         if (
             formatted_time := _format_attendance_activity_export_value(
-                getattr(segment, field_name, None), employee
+                _drop_time_seconds(getattr(segment, field_name, None)), employee
             )
         )
     )
@@ -1207,13 +1231,13 @@ def _attendance_activity_daily_export_value(row, field_name, employee):
         return ""
 
     if field_name == "daily_clock_in":
-        return _format_attendance_activity_export_value(
-            row.work_in.clock_in if row.work_in else None, employee
-        )
+        return _strip_time_seconds_str(_format_attendance_activity_export_value(
+            _drop_time_seconds(row.work_in.clock_in if row.work_in else None), employee
+        ))
     if field_name == "daily_clock_out":
-        return _format_attendance_activity_export_value(
-            row.work_out.clock_out if row.work_out else None, employee
-        )
+        return _strip_time_seconds_str(_format_attendance_activity_export_value(
+            _drop_time_seconds(row.work_out.clock_out if row.work_out else None), employee
+        ))
     if field_name == "daily_break_in":
         return _attendance_activity_export_times(row.break_segments, "clock_in", employee)
     if field_name == "daily_break_out":
@@ -1263,6 +1287,28 @@ def _attendance_activity_daily_export_value(row, field_name, employee):
         return _attendance_activity_export_images(row.lunch_segments)
     if field_name == "daily_shift":
         return _format_attendance_activity_export_value(row.shift, employee)
+    if field_name == "daily_shift_start":
+        schedule = getattr(row, "schedule", None)
+        if not schedule or not schedule.start_time:
+            return ""
+        return _strip_time_seconds_str(_format_attendance_activity_export_value(
+            _drop_time_seconds(schedule.start_time), employee
+        ))
+    if field_name == "daily_shift_end":
+        schedule = getattr(row, "schedule", None)
+        if not schedule or not schedule.end_time:
+            return ""
+        return _strip_time_seconds_str(_format_attendance_activity_export_value(
+            _drop_time_seconds(schedule.end_time), employee
+        ))
+    if field_name == "daily_shift_day":
+        shift_day = row.shift_day
+        if shift_day is None:
+            return ""
+        if isinstance(shift_day, str):
+            return shift_day.title()
+        day_name = getattr(shift_day, "day", None)
+        return day_name.title() if day_name else ""
     if field_name == "daily_late_come":
         return _format_attendance_activity_export_value(
             row.late_come_duration, employee
@@ -1480,6 +1526,7 @@ def export_attendance_activity_data(request):
         export_objects, selected_columns, employee
     )
     data_frame = pd.DataFrame(data=data_export)
+    data_frame = _add_export_totals_row(data_frame, selected_columns)
     styled_data_frame = data_frame.style.map(
         lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
     )
@@ -1498,6 +1545,63 @@ def export_attendance_activity_data(request):
     worksheet.set_column("A:Z", 18)
     writer.close()
     return response
+
+
+def _parse_hhmm_to_minutes(val):
+    """Parse 'HH:MM' string to total integer minutes. Returns 0 for empty/invalid."""
+    if not val or not isinstance(val, str):
+        return 0
+    parts = val.strip().split(":")
+    if len(parts) != 2:
+        return 0
+    try:
+        return int(parts[0]) * 60 + int(parts[1])
+    except (ValueError, TypeError):
+        return 0
+
+
+def _add_export_totals_row(df, selected_columns):
+    """Append a totals row: time fields sum as minutes, work hours sums as HH:MM hr."""
+    MINUTE_FIELDS = {
+        "daily_late_come",
+        "daily_early_out",
+        "daily_overtime",
+        "daily_break_hours",
+        "daily_lunch_hours",
+    }
+    HOUR_FIELDS = {"daily_work_hours"}
+    NUMERIC_FIELDS = {"daily_leave_days"}
+
+    def _parse_numeric(val):
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # Convert lazy translation strings to plain str so pandas column lookups work reliably
+    df.columns = [str(c) for c in df.columns]
+
+    totals_row = {}
+    first = True
+    for field_name, verbose_name in selected_columns:
+        col = str(verbose_name)
+        if first:
+            totals_row[col] = str(_("Total"))
+            first = False
+        elif field_name in MINUTE_FIELDS and col in df.columns:
+            total_mins = int(df[col].apply(_parse_hhmm_to_minutes).sum())
+            totals_row[col] = f"{total_mins} min"
+        elif field_name in HOUR_FIELDS and col in df.columns:
+            total_mins = int(df[col].apply(_parse_hhmm_to_minutes).sum())
+            h, m = divmod(total_mins, 60)
+            totals_row[col] = f"{h:02d}:{m:02d} hr"
+        elif field_name in NUMERIC_FIELDS and col in df.columns:
+            total = df[col].apply(_parse_numeric).sum()
+            totals_row[col] = int(total) if total == int(total) else total
+        else:
+            totals_row[col] = ""
+
+    return pd.concat([df, pd.DataFrame([totals_row])], ignore_index=True)
 
 
 @login_required
@@ -1587,6 +1691,7 @@ def export_attendance_by_payroll_group(request):
         if sort_cols:
             ascending = [True for _ in sort_cols]
             df = df.sort_values(by=sort_cols, ascending=ascending).reset_index(drop=True)
+        df = _add_export_totals_row(df, selected_columns)
         styled_df = df.style.map(
             lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
         )
