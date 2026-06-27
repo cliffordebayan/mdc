@@ -4669,7 +4669,7 @@ def _employee_portal_step_redirect(portal):
 
 
 @login_required
-@permission_required(["employee.add_employee"])
+@permission_required("employee.add_employee")
 def send_employee_portal_link(request, obj_id):
     """Send a self-service portal link to an employee so they can set their password
     and fill in their own profile data."""
@@ -4739,7 +4739,7 @@ def send_employee_portal_link(request, obj_id):
 
 
 @login_required
-@permission_required(["employee.add_employee"])
+@permission_required("employee.add_employee")
 def send_bulk_portal_link(request):
     """Send the self-service onboarding portal link to multiple selected employees."""
     if request.method != "POST":
@@ -4830,7 +4830,7 @@ def send_bulk_portal_link(request):
 
 
 @login_required
-@permission_required(["employee.add_employee"])
+@permission_required("employee.add_employee")
 def send_bulk_password_reset(request):
     """Send a password reset link to multiple selected employees."""
     if request.method != "POST":
@@ -4886,7 +4886,7 @@ def send_bulk_password_reset(request):
 
 
 @login_required
-@permission_required(["employee.add_employee"])
+@permission_required("employee.add_employee")
 def send_bulk_pin_to_email(request):
     """Send the attendance PIN to multiple selected employees."""
     if request.method != "POST":
