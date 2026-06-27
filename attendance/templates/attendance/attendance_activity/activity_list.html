@@ -109,8 +109,8 @@
                         <div data-cell-index="19" data-cell-title="{% trans 'Leave Type' %}" class='oh-sticky-table__th'>{% trans "Leave Type" %}</div>
                         <div data-cell-index="20" data-cell-title="{% trans 'Leave Days' %}" class='oh-sticky-table__th'>{% trans "Leave Days" %}</div>
                         <div data-cell-index="21" data-cell-title="{% trans 'Holiday' %}" class='oh-sticky-table__th'>{% trans "Holiday" %}</div>
-                        {% if perms.attendance.delete_attendanceactivity %}
-                            <div class='oh-sticky-table__th oh-sticky-table__right' scope="col" style="width: 86px;">{% trans "Actions" %}</div>
+                        {% if perms.attendance.change_attendanceactivity or perms.attendance.delete_attendanceactivity %}
+                            <div class='oh-sticky-table__th oh-sticky-table__right' scope="col" style="width: 132px;">{% trans "Actions" %}</div>
                         {% endif %}
                     </div>
                 </div>
@@ -168,6 +168,21 @@
         </h5>
     </div>
 {% endif %}
+
+{% if perms.attendance.change_attendanceactivity %}
+<div class="oh-modal" id="updateAttendanceActivityModal" role="dialog" aria-labelledby="updateAttendanceActivityModal" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title" id="updateAttendanceActivityModalLabel">{% trans "Edit Attendance" %}</h2>
+            <button type="button" class="oh-modal__close" aria-label="{% trans 'Close' %}" onclick="$(this).closest('.oh-modal').removeClass('oh-modal--show');">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body" id="updateAttendanceActivityModalBody"></div>
+    </div>
+</div>
+{% endif %}
+
 <script>
     $(document).ready(function () {
         tickactivityCheckboxes();

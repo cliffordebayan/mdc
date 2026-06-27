@@ -58,6 +58,7 @@ from attendance.filters import (
 )
 from attendance.forms import (
     AttendanceActivityExportForm,
+    AttendanceActivityUpdateForm,
     AttendanceExportForm,
     AttendanceForm,
     AttendanceOverTimeExportForm,
@@ -82,6 +83,7 @@ from attendance.methods.utils import (
     parse_date,
     parse_datetime,
     parse_time,
+    recalculate_attendance_for_shift,
     shift_schedule_with_weekday_fallback,
     sort_activity_dicts,
     strtime_seconds,
@@ -2525,6 +2527,184 @@ def activity_daily_single_view(request, employee_id, attendance_date):
 
 
 @login_required
+@permission_required("attendance.change_attendanceactivity")
+@require_http_methods(["GET", "POST"])
+def attendance_activity_update(request, employee_id, attendance_date):
+    """
+    Render and save one day-level work in/out editor for an activity row.
+    """
+
+    request_copy = request.GET.copy()
+    previous_data = request_copy.urlencode()
+    try:
+        parsed_attendance_date = datetime.strptime(attendance_date, "%Y-%m-%d").date()
+    except ValueError:
+        return HttpResponseBadRequest(_("Invalid attendance date"))
+
+    employee = (
+        Employee.objects.filter(id=employee_id)
+        .select_related("employee_work_info__shift_id", "employee_work_info__work_type_id")
+        .first()
+    )
+    attendance = (
+        Attendance.objects.filter(
+            employee_id_id=employee_id,
+            attendance_date=parsed_attendance_date,
+        )
+        .select_related("shift_id", "work_type_id")
+        .first()
+    )
+    work_activities = AttendanceActivity.objects.filter(
+        employee_id_id=employee_id,
+        attendance_date=parsed_attendance_date,
+        activity_type="work",
+    )
+    first_work_activity = work_activities.order_by("clock_in_date", "clock_in", "id").first()
+    clock_out_activity = (
+        work_activities.filter(clock_out_date__isnull=False, clock_out__isnull=False)
+        .order_by("-clock_out_date", "-clock_out", "-id")
+        .first()
+    )
+    if first_work_activity and not clock_out_activity:
+        clock_out_activity = first_work_activity
+
+    work_info = getattr(employee, "employee_work_info", None) if employee else None
+    shift = (
+        attendance.shift_id
+        if attendance and attendance.shift_id
+        else getattr(work_info, "shift_id", None)
+    )
+    work_type = (
+        attendance.work_type_id
+        if attendance and attendance.work_type_id
+        else getattr(work_info, "work_type_id", None)
+    )
+    attendance_instance = attendance or Attendance(
+        employee_id=employee,
+        attendance_date=parsed_attendance_date,
+        shift_id=shift,
+        work_type_id=work_type,
+    )
+    saved = False
+    initial = {
+        "employee_id": employee,
+        "attendance_date": parsed_attendance_date.isoformat(),
+        "shift_id": shift,
+        "work_type_id": work_type,
+    }
+    if first_work_activity:
+        initial.update(
+            {
+                "attendance_clock_in_date": (
+                    first_work_activity.clock_in_date.isoformat()
+                    if first_work_activity.clock_in_date
+                    else None
+                ),
+                "attendance_clock_in": (
+                    first_work_activity.clock_in.strftime("%H:%M")
+                    if first_work_activity.clock_in
+                    else None
+                ),
+            }
+        )
+    if clock_out_activity:
+        initial.update(
+            {
+                "attendance_clock_out_date": (
+                    clock_out_activity.clock_out_date.isoformat()
+                    if clock_out_activity.clock_out_date
+                    else None
+                ),
+                "attendance_clock_out": (
+                    clock_out_activity.clock_out.strftime("%H:%M")
+                    if clock_out_activity.clock_out
+                    else None
+                ),
+            }
+        )
+
+    if request.method == "POST":
+        form = AttendanceActivityUpdateForm(
+            request.POST,
+            instance=attendance_instance,
+            initial=initial,
+        )
+        if form.is_valid() and first_work_activity:
+            clock_in_date = form.cleaned_data["attendance_clock_in_date"]
+            clock_in = form.cleaned_data["attendance_clock_in"]
+            clock_out_date = form.cleaned_data.get("attendance_clock_out_date")
+            clock_out = form.cleaned_data.get("attendance_clock_out")
+
+            with transaction.atomic():
+                # Save activities first so Attendance.save() reads updated rows
+                # when it calls schedule_end_overtime_calculation internally.
+                first_work_activity.clock_in_date = clock_in_date
+                first_work_activity.clock_in = clock_in
+                first_work_activity.in_datetime = datetime.combine(clock_in_date, clock_in)
+
+                out_target = clock_out_activity or first_work_activity
+                # When clock_out_activity and first_work_activity are the same
+                # DB row (two separate QuerySet hits with equal ids), collapse
+                # to one Python object so all changes land on first_work_activity
+                # and are persisted by the single first_work_activity.save() below.
+                if out_target is not first_work_activity and out_target.id == first_work_activity.id:
+                    out_target = first_work_activity
+                if clock_out_date and clock_out:
+                    out_target.clock_out_date = clock_out_date
+                    out_target.clock_out = clock_out
+                    out_target.out_datetime = datetime.combine(clock_out_date, clock_out)
+                else:
+                    out_target.clock_out_date = None
+                    out_target.clock_out = None
+                    out_target.out_datetime = None
+
+                first_work_activity.save()
+                if out_target.id != first_work_activity.id:
+                    out_target.save()
+
+                updated_attendance = form.save(commit=False)
+                updated_attendance.employee_id = employee
+                updated_attendance.attendance_date = parsed_attendance_date
+                updated_attendance.attendance_clock_in_date = clock_in_date
+                updated_attendance.attendance_clock_in = clock_in
+                updated_attendance.attendance_clock_out_date = clock_out_date
+                updated_attendance.attendance_clock_out = clock_out
+                updated_attendance.save()
+
+                if updated_attendance.shift_id:
+                    recalculate_attendance_for_shift(updated_attendance.shift_id)
+            messages.success(request, _("Attendance activity updated."))
+            saved = True
+        elif form.is_valid():
+            messages.error(request, _("Attendance activity Does not exists.."))
+    else:
+        form = AttendanceActivityUpdateForm(
+            instance=attendance_instance,
+            initial=initial,
+        )
+
+    if not first_work_activity:
+        messages.error(request, _("Attendance activity Does not exists.."))
+
+    return render(
+        request,
+        "attendance/attendance_activity/update_form.html",
+        {
+            "form": form,
+            "employee": employee,
+            "employee_id": employee_id,
+            "attendance_date": parsed_attendance_date,
+            "attendance_date_iso": parsed_attendance_date.isoformat(),
+            "shift": shift,
+            "work_type": work_type,
+            "has_work_activity": bool(first_work_activity),
+            "pd": previous_data,
+            "saved": saved,
+        },
+    )
+
+
+@login_required
 def activity_single_view(request, obj_id):
     request_copy = request.GET.copy()
     request_copy.pop("instances_ids", None)
@@ -2554,6 +2734,38 @@ def activity_single_view(request, obj_id):
     )
 
 
+def _cascade_delete_attendance(employee_id_id, attendance_date):
+    """
+    After deleting activity rows, clean up the related Attendance record.
+
+    If no work activities remain for the employee+date, the Attendance is
+    deleted via its custom delete() which cascades to AttendanceLateComeEarlyOut.
+    If activities remain, validation/OT flags are reset and the attendance is
+    recalculated so it no longer appears in the validated/approved tabs.
+    """
+    remaining = AttendanceActivity.objects.filter(
+        employee_id_id=employee_id_id,
+        attendance_date=attendance_date,
+        activity_type="work",
+    )
+    attendance = Attendance.objects.filter(
+        employee_id_id=employee_id_id,
+        attendance_date=attendance_date,
+    ).first()
+    if attendance is None:
+        return
+    if not remaining.exists():
+        attendance.delete()
+    else:
+        Attendance.objects.filter(pk=attendance.pk).update(
+            attendance_validated=False,
+            attendance_overtime_approve=False,
+            approved_overtime_second=0,
+        )
+        if attendance.shift_id:
+            recalculate_attendance_for_shift(attendance.shift_id)
+
+
 @login_required
 @permission_required("attendance.delete_attendanceactivity")
 @require_http_methods(["POST", "DELETE"])
@@ -2567,7 +2779,12 @@ def attendance_activity_delete(request, obj_id):
     request_copy.pop("instances_ids", None)
     previous_data = request_copy.urlencode()
     try:
-        AttendanceActivity.objects.get(id=obj_id).delete()
+        with transaction.atomic():
+            activity = AttendanceActivity.objects.get(id=obj_id)
+            employee_id_id = activity.employee_id_id
+            attendance_date = activity.attendance_date
+            activity.delete()
+            _cascade_delete_attendance(employee_id_id, attendance_date)
         messages.success(request, _("Attendance activity deleted"))
     except AttendanceActivity.DoesNotExist:
         messages.error(request, _("Attendance activity Does not exists.."))
@@ -2619,8 +2836,13 @@ def attendance_activity_bulk_delete(request):
         # Perform the delete operation in a transaction
         with transaction.atomic():
             activities = AttendanceActivity.objects.filter(id__in=ids)
+            affected = list(
+                activities.values_list("employee_id_id", "attendance_date").distinct()
+            )
             count = activities.count()
             activities.delete()
+            for emp_id, att_date in affected:
+                _cascade_delete_attendance(emp_id, att_date)
 
         if count > 0:
             messages.success(

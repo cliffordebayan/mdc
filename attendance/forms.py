@@ -61,7 +61,7 @@ from base.methods import (
     is_reportingmanager,
     reload_queryset,
 )
-from base.models import Company, EmployeeShift
+from base.models import Company, EmployeeShift, WorkType
 from employee.filters import EmployeeFilter
 from employee.models import Employee
 from horilla import horilla_middlewares
@@ -433,6 +433,184 @@ class AttendanceActivityForm(BaseModelForm):
                 initial["clock_out_date"] = instance.clock_out_date.strftime("%Y-%m-%d")
             kwargs["initial"] = initial
         super().__init__(*args, **kwargs)
+
+
+class AttendanceActivityUpdateForm(BaseModelForm):
+    """
+    Day-level work activity editor for the attendance activity modal.
+    """
+
+    class Meta:
+        model = Attendance
+        fields = [
+            "employee_id",
+            "attendance_date",
+            "shift_id",
+            "work_type_id",
+            "attendance_clock_in_date",
+            "attendance_clock_in",
+            "attendance_clock_out_date",
+            "attendance_clock_out",
+            "attendance_worked_hour",
+            "minimum_hour",
+        ]
+        widgets = {
+            "attendance_date": DateTimeInput(attrs={"type": "date"}),
+            "attendance_clock_in_date": DateTimeInput(attrs={"type": "date"}),
+            "attendance_clock_in": DateTimeInput(attrs={"type": "time"}),
+            "attendance_clock_out_date": DateTimeInput(attrs={"type": "date"}),
+            "attendance_clock_out": DateTimeInput(attrs={"type": "time"}),
+        }
+
+    def update_worked_hour_hx_fields(self, field_name):
+        """Update the widget attributes for the activity modal worked-hour refresh."""
+        self.fields[field_name].widget.attrs.update(
+            {
+                "id": str(uuid.uuid4()),
+                "hx-include": "#attendanceActivityUpdateForm",
+                "hx-target": "#id_attendance_worked_hour_parent_div",
+                "hx-swap": "outerHTML",
+                "hx-select": "#id_attendance_worked_hour_parent_div",
+                "hx-get": "/attendance/update-worked-hour-field",
+                "hx-trigger": "change delay:300ms",
+            }
+        )
+
+    @staticmethod
+    def _html_initial_value(value):
+        if isinstance(value, datetime.datetime):
+            return value.strftime("%Y-%m-%dT%H:%M")
+        if isinstance(value, datetime.date):
+            return value.strftime("%Y-%m-%d")
+        if isinstance(value, datetime.time):
+            return value.strftime("%H:%M")
+        return value
+
+    def __init__(self, *args, **kwargs):
+        instance = kwargs.get("instance")
+        if instance:
+            initial = {
+                "employee_id": instance.employee_id,
+                "attendance_date": (
+                    instance.attendance_date.strftime("%Y-%m-%d")
+                    if instance.attendance_date
+                    else None
+                ),
+                "shift_id": instance.shift_id,
+                "work_type_id": instance.work_type_id,
+                "attendance_worked_hour": instance.attendance_worked_hour,
+                "minimum_hour": instance.minimum_hour,
+            }
+            if instance.attendance_clock_in_date:
+                initial["attendance_clock_in_date"] = (
+                    instance.attendance_clock_in_date.strftime("%Y-%m-%d")
+                )
+            if instance.attendance_clock_in:
+                initial["attendance_clock_in"] = instance.attendance_clock_in.strftime(
+                    "%H:%M"
+                )
+            if instance.attendance_clock_out_date:
+                initial["attendance_clock_out_date"] = (
+                    instance.attendance_clock_out_date.strftime("%Y-%m-%d")
+                )
+            if instance.attendance_clock_out:
+                initial["attendance_clock_out"] = (
+                    instance.attendance_clock_out.strftime("%H:%M")
+                )
+            extra_initial = {
+                key: self._html_initial_value(value)
+                for key, value in kwargs.pop("initial", {}).items()
+            }
+            initial.update(extra_initial)
+            kwargs["initial"] = initial
+
+        super().__init__(*args, **kwargs)
+        reload_queryset(self.fields)
+        self.fields["employee_id"].widget.attrs.update({"id": str(uuid.uuid4())})
+        self.fields["work_type_id"].widget.attrs.update({"id": str(uuid.uuid4())})
+        self.fields["attendance_clock_out_date"].required = False
+        self.fields["attendance_clock_out"].required = False
+
+        selected_work_type = self.initial.get("work_type_id") or getattr(
+            instance, "work_type_id", None
+        )
+        selected_work_type_id = getattr(selected_work_type, "pk", selected_work_type)
+        if selected_work_type_id:
+            self.fields["work_type_id"].queryset = (
+                WorkType.objects.filter(pk=selected_work_type_id)
+                | self.fields["work_type_id"].queryset
+            ).distinct()
+            self.initial["work_type_id"] = selected_work_type_id
+            self.fields["work_type_id"].initial = selected_work_type_id
+
+        # The activity modal edits the day represented by the selected row.
+        self.fields["employee_id"].disabled = True
+        self.fields["attendance_date"].disabled = True
+        locked_field_style = (
+            "background-color: #fff; color: #495057; opacity: 1; "
+            "cursor: not-allowed;"
+        )
+        for field_name in ["employee_id", "attendance_date"]:
+            self.fields[field_name].widget.attrs.update({"style": locked_field_style})
+
+        for field in [
+            "attendance_clock_in_date",
+            "attendance_clock_in",
+            "attendance_clock_out_date",
+            "attendance_clock_out",
+        ]:
+            self.update_worked_hour_hx_fields(field)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        clock_in_date = cleaned_data.get("attendance_clock_in_date")
+        clock_in = cleaned_data.get("attendance_clock_in")
+        clock_out_date = cleaned_data.get("attendance_clock_out_date")
+        clock_out = cleaned_data.get("attendance_clock_out")
+
+        if not clock_in_date:
+            self.add_error("attendance_clock_in_date", _("In date is required."))
+        if not clock_in:
+            self.add_error("attendance_clock_in", _("Check in is required."))
+
+        if bool(clock_out_date) != bool(clock_out):
+            message = _("Out date and check out must be provided together.")
+            if not clock_out_date:
+                self.add_error("attendance_clock_out_date", message)
+            if not clock_out:
+                self.add_error("attendance_clock_out", message)
+
+        if clock_in_date and clock_in and clock_out_date and clock_out:
+            clock_in_datetime = datetime.datetime.combine(clock_in_date, clock_in)
+            clock_out_datetime = datetime.datetime.combine(clock_out_date, clock_out)
+            if clock_out_datetime < clock_in_datetime:
+                self.add_error(
+                    "attendance_clock_out",
+                    _("Check out cannot be earlier than check in."),
+                )
+
+        return cleaned_data
+
+    def _post_clean(self):
+        """
+        Keep ModelForm instance population without running Attendance.clean().
+
+        The activity modal reuses Attendance fields for layout, but it saves a
+        selected work activity. Attendance.clean() blocks checkout times later
+        today, which is too broad for this proxy form.
+        """
+        for field_name in self._meta.fields:
+            if field_name in self.cleaned_data:
+                setattr(self.instance, field_name, self.cleaned_data[field_name])
+        self.validate_unique()
+
+    def as_p(self, *args, **kwargs):
+        """
+        Render the form with the same system form layout as attendance edit.
+        """
+        _ = args, kwargs
+        context = {"form": self}
+        return render_to_string("attendance_form.html", context)
 
 
 class MonthSelectField(forms.ChoiceField):

@@ -160,12 +160,34 @@
     <div data-cell-index="19" class="oh-sticky-table__td">{{ row.leave_type|default:row.leave|default:"&mdash;" }}</div>
     <div data-cell-index="20" class="oh-sticky-table__td">{{ row.leave_days|default:"&mdash;" }}</div>
     <div data-cell-index="21" class="oh-sticky-table__td">{{ row.holiday|default:"&mdash;" }}</div>
-    {% if perms.attendance.delete_attendanceactivity and not row.is_leave_only %}
+    {% if perms.attendance.change_attendanceactivity or perms.attendance.delete_attendanceactivity %}
+    {% if not row.is_leave_only %}
         <div class="oh-sticky-table__td oh-sticky-table__right">
-            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100"
-                title="{% trans 'Remove' %}" onclick="deleteDailyActivityRow(event, '{{ row.activity_ids_json|escapejs }}')">
-                <ion-icon name="trash-outline"></ion-icon>
-            </button>
+            <div class="oh-btn-group">
+                {% if perms.attendance.change_attendanceactivity %}
+                    <a
+                        hx-get="{% url 'attendance-activity-update' row.employee.id row.attendance_date_iso %}?{{ pd }}"
+                        onclick="event.stopPropagation();"
+                        hx-target="#updateAttendanceActivityModalBody"
+                        hx-swap="innerHTML"
+                        data-toggle="oh-modal-toggle"
+                        data-target="#updateAttendanceActivityModal"
+                        class="oh-btn oh-btn--light-bkg w-50"
+                        title="{% trans 'Edit' %}"
+                    >
+                        <ion-icon name="create-outline"></ion-icon>
+                    </a>
+                {% endif %}
+                {% if perms.attendance.delete_attendanceactivity %}
+                    <form onclick="event.stopPropagation()" class="w-50">
+                        <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100"
+                            title="{% trans 'Remove' %}" onclick="deleteDailyActivityRow(event, '{{ row.activity_ids_json|escapejs }}')">
+                            <ion-icon name="trash-outline"></ion-icon>
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
         </div>
+    {% endif %}
     {% endif %}
 </div>

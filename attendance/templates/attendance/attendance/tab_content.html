@@ -216,8 +216,8 @@
     <div class="oh-modal__dialog">
         <div class="oh-modal__dialog-header">
             <h2 class="oh-modal__dialog-title" id="updateAttendanceModalLabel">{% trans "Edit Attendance" %}</h2>
-            <button type="button" class="oh-modal_close--custom" onclick="$('#updateAttendanceModal').removeClass('oh-modal--show');">
-                <ion-icon name="close-outline" role="img" aria-label="close outline"></ion-icon>
+            <button type="button" class="oh-modal__close" aria-label="{% trans 'Close' %}" onclick="$(this).closest('.oh-modal').removeClass('oh-modal--show');">
+                <ion-icon name="close-outline"></ion-icon>
             </button>
         </div>
         <div class="oh-modal__dialog-body" id="updateAttendanceModalBody"></div>

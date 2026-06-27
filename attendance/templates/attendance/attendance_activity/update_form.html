@@ -1,0 +1,27 @@
+{% load i18n %}
+
+{% if messages %}
+    <div class="oh-wrapper">
+        {% for message in messages %}
+            <div class="oh-alert-container">
+                <div class="oh-alert oh-alert--animated {{ message.tags }}">
+                    {{ message }}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+{% if saved %}
+    <span class="oh-span__class" hx-trigger="load" hx-get="{% url 'attendance-activity-search' %}?{{ pd }}" hx-target="#activity-table"></span>
+{% endif %}
+
+<form
+    hx-post="{% url 'attendance-activity-update' employee_id attendance_date_iso %}?{{ pd }}"
+    hx-target="#updateAttendanceActivityModalBody"
+    hx-swap="innerHTML"
+    id="attendanceActivityUpdateForm"
+>
+    {% csrf_token %}
+    {{ form.as_p }}
+</form>

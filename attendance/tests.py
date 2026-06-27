@@ -1,18 +1,19 @@
 import json
 import importlib
+import uuid
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.core.signing import SignatureExpired
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, Permission, User
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.utils import timezone
-from django.urls import resolve
+from django.urls import resolve, reverse
 from django.urls.exceptions import Resolver404
 
 from attendance.forms import AttendanceActivityExportForm, AttendanceExportForm
@@ -52,8 +53,9 @@ from attendance.views.views import (
     build_daily_activity_rows,
     build_my_attendance_activity_meta,
 )
-from base.models import EmployeeShift, EmployeeShiftDay, EmployeeShiftSchedule
+from base.models import EmployeeShift, EmployeeShiftDay, EmployeeShiftSchedule, WorkType
 from employee.models import Employee
+from horilla.horilla_middlewares import _thread_locals
 
 
 def attach_session(request):
@@ -2836,6 +2838,246 @@ class AttendanceLocationMigrationTests(SimpleTestCase):
         self.assertIsNone(activity.clock_out_longitude)
         self.assertIsNone(activity.clock_out_gps_address)
         activity.save.assert_called_once()
+
+
+class AttendanceActivityUpdateViewTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        unique_id = uuid.uuid4().hex[:8]
+        self.attendance_date = date(2026, 6, 1)
+        self.shift_day, _created = EmployeeShiftDay.objects.get_or_create(day="monday")
+        self.shift = EmployeeShift.objects.create(
+            employee_shift="Activity Edit Shift",
+            weekly_full_time="40:00",
+            full_time="200:00",
+        )
+        EmployeeShiftSchedule.objects.create(
+            day=self.shift_day,
+            shift_id=self.shift,
+            minimum_working_hour="08:00",
+            start_time=time(8, 0),
+            end_time=time(17, 0),
+        )
+        self.work_type = WorkType.objects.create(work_type="Office")
+        self.employee = Employee.objects.create(
+            employee_first_name="Activity",
+            employee_last_name="Editor",
+            email=f"activity-editor-{unique_id}@example.com",
+            phone=f"0917{unique_id[:7]}",
+            gender="male",
+            is_active=True,
+        )
+        self.attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.attendance_date,
+            shift_id=self.shift,
+            work_type_id=self.work_type,
+            attendance_day=self.shift_day,
+            attendance_clock_in_date=self.attendance_date,
+            attendance_clock_in=time(8, 0),
+            attendance_clock_out_date=self.attendance_date,
+            attendance_clock_out=time(17, 0),
+            attendance_worked_hour="09:00",
+            minimum_hour="08:00",
+            attendance_validated=True,
+        )
+        self.work_activity = AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.attendance_date,
+            shift_day=self.shift_day,
+            clock_in_date=self.attendance_date,
+            clock_in=time(8, 0),
+            clock_out_date=self.attendance_date,
+            clock_out=time(12, 0),
+            activity_type="work",
+        )
+        self.break_activity = AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.attendance_date,
+            shift_day=self.shift_day,
+            clock_in_date=self.attendance_date,
+            clock_in=time(12, 0),
+            clock_out_date=self.attendance_date,
+            clock_out=time(12, 30),
+            activity_type="break",
+        )
+        self.user = User.objects.create_user(
+            username=f"activity-editor-{unique_id}",
+            password="password",
+        )
+        Employee.objects.filter(id=self.employee.id).update(
+            employee_user_id_id=self.user.id
+        )
+        permission = Permission.objects.get(
+            codename="change_attendanceactivity",
+            content_type__app_label="attendance",
+        )
+        self.user.user_permissions.add(permission)
+        self.url = reverse(
+            "attendance-activity-update",
+            args=[self.employee.id, self.attendance_date.isoformat()],
+        )
+
+    def tearDown(self):
+        _thread_locals.request = None
+
+    def _post_data(self, work_out="13:00", work_out_date=None):
+        if work_out_date is None:
+            work_out_date = self.attendance_date.isoformat()
+        return {
+            "employee_id": str(self.employee.id),
+            "attendance_date": self.attendance_date.isoformat(),
+            "shift_id": str(self.shift.id),
+            "work_type_id": str(self.work_type.id),
+            "attendance_clock_in_date": self.attendance_date.isoformat(),
+            "attendance_clock_in": "08:15",
+            "attendance_clock_out_date": work_out_date,
+            "attendance_clock_out": work_out,
+            "attendance_worked_hour": "04:45",
+            "minimum_hour": "08:00",
+        }
+
+    def test_get_requires_permission_and_renders_attendance_style_modal_form(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "attendanceActivityUpdateForm")
+        self.assertContains(response, "attendance_clock_in")
+        self.assertContains(response, "attendance_worked_hour")
+        self.assertContains(response, "Office")
+        self.assertContains(response, 'value="2026-06-01"')
+        self.assertContains(response, 'background-color: #fff')
+        self.assertNotContains(response, "batch_attendance_id")
+        self.assertNotContains(response, "attendance_overtime_approve")
+        self.assertNotContains(response, "attendance_validated")
+
+    @patch("attendance.views.views.recalculate_attendance_for_shift")
+    def test_post_updates_existing_activity_segments(self, recalculate_mock):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"{self.url}?page=2",
+            data=self._post_data(),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attendance activity updated.")
+        self.assertContains(
+            response,
+            'hx-get="/attendance/attendance-activity-search?page=2"',
+        )
+        self.work_activity.refresh_from_db()
+        self.break_activity.refresh_from_db()
+        self.assertEqual(self.work_activity.clock_in, time(8, 15))
+        self.assertEqual(self.work_activity.clock_out, time(13, 0))
+        self.assertEqual(self.break_activity.activity_type, "break")
+        recalculate_mock.assert_called_once_with(self.shift)
+
+    @patch("attendance.views.views.recalculate_attendance_for_shift")
+    def test_post_allows_blank_checkout_fields_for_open_segment(self, recalculate_mock):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url,
+            data=self._post_data(work_out="", work_out_date=""),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attendance activity updated.")
+        self.work_activity.refresh_from_db()
+        self.assertIsNone(self.work_activity.clock_out_date)
+        self.assertIsNone(self.work_activity.clock_out)
+        recalculate_mock.assert_called_once_with(self.shift)
+
+    @patch("attendance.views.views.recalculate_attendance_for_shift")
+    def test_post_allows_activity_checkout_later_today(self, recalculate_mock):
+        today = date.today()
+        attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=today,
+            shift_id=self.shift,
+            work_type_id=self.work_type,
+            attendance_day=self.shift_day,
+            attendance_clock_in_date=today,
+            attendance_clock_in=time(0, 1),
+            attendance_worked_hour="00:00",
+            minimum_hour="08:00",
+            attendance_validated=True,
+        )
+        AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=today,
+            shift_day=self.shift_day,
+            clock_in_date=today,
+            clock_in=time(0, 1),
+            activity_type="work",
+        )
+        url = reverse(
+            "attendance-activity-update",
+            args=[self.employee.id, today.isoformat()],
+        )
+        post_data = self._post_data(work_out="23:59", work_out_date=today.isoformat())
+        post_data.update(
+            {
+                "attendance_date": today.isoformat(),
+                "attendance_clock_in_date": today.isoformat(),
+                "attendance_clock_in": "00:01",
+                "attendance_worked_hour": "23:58",
+            }
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(url, data=post_data, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Check-out time cannot be in the future")
+        self.assertContains(response, "Attendance activity updated.")
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.attendance_clock_out, time(23, 59))
+        recalculate_mock.assert_called_once_with(self.shift)
+
+    @patch("attendance.views.views.recalculate_attendance_for_shift")
+    def test_invalid_checkout_before_checkin_does_not_save(self, recalculate_mock):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url,
+            data=self._post_data(work_out="07:30"),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Check out cannot be earlier than check in.")
+        self.work_activity.refresh_from_db()
+        self.assertEqual(self.work_activity.clock_in, time(8, 0))
+        self.assertEqual(self.work_activity.clock_out, time(12, 0))
+        recalculate_mock.assert_not_called()
+
+    def test_user_without_permission_is_blocked(self):
+        unique_id = uuid.uuid4().hex[:8]
+        user = User.objects.create_user(
+            username=f"activity-viewer-{unique_id}",
+            password="password",
+        )
+        viewer = Employee.objects.create(
+            employee_first_name="Activity",
+            employee_last_name="Viewer",
+            email=f"activity-viewer-{unique_id}@example.com",
+            phone=f"0918{unique_id[:7]}",
+            gender="male",
+            is_active=True,
+        )
+        Employee.objects.filter(id=viewer.id).update(employee_user_id_id=user.id)
+        self.client.force_login(user)
+
+        response = self.client.get(self.url, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "attendanceActivityUpdateForm")
 
 
 class AttendanceActivityMetaBuilderTests(SimpleTestCase):

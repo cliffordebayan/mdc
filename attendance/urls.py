@@ -203,6 +203,11 @@ urlpatterns = [
         name="attendance-activity-daily-view",
     ),
     path(
+        "attendance-activity-update/<int:employee_id>/<str:attendance_date>/",
+        views.attendance_activity_update,
+        name="attendance-activity-update",
+    ),
+    path(
         "attendance-activity-search",
         attendance.views.search.attendance_activity_search,
         name="attendance-activity-search",
