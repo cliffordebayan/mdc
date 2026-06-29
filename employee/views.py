@@ -32,7 +32,7 @@ from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models, transaction
-from django.db.models import F, ProtectedError
+from django.db.models import Count, F, ProtectedError
 from django.db.models.query import QuerySet
 from django.forms import DateInput, Select
 from django.core.mail import EmailMessage
@@ -3714,6 +3714,9 @@ def birthday():
         dob__day__gte=today.day,
         dob__month=today.month,
         dob__day__lte=last_day_of_month,
+    ).select_related(
+        "employee_work_info__department_id",
+        "employee_work_info__job_position_id",
     ).order_by(F("dob__day").asc(nulls_last=True))
 
     for employee in employees:
@@ -3835,14 +3838,17 @@ def dashboard_employee(request):
         _("Active"),
         _("In-Active"),
     ]
-    employees = Employee.objects.filter()
+    employee_counts = {
+        item["is_active"]: item["total"]
+        for item in Employee.objects.values("is_active").annotate(total=Count("id"))
+    }
     response = {
         "dataSet": [
             {
                 "label": _("Employees"),
                 "data": [
-                    len(employees.filter(is_active=True)),
-                    len(employees.filter(is_active=False)),
+                    employee_counts.get(True, 0),
+                    employee_counts.get(False, 0),
                 ],
             },
         ],
@@ -3857,16 +3863,21 @@ def dashboard_employee_gender(request):
     This method is used to filter out gender vise employees
     """
     labels = [_("Male"), _("Female"), _("Other")]
-    employees = Employee.objects.filter(is_active=True)
+    gender_counts = {
+        item["gender"]: item["total"]
+        for item in Employee.objects.filter(is_active=True)
+        .values("gender")
+        .annotate(total=Count("id"))
+    }
 
     response = {
         "dataSet": [
             {
                 "label": _("Employees"),
                 "data": [
-                    len(employees.filter(gender="male")),
-                    len(employees.filter(gender="female")),
-                    len(employees.filter(gender="other")),
+                    gender_counts.get("male", 0),
+                    gender_counts.get("female", 0),
+                    gender_counts.get("other", 0),
                 ],
             },
         ],
@@ -3882,22 +3893,18 @@ def dashboard_employee_department(request):
     """
     labels = []
     count = []
-    departments = Department.objects.all()
+    departments = (
+        EmployeeWorkInformation.objects.filter(
+            employee_id__is_active=True,
+            department_id__isnull=False,
+        )
+        .values("department_id__department")
+        .annotate(total=Count("employee_id"))
+        .order_by("department_id__department")
+    )
     for dept in departments:
-        if len(
-            Employee.objects.filter(
-                employee_work_info__department_id__department=dept, is_active=True
-            )
-        ):
-            labels.append(dept.department)
-            count.append(
-                len(
-                    Employee.objects.filter(
-                        employee_work_info__department_id__department=dept,
-                        is_active=True,
-                    )
-                )
-            )
+        labels.append(dept["department_id__department"])
+        count.append(dept["total"])
     response = {
         "dataSet": [{"label": "Department", "data": count}],
         "labels": labels,

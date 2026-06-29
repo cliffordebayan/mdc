@@ -323,13 +323,16 @@ def generate_data_set(request, start_date, type, end_date, dept):
     early_out_obj = find_early_out(
         department=dept, start_date=start_date, end_date=end_date
     )
-    on_time = len(attendance) - len(late_come_obj)
+    attendance_count = attendance.count()
+    late_come_count = late_come_obj.count()
+    early_out_count = early_out_obj.count()
+    on_time = attendance_count - late_come_count
 
     data = {}
-    if on_time or late_come_obj or early_out_obj:
+    if on_time or late_come_count or early_out_count:
         data = {
             "label": dept.department,
-            "data": [on_time, len(late_come_obj), len(early_out_obj)],
+            "data": [on_time, late_come_count, early_out_count],
         }
 
     return data if data else None

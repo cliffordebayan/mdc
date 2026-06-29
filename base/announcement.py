@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.models import User
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -63,13 +63,12 @@ def announcement_list(request):
         )
     )
 
+    user_views = AnnouncementView.objects.filter(user=request.user, viewed=True)
     filtered_announcements = announcement_items.prefetch_related(
-        "announcementview_set"
+        Prefetch("announcementview_set", queryset=user_views, to_attr="viewed_by_user")
     ).order_by("-created_at")
     for announcement in filtered_announcements:
-        announcement.has_viewed = announcement.announcementview_set.filter(
-            user=request.user, viewed=True
-        ).exists()
+        announcement.has_viewed = bool(announcement.viewed_by_user)
     instance_ids = json.dumps([instance.id for instance in filtered_announcements])
     context = {
         "announcements": filtered_announcements,

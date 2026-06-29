@@ -1063,6 +1063,16 @@ def employee_workinfo_complete(request):
         queryset=EmployeeWorkInformation.objects.filter(
             employee_id__employee_first_name__icontains=search,
             employee_id__is_active=True,
+        ).select_related(
+            "employee_id",
+            "job_position_id",
+            "department_id",
+            "work_type_id",
+            "employee_type_id",
+            "job_role_id",
+            "reporting_manager_id",
+            "company_id",
+            "shift_id",
         ),
         perm="employee.view_employeeworkinformation",
     )
@@ -1085,7 +1095,9 @@ def employee_workinfo_complete(request):
 
     emps = filtersubordinatesemployeemodel(
         request,
-        Employee.objects.filter(employee_work_info__isnull=True),
+        Employee.objects.filter(employee_work_info__isnull=True).select_related(
+            "employee_user_id"
+        ),
         perm="employee.view_employeeworkinformation",
     )
     for emp in emps:
