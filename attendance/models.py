@@ -122,6 +122,20 @@ class AttendanceActivity(HorillaModel):
         """
 
         ordering = ["-attendance_date", "employee_id__employee_first_name", "clock_in"]
+        indexes = [
+            models.Index(
+                fields=["employee_id", "clock_out"],
+                name="att_act_emp_open_idx",
+            ),
+            models.Index(
+                fields=["employee_id", "attendance_date", "activity_type"],
+                name="att_act_emp_date_type_idx",
+            ),
+            models.Index(
+                fields=["employee_id", "attendance_date", "clock_in_date", "clock_in"],
+                name="att_act_emp_date_in_idx",
+            ),
+        ]
 
     def duration(self):
         """

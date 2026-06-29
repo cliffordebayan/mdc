@@ -12,6 +12,8 @@ import logging
 import re
 import socket
 import struct
+import threading
+import time as time_module
 from datetime import date, datetime, time, timedelta
 
 import pytz
@@ -19,6 +21,7 @@ from django import forms
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core import signing
 from django.core.mail import EmailMessage
@@ -88,12 +91,53 @@ PORTAL_NON_WORK_ACTIVITY_TYPES = {
 }
 
 
-def _reverse_geocode(lat, lng):
+def _portal_cache_timeout(name, default):
     try:
+        return max(int(getattr(settings, name, default)), 0)
+    except (TypeError, ValueError):
+        return default
+
+
+_PORTAL_REVERSE_GEOCODER = None
+_PORTAL_REVERSE_GEOCODER_LOCK = threading.Lock()
+
+
+def _reverse_geocode(lat, lng):
+    if not getattr(settings, "PORTAL_REVERSE_GEOCODE_ENABLED", True):
+        return None
+
+    try:
+        lat_f = float(lat)
+        lng_f = float(lng)
+    except (TypeError, ValueError):
+        return None
+
+    cache_key = f"attendance_portal:reverse_geocode:{round(lat_f, 5)}:{round(lng_f, 5)}"
+    cached_address = cache.get(cache_key)
+    if cached_address is not None:
+        return cached_address or None
+
+    try:
+        global _PORTAL_REVERSE_GEOCODER
         from geopy.geocoders import Nominatim
-        geolocator = Nominatim(user_agent="hris_attendance")
-        location = geolocator.reverse((lat, lng), exactly_one=True, timeout=3)
-        return location.address if location else None
+
+        if _PORTAL_REVERSE_GEOCODER is None:
+            with _PORTAL_REVERSE_GEOCODER_LOCK:
+                if _PORTAL_REVERSE_GEOCODER is None:
+                    _PORTAL_REVERSE_GEOCODER = Nominatim(user_agent="hris_attendance")
+
+        location = _PORTAL_REVERSE_GEOCODER.reverse(
+            (lat_f, lng_f),
+            exactly_one=True,
+            timeout=getattr(settings, "PORTAL_REVERSE_GEOCODE_TIMEOUT", 1),
+        )
+        address = location.address if location else None
+        cache.set(
+            cache_key,
+            address or "",
+            _portal_cache_timeout("PORTAL_REVERSE_GEOCODE_CACHE_SECONDS", 86400),
+        )
+        return address
     except Exception:
         return None
 
@@ -101,6 +145,11 @@ def _reverse_geocode(lat, lng):
 # NTP servers to try in order
 _NTP_SERVERS = ["time.cloudflare.com", "pool.ntp.org", "time.google.com"]
 _NTP_DELTA = 2208988800  # seconds between NTP epoch (1900) and Unix epoch (1970)
+_PORTAL_NTP_CACHE_LOCK = threading.Lock()
+_PORTAL_NTP_CACHE = {
+    "synced_at": None,
+    "monotonic_at": None,
+}
 _PORTAL_PIN_ATTEMPTS_MAX = 3
 _PORTAL_PIN_ATTEMPTS_SESSION_KEY = "portal_pin_attempts"
 _PORTAL_PIN_VERIFICATION_SESSION_KEY = "portal_pin_verification"
@@ -302,7 +351,7 @@ def _send_portal_pin_reset_email(request, employee):
         return False
 
 
-def get_real_now():
+def _get_real_now_uncached():
     """
     Return the current datetime from an NTP internet time server so that
     employees cannot manipulate attendance times by changing their PC clock.
@@ -317,7 +366,7 @@ def get_real_now():
     for server in _NTP_SERVERS:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.settimeout(2)
+            sock.settimeout(getattr(settings, "PORTAL_NTP_TIMEOUT", 1))
             # Minimal NTP request packet (LI=0, VN=3, Mode=3)
             sock.sendto(b"\x1b" + 47 * b"\x00", (server, 123))
             data, _ = sock.recvfrom(1024)
@@ -329,18 +378,57 @@ def get_real_now():
             return utc_dt.astimezone(tz).replace(tzinfo=None)
         except Exception:
             continue
-    # All NTP servers failed — fall back to system time and log a warning
+    # All NTP servers failed - fall back to system time and log a warning
     logger.warning("NTP sync failed; falling back to system clock for attendance time")
     return datetime.now()
+
+
+def get_real_now():
+    """
+    Return portal time from NTP with a short monotonic cache.
+
+    The cache keeps the anti-client-clock behavior while avoiding a UDP request
+    to public NTP servers on every portal request.
+    """
+    monotonic_now = time_module.monotonic()
+    max_age = _portal_cache_timeout("PORTAL_NTP_CACHE_SECONDS", 300)
+    cached_synced_at = _PORTAL_NTP_CACHE.get("synced_at")
+    cached_monotonic_at = _PORTAL_NTP_CACHE.get("monotonic_at")
+
+    if cached_synced_at is not None and cached_monotonic_at is not None:
+        age = monotonic_now - cached_monotonic_at
+        if 0 <= age <= max_age:
+            return cached_synced_at + timedelta(seconds=age)
+
+        if not _PORTAL_NTP_CACHE_LOCK.acquire(False):
+            return cached_synced_at + timedelta(seconds=max(age, 0))
+    else:
+        _PORTAL_NTP_CACHE_LOCK.acquire()
+
+    try:
+        monotonic_now = time_module.monotonic()
+        cached_synced_at = _PORTAL_NTP_CACHE.get("synced_at")
+        cached_monotonic_at = _PORTAL_NTP_CACHE.get("monotonic_at")
+        if cached_synced_at is not None and cached_monotonic_at is not None:
+            age = monotonic_now - cached_monotonic_at
+            if 0 <= age <= max_age:
+                return cached_synced_at + timedelta(seconds=age)
+
+        synced_now = _get_real_now_uncached()
+        _PORTAL_NTP_CACHE["synced_at"] = synced_now
+        _PORTAL_NTP_CACHE["monotonic_at"] = time_module.monotonic()
+        return synced_now
+    finally:
+        _PORTAL_NTP_CACHE_LOCK.release()
 
 
 def _get_client_ip(request):
     """
     Return the real client IP, checking proxy/CDN headers in priority order:
-      1. CF-Connecting-IP  — set by Cloudflare, most reliable when behind CF
-      2. X-Real-IP         — set by nginx and other single-hop proxies
-      3. X-Forwarded-For   — leftmost (original client) entry in the chain
-      4. REMOTE_ADDR       — direct connection fallback
+      1. CF-Connecting-IP  - set by Cloudflare, most reliable when behind CF
+      2. X-Real-IP         - set by nginx and other single-hop proxies
+      3. X-Forwarded-For   - leftmost (original client) entry in the chain
+      4. REMOTE_ADDR       - direct connection fallback
     When the resolved IP is loopback (127.x / ::1), substitute the server's
     own LAN IP so local rules still match.
     """
@@ -366,6 +454,13 @@ def _get_client_ip(request):
     return ip
 
 
+def _active_assigned_geofences(employee):
+    prefetched_geofences = getattr(employee, "active_assigned_geofences", None)
+    if prefetched_geofences is not None:
+        return prefetched_geofences
+    return employee.assigned_geofences.filter(start=True)
+
+
 def _geofence_check(employee, work_info, latitude, longitude):
     """
     Return a dict with error details if the employee is outside their assigned
@@ -373,10 +468,8 @@ def _geofence_check(employee, work_info, latitude, longitude):
     Employees with no active assigned geofences are always allowed.
     """
     try:
-        from geofencing.models import GeoFencing
-
-        assigned_geos = employee.assigned_geofences.filter(start=True)
-        if not assigned_geos.exists():
+        assigned_geos = list(_active_assigned_geofences(employee))
+        if not assigned_geos:
             return None
 
         inside = False
@@ -1553,14 +1646,13 @@ def employee_lookup(request):
             geo_data = []
             branch_name = ""
             try:
-                from geofencing.models import GeoFencing
                 work_info = getattr(emp, "employee_work_info", None)
                 branch = work_info.branch_id if work_info else None
                 if branch:
                     branch_name = branch.branch or ""
                 
                 # Fetch active assigned geofences for this employee
-                assigned_geos = emp.assigned_geofences.filter(start=True)
+                assigned_geos = _active_assigned_geofences(emp)
                 for geo in assigned_geos:
                     geo_data.append({
                         "name": geo.name or "",
@@ -1656,7 +1748,7 @@ def attendance_history(request):
         return str(value)
 
     rows = []
-    attendance_rows = (
+    attendance_rows = list(
         Attendance.objects.filter(
             employee_id=employee,
             attendance_date__gte=start_date,
@@ -1666,11 +1758,43 @@ def attendance_history(request):
     )
 
     current_time = timezone.now()
+    activity_totals_by_date = {}
+    activities = AttendanceActivity.objects.filter(
+        employee_id=employee,
+        attendance_date__gte=start_date,
+        attendance_date__lte=end_date,
+        activity_type__in=[PORTAL_BREAK_ACTIVITY, PORTAL_LUNCH_ACTIVITY],
+    ).only(
+        "attendance_date",
+        "activity_type",
+        "clock_in_date",
+        "clock_in",
+        "clock_out_date",
+        "clock_out",
+        "in_datetime",
+        "out_datetime",
+    )
+    for activity in activities:
+        attendance_date = activity.attendance_date
+        if attendance_date not in activity_totals_by_date:
+            activity_totals_by_date[attendance_date] = {
+                PORTAL_BREAK_ACTIVITY: 0,
+                PORTAL_LUNCH_ACTIVITY: 0,
+            }
+        ended_at = _activity_end_datetime(activity)
+        if ended_at is None and getattr(activity, "clock_out", None) is None:
+            ended_at = current_time
+        activity_totals_by_date[attendance_date][activity.activity_type] += (
+            _activity_duration_seconds(activity, ended_at)
+        )
+
     for attendance in attendance_rows:
-        activity_totals = _portal_activity_duration_metadata(
-            employee,
+        activity_totals = activity_totals_by_date.get(
             attendance.attendance_date,
-            current_time,
+            {
+                PORTAL_BREAK_ACTIVITY: 0,
+                PORTAL_LUNCH_ACTIVITY: 0,
+            },
         )
         rows.append(
             {
@@ -1678,8 +1802,8 @@ def attendance_history(request):
                 "clock_in_time": format_time_value(attendance.attendance_clock_in),
                 "clock_out_time": format_time_value(attendance.attendance_clock_out),
                 "worked_hours": attendance.attendance_worked_hour or "00:00",
-                "break_time": activity_totals["break_total_time"],
-                "lunch_time": activity_totals["lunch_total_time"],
+                "break_time": format_time(activity_totals[PORTAL_BREAK_ACTIVITY]),
+                "lunch_time": format_time(activity_totals[PORTAL_LUNCH_ACTIVITY]),
             }
         )
 
