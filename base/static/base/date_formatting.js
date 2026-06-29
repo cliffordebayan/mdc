@@ -85,18 +85,30 @@ class DateFormattingUtility {
         const storedDateFormat = localStorage.getItem('selectedDateFormat') || 'MMM. D, YYYY';
 
 
-        // Preprocess the date string based on the selected format
-        let processedDate = date;
-        if (storedDateFormat === 'DD-MM-YYYY') {
-            processedDate = date.replace(/(\d{2})-(\d{2})-(\d{4})/, '$3-$2-$1');
-        } else if (storedDateFormat === 'DD.MM.YYYY') {
-            processedDate = date.replace(/(\d{2})\.(\d{2})\.(\d{4})/, '$3-$2-$1');
-        } else if (storedDateFormat === 'DD/MM/YYYY') {
-            processedDate = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
+        const inputFormats = [
+            'YYYY-MM-DD',
+            'YYYY/MM/DD',
+            'MM/DD/YYYY',
+            'DD-MM-YYYY',
+            'DD.MM.YYYY',
+            'DD/MM/YYYY',
+            'MMMM D, YYYY',
+            'MMM. D, YYYY',
+            'MMM D, YYYY',
+            'DD MMMM, YYYY',
+            'D MMMM, YYYY',
+            'D MMM. YYYY',
+            'D MMM YYYY',
+            'dddd, MMMM D, YYYY',
+        ];
+
+        const parsedDate = moment(date, inputFormats, true);
+        if (!parsedDate.isValid()) {
+            return date;
         }
 
-        // Format the processed date using moment.js
-        const formattedDate = moment(processedDate).format(storedDateFormat);
+        // Format the parsed date using moment.js
+        const formattedDate = parsedDate.format(storedDateFormat);
 
         return formattedDate;
     }
