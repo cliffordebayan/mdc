@@ -93,11 +93,18 @@
                                 border: 1px solid rgba(49, 130, 206, 0.25);
                                 display: flex;
                                 align-items: center;
-                                justify-content: center;
-                                gap: 0.4rem;
+                                justify-content: space-between;
+                                gap: 0.75rem;
+                                min-height: 76px;
+                                padding: 1rem 1.25rem;
+                                font-size: 1.05rem;
                             ">
-                            <ion-icon name="people-outline"></ion-icon>
-                            {% trans "Employee Portal" %}
+                            <ion-icon name="people-outline" style="font-size: 1.6rem;"></ion-icon>
+                            <span style="display: flex; flex: 1; flex-direction: column; align-items: center; line-height: 1.25;">
+                                <span style="font-size: 1.15rem; font-weight: 700;">{% trans "Employee Portal" %}</span>
+                                <span style="font-size: 0.82rem; font-weight: 500; opacity: 0.78; margin-top: 0.2rem;">{% trans "Attendance • Leave • Request" %}</span>
+                            </span>
+                            <ion-icon name="arrow-forward-outline" style="font-size: 1.35rem;"></ion-icon>
                         </a>
                     </div>
                 </form>
