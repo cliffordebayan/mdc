@@ -1515,32 +1515,6 @@
             overflow-wrap: break-word;
         }
 
-        /* ── Face detection overlay ── */
-        #face-overlay-canvas {
-            display: block;
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 3;
-        }
-        .face-status-label {
-            position: absolute;
-            bottom: 14px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.60);
-            color: #fff;
-            font-size: 12px;
-            font-weight: 600;
-            padding: 5px 16px;
-            border-radius: 20px;
-            white-space: nowrap;
-            z-index: 4;
-            pointer-events: none;
-            backdrop-filter: blur(4px);
-        }
-
         /* Right: info panel */
         .clock-info-panel {
             display: flex;
@@ -2753,15 +2727,6 @@
                             <img id="captured-photo" class="captured-photo-full" src="" style="display:none;" />
                             <canvas id="canvas"></canvas>
 
-                            <!-- Face detection oval guide — SEPARATE from #canvas so captured selfies stay clean -->
-                            <canvas id="face-overlay-canvas"></canvas>
-
-                            <!-- Face detection loading indicator -->
-                            <div id="face-loading-status" style="display:none; position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.65); color:#fff; border-radius:20px; padding:6px 16px; font-size:13px; white-space:nowrap; z-index:10; align-items:center; gap:8px;">
-                                <span class="loading" style="display:inline-block; width:13px; height:13px; border-width:2px; vertical-align:middle; margin-right:6px; border-color:rgba(255,255,255,0.3); border-top-color:#fff;"></span>
-                                <span>{% trans "Loading face detection..." %}</span>
-                            </div>
-
                             <!-- Location overlay on photo -->
                             <div class="location-overlay" id="location-overlay" style="display:none;">
                                 <div class="location-overlay-label">📍 {% trans "Location" %}</div>
@@ -2986,7 +2951,6 @@
     <script type="module" src="{% static 'images/ionicons/ui_icons/ionicons/ionicons.esm.js' %}"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 
     <script>
         const CSRF_TOKEN = '{{ csrf_token }}';
@@ -3008,12 +2972,6 @@
             raisedOnOptions: {},
         };
 
-        // ── Face Detection ───────────────────────────────────────────────
-        let faceApiModelsLoaded = false;
-        let faceApiModelsLoading = false;
-        let faceDetected = false;          // true when a face is inside the oval this frame
-        let faceDetectionLoopId = null;
-        const FACE_MODELS_CDN = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
         let clockPreviewMap = null;
         let employeeDataById = {};
         let portalLeaveModalState = {
@@ -3195,9 +3153,6 @@
             startLiveClock();
             updatePinUi();
             focusSearchInput();
-            // Pre-load face detection models in the background so they are ready
-            // by the time the user reaches the camera step.
-            loadFaceApiModels();
         });
 
         function focusSearchInput() {
@@ -5163,7 +5118,6 @@
         }
 
         function stopClockCapturePreview() {
-            resetFaceDetectionState();
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
             $('#clock-preview-map').removeClass('is-placeholder').hide();
             cameraReady = false;
@@ -5719,184 +5673,8 @@
             });
         }
 
-        // ── Face Detection Functions ─────────────────────────────────────
-
-        async function loadFaceApiModels() {
-            if (faceApiModelsLoaded || faceApiModelsLoading) return;
-            faceApiModelsLoading = true;
-            $('#face-loading-status').css('display', 'flex');
-            try {
-                await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS_CDN);
-                faceApiModelsLoaded = true;
-            } catch (err) {
-                console.error('face-api model load failed:', err);
-            } finally {
-                faceApiModelsLoading = false;
-                $('#face-loading-status').hide();
-            }
-        }
-
-        // Returns the responsive guide box geometry (used by both drawing and detection)
-        function getFaceGuideBox(vw, vh) {
-            const mobile = isMobilePortalView();
-            const maxW = mobile ? Math.min(vw * 0.82, 380) : Math.min(vw * 0.66, 340);
-            const maxH = mobile ? Math.min(vh * 0.78, 500) : Math.min(vh * 0.70, 420);
-            // 3:4 portrait ratio for face framing
-            let bw = maxW, bh = bw * (4 / 3);
-            if (bh > maxH) { bh = maxH; bw = bh * (3 / 4); }
-            const bx = (vw - bw) / 2;
-            const offset = mobile ? vh * 0.14 : 0;
-            const by = Math.max(10, (vh - bh) / 2 - offset);
-            return { x: Math.max(10, bx), y: by, w: bw, h: bh };
-        }
-
-        function drawFaceOvalGuide(ctx, vw, vh, detected) {
-            ctx.clearRect(0, 0, vw, vh);
-            const { x: bx, y: by, w: bw, h: bh } = getFaceGuideBox(vw, vh);
-
-            // 1. Dark vignette over the 4 regions outside the guide box
-            ctx.fillStyle = 'rgba(0,0,0,0.52)';
-            ctx.fillRect(0, 0, vw, by);
-            ctx.fillRect(0, by, bx, bh);
-            ctx.fillRect(bx + bw, by, vw - (bx + bw), bh);
-            ctx.fillRect(0, by + bh, vw, vh - (by + bh));
-
-            // 2. Subtle green fill tint inside box when detected
-            if (detected) {
-                ctx.save();
-                ctx.globalAlpha = 0.07;
-                ctx.fillStyle = '#22c55e';
-                ctx.fillRect(bx, by, bw, bh);
-                ctx.restore();
-            }
-
-            // 3. Corner L-brackets
-            const arm = Math.min(bw, bh) * 0.20;
-            const lw  = Math.max(3, Math.min(bw, bh) * 0.022);
-            const r   = Math.min(10, arm * 0.45);
-
-            ctx.save();
-            ctx.strokeStyle = detected ? '#22c55e' : 'rgba(255,255,255,0.86)';
-            ctx.lineWidth = lw;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-
-            // Top-left
-            ctx.beginPath();
-            ctx.moveTo(bx, by + arm);
-            ctx.lineTo(bx, by + r);
-            ctx.quadraticCurveTo(bx, by, bx + r, by);
-            ctx.lineTo(bx + arm, by);
-            ctx.stroke();
-
-            // Top-right
-            ctx.beginPath();
-            ctx.moveTo(bx + bw - arm, by);
-            ctx.lineTo(bx + bw - r, by);
-            ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
-            ctx.lineTo(bx + bw, by + arm);
-            ctx.stroke();
-
-            // Bottom-left
-            ctx.beginPath();
-            ctx.moveTo(bx, by + bh - arm);
-            ctx.lineTo(bx, by + bh - r);
-            ctx.quadraticCurveTo(bx, by + bh, bx + r, by + bh);
-            ctx.lineTo(bx + arm, by + bh);
-            ctx.stroke();
-
-            // Bottom-right
-            ctx.beginPath();
-            ctx.moveTo(bx + bw - arm, by + bh);
-            ctx.lineTo(bx + bw - r, by + bh);
-            ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw, by + bh - r);
-            ctx.lineTo(bx + bw, by + bh - arm);
-            ctx.stroke();
-
-            ctx.restore();
-
-            // 4. Animated scan line (only while waiting for face)
-            if (faceApiModelsLoaded && !detected) {
-                const t = (Date.now() % 2200) / 2200;
-                const scanY = by + bh * 0.08 + t * bh * 0.84;
-                const grad = ctx.createLinearGradient(bx, scanY - 14, bx, scanY + 14);
-                grad.addColorStop(0,   'rgba(255,255,255,0)');
-                grad.addColorStop(0.5, 'rgba(255,255,255,0.32)');
-                grad.addColorStop(1,   'rgba(255,255,255,0)');
-                ctx.fillStyle = grad;
-                ctx.fillRect(bx, scanY - 14, bw, 28);
-            }
-
-        }
-
-        function startFaceDetectionLoop() {
-            if (faceDetectionLoopId) cancelAnimationFrame(faceDetectionLoopId);
-            const video = document.getElementById('video-preview');
-            const oc = document.getElementById('face-overlay-canvas');
-            if (!video || !oc) return;
-
-            async function loop() {
-                if (!$('#step-clock').hasClass('active') || !videoStream) {
-                    faceDetectionLoopId = null; faceDetected = false; return;
-                }
-                // Size overlay canvas to match displayed camera panel
-                const panel = oc.parentElement;
-                const dw = panel.clientWidth || video.clientWidth || 640;
-                const dh = panel.clientHeight || video.clientHeight || 480;
-                if (oc.width !== dw || oc.height !== dh) { oc.width = dw; oc.height = dh; }
-                const ctx = oc.getContext('2d');
-
-                if (!faceApiModelsLoaded) {
-                    drawFaceOvalGuide(ctx, dw, dh, false);
-                    faceDetectionLoopId = requestAnimationFrame(loop); return;
-                }
-
-                try {
-                    const det = await faceapi.detectSingleFace(
-                        video,
-                        new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
-                    );
-
-                    let inOval = false;
-                    if (det) {
-                        const box = det.box;
-                        const sx = dw / (video.videoWidth || dw);
-                        const sy = dh / (video.videoHeight || dh);
-                        // Mirror-flip X to match CSS scaleX(-1) applied to #video-preview
-                        const fcx = dw - (box.x + box.width / 2) * sx;
-                        const fcy = (box.y + box.height / 2) * sy;
-                        const g = getFaceGuideBox(dw, dh);
-                        inOval = fcx >= g.x && fcx <= g.x + g.w &&
-                                 fcy >= g.y && fcy <= g.y + g.h;
-                    }
-                    faceDetected = inOval;
-                } catch (e) {
-                    faceDetected = false;
-                }
-
-                drawFaceOvalGuide(ctx, dw, dh, faceDetected);
-                updateFaceGatedButtons();
-                faceDetectionLoopId = requestAnimationFrame(loop);
-            }
-            faceDetectionLoopId = requestAnimationFrame(loop);
-        }
-
-        function stopFaceDetectionLoop() {
-            if (faceDetectionLoopId) { cancelAnimationFrame(faceDetectionLoopId); faceDetectionLoopId = null; }
-            faceDetected = false;
-            const oc = document.getElementById('face-overlay-canvas');
-            if (oc) oc.getContext('2d').clearRect(0, 0, oc.width, oc.height);
-        }
-
-        function resetFaceDetectionState() {
-            stopFaceDetectionLoop();
-            // faceApiModelsLoaded stays true — model persists in memory for the session
-        }
-
         function updateFaceGatedButtons() {
             if (!cameraReady || !latitude || !longitude) { disableClockButtons(); return; }
-            // Only gate on face when models have loaded; if CDN is slow/offline, fall through
-            if (faceApiModelsLoaded && !faceDetected) { disableClockButtons(); return; }
             enableClockButtons();
         }
 
@@ -5928,13 +5706,7 @@
                             $('#action-buttons').css('display', 'flex');
                             applySelectedClockActionVisibility();
 
-                            // Load face detection models then start the detection loop
-                            (async function() {
-                                if (!faceApiModelsLoaded) await loadFaceApiModels();
-                                startFaceDetectionLoop();
-                                updateFaceGatedButtons();
-                            })();
-                            updateFaceGatedButtons();   // initial state while models load
+                            updateFaceGatedButtons();
                         };
                         video.addEventListener('playing', onPlaying);
 
@@ -6857,7 +6629,6 @@
         // Reset form
         function resetForm() {
             stopAttendanceSummaryTimer();
-            resetFaceDetectionState();
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
             $('#clock-preview-map').removeClass('is-placeholder').hide();
             $('#employee-branch').hide().text('');
@@ -6915,7 +6686,6 @@
                     video.srcObject = null;
                 }
                 cameraReady = false;
-                stopFaceDetectionLoop();
             } else {
                 // When page becomes visible again, restart camera if we are on the clock step
                 if ($('#step-clock').hasClass('active')) {
