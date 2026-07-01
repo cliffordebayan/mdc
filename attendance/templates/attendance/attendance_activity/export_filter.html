@@ -9,7 +9,11 @@
 </div>
 <div class="oh-modal__dialog-body" id="attendanceExportModalBody">
     <form action="{%url 'attendance-activity-info-export' %}" method="get"
-        onsubmit="event.stopPropagation();$(this).parents().find('.oh-modal--show').last().toggleClass('oh-modal--show');"
+        data-export-start-url="{% url 'attendance-activity-export-start' %}"
+        data-export-progress-url="{% url 'attendance-export-progress' 'JOB_ID' %}"
+        data-export-download-url="{% url 'attendance-export-download' 'JOB_ID' %}"
+        data-export-title="{% trans 'Exporting Attendance Activities' %}"
+        onsubmit="return attendanceExportJobSubmit(event, this);"
         id="attendanceExportForm" class="oh-profile-section">
         {% csrf_token %}
         <div class="oh-dropdown__filter-body" id="export_attendance_form">
@@ -153,3 +157,4 @@
         </div>
     </form>
 </div>
+{% include "attendance/attendance_activity/export_progress_script.html" %}

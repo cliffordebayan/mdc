@@ -8,8 +8,13 @@
 <div class="oh-modal__dialog-body">
     <form id="pg-export-form" method="get"
         action="{% url 'attendance-payroll-group-export' %}"
+        data-export-start-url="{% url 'attendance-payroll-group-export-start' %}"
+        data-export-progress-url="{% url 'attendance-export-progress' 'JOB_ID' %}"
+        data-export-download-url="{% url 'attendance-export-download' 'JOB_ID' %}"
+        data-export-title="{% trans 'Exporting Payroll Groups' %}"
         onsubmit="pgExportSubmit(event)"
         class="oh-profile-section">
+        {% csrf_token %}
 
         <div class="oh-form__group mt-2">
             <label class="oh-label" for="pg-month">{% trans "Month" %}</label>
@@ -206,10 +211,8 @@
 
         document.getElementById("pg-selections").value = JSON.stringify(selections);
 
-        // Close modal then submit
-        var modal = document.querySelector(".oh-modal--show");
-        if (modal) modal.classList.remove("oh-modal--show");
-        document.getElementById("pg-export-form").submit();
+        attendanceExportJobSubmit(e, document.getElementById("pg-export-form"));
     };
 })();
 </script>
+{% include "attendance/attendance_activity/export_progress_script.html" %}

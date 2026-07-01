@@ -238,9 +238,29 @@ urlpatterns = [
         name="attendance-activity-info-export",
     ),
     path(
+        "attendance-activity-export/start",
+        views.start_attendance_activity_export,
+        name="attendance-activity-export-start",
+    ),
+    path(
         "attendance-payroll-group-export",
         views.export_attendance_by_payroll_group,
         name="attendance-payroll-group-export",
+    ),
+    path(
+        "attendance-payroll-group-export/start",
+        views.start_attendance_payroll_group_export,
+        name="attendance-payroll-group-export-start",
+    ),
+    path(
+        "attendance-export-progress/<str:job_id>/",
+        views.attendance_export_progress,
+        name="attendance-export-progress",
+    ),
+    path(
+        "attendance-export-download/<str:job_id>/",
+        views.attendance_export_download,
+        name="attendance-export-download",
     ),
     path("view-my-attendance/", views.view_my_attendance, name="view-my-attendance"),
     path(

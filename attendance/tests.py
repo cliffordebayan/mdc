@@ -1,6 +1,8 @@
 import json
 import io
 import importlib
+import shutil
+import tempfile
 import uuid
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
@@ -12,7 +14,7 @@ from django.contrib.auth.models import AnonymousUser, Permission, User
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.http import HttpResponse
 from django.template.loader import render_to_string
-from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from django.urls import resolve, reverse
 from django.urls.exceptions import Resolver404
@@ -20,6 +22,7 @@ from openpyxl import load_workbook
 import pandas as pd
 
 from attendance.forms import AttendanceActivityExportForm, AttendanceExportForm
+from attendance.export_jobs import create_export_job, file_path, update_job
 from attendance.methods import utils as attendance_utils
 from attendance.models import (
     Attendance,
@@ -3163,6 +3166,109 @@ class AttendanceActivityMetaBuilderTests(SimpleTestCase):
 class FakeActivityQuerySet(list):
     def select_related(self, *args):
         return self
+
+
+class AttendanceExportJobEndpointTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        self.media_dir = tempfile.mkdtemp()
+        self.settings_override = override_settings(MEDIA_ROOT=self.media_dir)
+        self.settings_override.enable()
+        self.user = self._make_user("exporter", "exporter@example.com")
+        permission = Permission.objects.get(
+            content_type__app_label="attendance",
+            codename="change_attendanceactivity",
+        )
+        self.user.user_permissions.add(permission)
+        self.other_user = self._make_user("other-exporter", "other@example.com")
+
+    def tearDown(self):
+        _thread_locals.request = None
+        self.settings_override.disable()
+        shutil.rmtree(self.media_dir, ignore_errors=True)
+
+    def _make_user(self, username, email):
+        user = User.objects.create_user(
+            username=username,
+            password="password",
+            email=email,
+        )
+        Employee.objects.create(
+            employee_user_id=user,
+            employee_first_name=username,
+            email=email,
+            phone="1234567890",
+        )
+        return user
+
+    def test_starting_activity_export_job_returns_job_id(self):
+        self.client.force_login(self.user)
+        with patch("attendance.views.views.start_export_job") as start_job:
+            response = self.client.post(
+                reverse("attendance-activity-export-start"),
+                data={"selected_fields": ["employee_id", "attendance_date"]},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["job_id"])
+        self.assertTrue(file_path(payload["job_id"]).parent.exists())
+        start_job.assert_called_once()
+
+    def test_progress_endpoint_only_returns_jobs_for_owner(self):
+        job_id = create_export_job(self.user.id, "export.xlsx")
+        update_job(job_id, status="running", percent=40, message="Working")
+
+        self.client.force_login(self.other_user)
+        response = self.client.get(reverse("attendance-export-progress", args=[job_id]))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_download_endpoint_serves_completed_owner_job(self):
+        job_id = create_export_job(self.user.id, "export.xlsx")
+        file_path(job_id).write_bytes(b"fake-xlsx")
+        update_job(job_id, status="complete", percent=100, message="Ready")
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("attendance-export-download", args=[job_id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("export.xlsx", response["Content-Disposition"])
+
+    def test_download_endpoint_rejects_non_owner_and_incomplete_jobs(self):
+        job_id = create_export_job(self.user.id, "export.xlsx")
+        file_path(job_id).write_bytes(b"fake-xlsx")
+        update_job(job_id, status="failed", percent=100, message="Failed")
+
+        self.client.force_login(self.other_user)
+        owner_response = self.client.get(
+            reverse("attendance-export-download", args=[job_id])
+        )
+        self.assertEqual(owner_response.status_code, 404)
+
+        self.client.force_login(self.user)
+        incomplete_response = self.client.get(
+            reverse("attendance-export-download", args=[job_id])
+        )
+        self.assertEqual(incomplete_response.status_code, 409)
+
+    def test_failed_job_progress_exposes_error_status(self):
+        job_id = create_export_job(self.user.id, "export.xlsx")
+        update_job(
+            job_id,
+            status="failed",
+            percent=100,
+            message="Export failed",
+            error="boom",
+        )
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("attendance-export-progress", args=[job_id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["error"], "boom")
 
 
 class AttendanceActivityExportTests(SimpleTestCase):

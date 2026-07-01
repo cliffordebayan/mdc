@@ -14,7 +14,11 @@ provide the main entry points for interacting with the application's functionali
 import logging
 import uuid
 
-from horilla.horilla_settings import DYNAMIC_URL_PATTERNS, HORILLA_DATE_FORMATS
+from horilla.horilla_settings import (
+    DYNAMIC_URL_PATTERNS,
+    HORILLA_DATE_FORMATS,
+    HORILLA_TIME_FORMATS,
+)
 from horilla.http import HorillaRedirect
 from horilla.methods import remove_dynamic_url
 
@@ -31,12 +35,19 @@ from urllib.parse import parse_qs
 
 import pandas as pd
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.core.paginator import Paginator
 from django.core.validators import validate_ipv46_address
 from django.db import transaction
 from django.db.models import ProtectedError, Q
 from django.forms import ValidationError
-from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.http import (
+    FileResponse,
+    HttpResponse,
+    HttpResponseBadRequest,
+    JsonResponse,
+    QueryDict,
+)
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -71,6 +82,12 @@ from attendance.forms import (
     GraceTimeForm,
     LateComeEarlyOutExportForm,
     NewRequestForm,
+)
+from attendance.export_jobs import (
+    create_export_job,
+    file_path as export_job_file_path,
+    read_job_status,
+    start_export_job,
 )
 from attendance.methods.utils import (
     Request,
@@ -129,6 +146,7 @@ from base.models import (
 from employee.filters import EmployeeFilter
 from employee.models import Employee, EmployeeWorkInformation
 from leave.models import LeaveRequest
+from horilla.horilla_middlewares import _thread_locals
 from horilla.decorators import (
     hx_request_required,
     install_required,
@@ -1176,6 +1194,39 @@ ATTENDANCE_ACTIVITY_EXPORT_VALUE_MAP = {
 }
 
 
+def _attendance_activity_export_formatter(employee):
+    time_format = "HH:mm"
+    date_format = "MMM. D, YYYY"
+    if not getattr(employee, "pk", None):
+        return None
+
+    work_info = (
+        EmployeeWorkInformation.objects.filter(employee_id=employee)
+        .select_related("company_id")
+        .first()
+    )
+    if work_info and work_info.company_id:
+        time_format = work_info.company_id.time_format or time_format
+        date_format = work_info.company_id.date_format or date_format
+
+    def formatter(value):
+        if isinstance(value, time):
+            check_time = datetime.strptime(
+                str(value).split(".")[0], "%H:%M:%S"
+            ).time()
+            return check_time.strftime(HORILLA_TIME_FORMATS.get(time_format, "%H:%M"))
+        if type(value) == date:
+            check_date = datetime.strptime(str(value), "%Y-%m-%d").date()
+            return check_date.strftime(
+                HORILLA_DATE_FORMATS.get(date_format, "%b. %d, %Y")
+            )
+        if isinstance(value, datetime):
+            return str(value)
+        return value
+
+    return formatter
+
+
 def _attendance_activity_export_image_url(image):
     if not image:
         return ""
@@ -1206,7 +1257,7 @@ def _attendance_activity_export_images(segments):
     )
 
 
-def _format_attendance_activity_export_value(value, employee):
+def _format_attendance_activity_export_value(value, employee, formatter=None):
     if callable(value):
         with contextlib.suppress(TypeError):
             value = value()
@@ -1218,7 +1269,7 @@ def _format_attendance_activity_export_value(value, employee):
         value = ATTENDANCE_ACTIVITY_EXPORT_VALUE_MAP[value]
     if value is None or value == "None":
         return ""
-    value = format_export_value(value, employee)
+    value = formatter(value) if formatter else format_export_value(value, employee)
     return "" if value is None else value
 
 
@@ -1241,13 +1292,15 @@ def _strip_time_seconds_str(val):
     return f"{parts[0]}:{parts[1]}"
 
 
-def _attendance_activity_export_times(segments, field_name, employee):
+def _attendance_activity_export_times(segments, field_name, employee, formatter=None):
     return "; ".join(
         str(_strip_time_seconds_str(formatted_time))
         for segment in segments
         if (
             formatted_time := _format_attendance_activity_export_value(
-                _drop_time_seconds(getattr(segment, field_name, None)), employee
+                _drop_time_seconds(getattr(segment, field_name, None)),
+                employee,
+                formatter,
             )
         )
     )
@@ -1261,26 +1314,38 @@ def _attendance_activity_export_locations(segments, field_name):
     )
 
 
-def _attendance_activity_daily_export_value(row, field_name, employee):
+def _attendance_activity_daily_export_value(row, field_name, employee, formatter=None):
     if not row:
         return ""
 
     if field_name == "daily_clock_in":
         return _strip_time_seconds_str(_format_attendance_activity_export_value(
-            _drop_time_seconds(row.work_in.clock_in if row.work_in else None), employee
+            _drop_time_seconds(row.work_in.clock_in if row.work_in else None),
+            employee,
+            formatter,
         ))
     if field_name == "daily_clock_out":
         return _strip_time_seconds_str(_format_attendance_activity_export_value(
-            _drop_time_seconds(row.work_out.clock_out if row.work_out else None), employee
+            _drop_time_seconds(row.work_out.clock_out if row.work_out else None),
+            employee,
+            formatter,
         ))
     if field_name == "daily_break_in":
-        return _attendance_activity_export_times(row.break_segments, "clock_in", employee)
+        return _attendance_activity_export_times(
+            row.break_segments, "clock_in", employee, formatter
+        )
     if field_name == "daily_break_out":
-        return _attendance_activity_export_times(row.break_segments, "clock_out", employee)
+        return _attendance_activity_export_times(
+            row.break_segments, "clock_out", employee, formatter
+        )
     if field_name == "daily_lunch_in":
-        return _attendance_activity_export_times(row.lunch_segments, "clock_in", employee)
+        return _attendance_activity_export_times(
+            row.lunch_segments, "clock_in", employee, formatter
+        )
     if field_name == "daily_lunch_out":
-        return _attendance_activity_export_times(row.lunch_segments, "clock_out", employee)
+        return _attendance_activity_export_times(
+            row.lunch_segments, "clock_out", employee, formatter
+        )
     if field_name == "daily_clock_in_location":
         return row.work_in.clock_in_location if row.work_in else ""
     if field_name == "daily_clock_out_location":
@@ -1327,14 +1392,14 @@ def _attendance_activity_daily_export_value(row, field_name, employee):
         if not schedule or not schedule.start_time:
             return ""
         return _strip_time_seconds_str(_format_attendance_activity_export_value(
-            _drop_time_seconds(schedule.start_time), employee
+            _drop_time_seconds(schedule.start_time), employee, formatter
         ))
     if field_name == "daily_shift_end":
         schedule = getattr(row, "schedule", None)
         if not schedule or not schedule.end_time:
             return ""
         return _strip_time_seconds_str(_format_attendance_activity_export_value(
-            _drop_time_seconds(schedule.end_time), employee
+            _drop_time_seconds(schedule.end_time), employee, formatter
         ))
     if field_name == "daily_shift_day":
         shift_day = row.shift_day
@@ -1346,23 +1411,29 @@ def _attendance_activity_daily_export_value(row, field_name, employee):
         return day_name.title() if day_name else ""
     if field_name == "daily_late_come":
         return _format_attendance_activity_export_value(
-            row.late_come_duration, employee
+            row.late_come_duration, employee, formatter
         )
     if field_name == "daily_early_out":
         value = _format_attendance_activity_export_value(
-            row.early_out_duration, employee
+            row.early_out_duration, employee, formatter
         )
         if not value and getattr(row, "is_leave_only", False):
             return ""
         return value or "00:00"
     if field_name == "daily_work_hours":
-        return _format_attendance_activity_export_value(row.work_hours, employee)
+        return _format_attendance_activity_export_value(
+            row.work_hours, employee, formatter
+        )
     if field_name == "daily_break_hours":
-        return _format_attendance_activity_export_value(row.break_hours, employee)
+        return _format_attendance_activity_export_value(
+            row.break_hours, employee, formatter
+        )
     if field_name == "daily_lunch_hours":
-        return _format_attendance_activity_export_value(row.lunch_hours, employee)
+        return _format_attendance_activity_export_value(
+            row.lunch_hours, employee, formatter
+        )
     if field_name == "daily_overtime":
-        return _format_attendance_activity_export_value(row.overtime, employee)
+        return _format_attendance_activity_export_value(row.overtime, employee, formatter)
     if field_name == "daily_leave":
         return row.leave or ""
     if field_name == "daily_leave_type":
@@ -1376,9 +1447,11 @@ def _attendance_activity_daily_export_value(row, field_name, employee):
     return ""
 
 
-def _attendance_activity_export_row_value(row, field_name, employee):
+def _attendance_activity_export_row_value(row, field_name, employee, formatter=None):
     if field_name in ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS:
-        return _attendance_activity_daily_export_value(row, field_name, employee)
+        return _attendance_activity_daily_export_value(
+            row, field_name, employee, formatter
+        )
 
     work_info = getattr(row.employee, "employee_work_info", None)
     row_values = {
@@ -1399,7 +1472,29 @@ def _attendance_activity_export_row_value(row, field_name, employee):
         "attendance_date": row.attendance_date,
     }
     value = row_values.get(field_name)
-    return _format_attendance_activity_export_value(value, employee)
+    return _format_attendance_activity_export_value(value, employee, formatter)
+
+
+ATTENDANCE_ACTIVITY_EXPORT_RELATED_FIELDS = (
+    "employee_id",
+    "employee_id__employee_work_info",
+    "employee_id__employee_work_info__business_unit_id",
+    "employee_id__employee_work_info__branch_id",
+    "employee_id__employee_work_info__department_id",
+    "employee_id__employee_work_info__payroll_group_id",
+    "employee_id__employee_work_info__shift_id",
+    "employee_id__employee_work_info__work_type_id",
+    "shift_day",
+)
+
+
+def _attendance_activity_export_queryset(queryset):
+    queryset = queryset.select_related(*ATTENDANCE_ACTIVITY_EXPORT_RELATED_FIELDS)
+    if hasattr(queryset, "order_by"):
+        queryset = queryset.order_by(
+            "employee_id", "attendance_date", "clock_in_date", "clock_in", "id"
+        )
+    return queryset
 
 
 def _attendance_activity_export_daily_rows(activities):
@@ -1413,9 +1508,11 @@ def _attendance_activity_export_daily_rows(activities):
 
     employee_ids = {employee_id for employee_id, _ in row_keys}
     attendance_dates = {attendance_date for _, attendance_date in row_keys}
-    daily_activities = AttendanceActivity.objects.filter(
-        employee_id_id__in=employee_ids,
-        attendance_date__in=attendance_dates,
+    daily_activities = _attendance_activity_export_queryset(
+        AttendanceActivity.objects.filter(
+            employee_id_id__in=employee_ids,
+            attendance_date__in=attendance_dates,
+        )
     )
     rows = build_daily_activity_rows(daily_activities)
     filtered_rows = [
@@ -1509,33 +1606,35 @@ def _attendance_activity_export_columns(form, selected_fields):
     ]
 
 
-def _attendance_activity_export_data_from_rows(daily_rows, selected_columns, employee):
+def _attendance_activity_export_data_from_rows(
+    daily_rows, selected_columns, employee, progress=None, progress_start=20, progress_end=70
+):
     data_export = {verbose_name: [] for _, verbose_name in selected_columns}
+    formatter = _attendance_activity_export_formatter(employee)
+    total_rows = len(daily_rows) or 1
 
-    for field_name, verbose_name in selected_columns:
-        for row in daily_rows:
+    for index, row in enumerate(daily_rows, start=1):
+        for field_name, verbose_name in selected_columns:
             data_export[verbose_name].append(
-                _attendance_activity_export_row_value(row, field_name, employee)
+                _attendance_activity_export_row_value(row, field_name, employee, formatter)
+            )
+        if progress and (index == total_rows or index % 100 == 0):
+            span = progress_end - progress_start
+            progress(
+                progress_start + int((index / total_rows) * span),
+                _("Preparing rows"),
             )
 
     return data_export
 
 
-def _attendance_activity_export_data(export_objects, selected_columns, employee):
-    activities = list(
-        export_objects.select_related(
-            "employee_id",
-            "employee_id__employee_work_info",
-            "employee_id__employee_work_info__business_unit_id",
-            "employee_id__employee_work_info__branch_id",
-            "employee_id__employee_work_info__department_id",
-            "employee_id__employee_work_info__payroll_group_id",
-            "shift_day",
-        )
-    )
+def _attendance_activity_export_data(export_objects, selected_columns, employee, progress=None):
+    activities = list(_attendance_activity_export_queryset(export_objects))
+    if progress:
+        progress(20, _("Building daily rows"))
     daily_rows = _attendance_activity_export_daily_rows(activities)
     return _attendance_activity_export_data_from_rows(
-        daily_rows, selected_columns, employee
+        daily_rows, selected_columns, employee, progress
     )
 
 
@@ -1606,7 +1705,30 @@ def get_current_cut_off_dates(group):
     return None, None
 
 
-def export_attendance_activity_data(request):
+def _export_request_from_data(user, data, session=None):
+    query = QueryDict("", mutable=True)
+    for key, value in data.items():
+        if isinstance(value, (list, tuple)):
+            query.setlist(key, [str(item) for item in value])
+        else:
+            query[key] = "" if value is None else str(value)
+    return SimpleNamespace(GET=query, user=user, META={}, session=session or {})
+
+
+def _attendance_activity_export_filename():
+    today_date = date.today().strftime("%Y-%m-%d")
+    return f"Attendance_activity_{today_date}.xlsx"
+
+
+def _write_plain_export_frame(writer, data_frame, sheet_name):
+    data_frame.to_excel(writer, index=False, sheet_name=sheet_name)
+    worksheet = writer.sheets[sheet_name]
+    centered = writer.book.add_format({"align": "center", "valign": "vcenter"})
+    worksheet.set_column("A:Z", 18, centered)
+    return worksheet
+
+
+def _write_attendance_activity_export_workbook(request, output, progress=None):
     employee = request.user.employee_get
     form = AttendanceActivityExportForm()
     selected_fields = request.GET.getlist("selected_fields")
@@ -1636,35 +1758,35 @@ def export_attendance_activity_data(request):
 
     selected_columns = _attendance_activity_export_columns(form, selected_fields)
     data_export = _attendance_activity_export_data(
-        export_objects, selected_columns, employee
+        export_objects, selected_columns, employee, progress
     )
+    if progress:
+        progress(75, _("Writing workbook"))
     data_frame = pd.DataFrame(data=data_export)
     data_frame, total_ranges = _insert_export_formula_total_rows(
         data_frame, selected_columns
     )
-    styled_data_frame = data_frame.style.map(
-        lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
-    )
 
-    today_date = date.today().strftime("%Y-%m-%d")
-    response = HttpResponse(
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    response[
-        "Content-Disposition"
-    ] = f'attachment; filename="Attendance_activity_{today_date}.xlsx"'
-
-    writer = pd.ExcelWriter(response, engine="xlsxwriter")
-    styled_data_frame.to_excel(writer, index=False, sheet_name="Sheet1")
-    worksheet = writer.sheets["Sheet1"]
+    writer = pd.ExcelWriter(output, engine="xlsxwriter")
+    worksheet = _write_plain_export_frame(writer, data_frame, "Sheet1")
     _write_export_row_formulas(
         writer.book, worksheet, data_frame, selected_columns, total_ranges
     )
     _write_export_total_formulas(
         writer.book, worksheet, data_frame, selected_columns, total_ranges
     )
-    worksheet.set_column("A:Z", 18)
     writer.close()
+    if progress:
+        progress(95, _("Finalizing export"))
+
+
+def export_attendance_activity_data(request):
+    file_name = _attendance_activity_export_filename()
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{file_name}"'
+    _write_attendance_activity_export_workbook(request, response)
     return response
 
 
@@ -2030,6 +2152,153 @@ def _write_export_total_formulas(
                     worksheet.write_formula(total_xlsx_row, col_idx, formula, centered)
 
 
+def _payroll_group_export_filename():
+    today_date = date.today().strftime("%Y-%m-%d")
+    return f"Attendance_by_PayrollGroup_{today_date}.xlsx"
+
+
+def _payroll_group_export_selected_columns():
+    form = AttendanceActivityExportForm()
+    excluded_fields = {
+        "daily_clock_in_location",
+        "daily_clock_out_location",
+        "daily_break_in_location",
+        "daily_break_out_location",
+        "daily_lunch_in_location",
+        "daily_lunch_out_location",
+        "daily_clock_image",
+        "daily_break_image",
+        "daily_lunch_image",
+        "daily_leave",
+    }
+    selected_fields = [
+        field for field in form.fields["selected_fields"].initial if field not in excluded_fields
+    ]
+    return _attendance_activity_export_columns(form, selected_fields)
+
+
+def _payroll_group_export_selections(request):
+    try:
+        selections = json.loads(request.GET.get("selections", "[]"))
+    except (ValueError, TypeError):
+        return []
+    return selections if isinstance(selections, list) else []
+
+
+def _payroll_group_accessible_employees(request, group):
+    group_employees = Employee.objects.filter(
+        employee_work_info__payroll_group_id=group
+    ).select_related(
+        "employee_work_info",
+        "employee_work_info__business_unit_id",
+        "employee_work_info__branch_id",
+        "employee_work_info__department_id",
+        "employee_work_info__payroll_group_id",
+        "employee_work_info__shift_id",
+        "employee_work_info__work_type_id",
+    )
+    self_employees = group_employees.filter(employee_user_id=request.user)
+    group_employees = filtersubordinatesemployeemodel(
+        request, group_employees, "attendance.view_attendanceovertime"
+    )
+    return (group_employees | self_employees).distinct().order_by("employee_no", "id")
+
+
+def _payroll_group_export_sheet_name(group_name, used_names):
+    base = str(group_name or _("Payroll Group"))[:31]
+    n = used_names.get(base, 0) + 1
+    used_names[base] = n
+    return base if n == 1 else f"{base[:28]} ({n})"
+
+
+def _write_attendance_payroll_group_export_workbook(request, output, progress=None):
+    selections = _payroll_group_export_selections(request)
+    if not selections:
+        raise ValueError("No groups selected")
+
+    employee = request.user.employee_get
+    selected_columns = _payroll_group_export_selected_columns()
+    group_ids = [sel.get("id") for sel in selections if sel.get("id")]
+    groups_by_id = {
+        group.id: group for group in PayrollGroup.objects.filter(id__in=group_ids)
+    }
+
+    writer = pd.ExcelWriter(output, engine="xlsxwriter")
+    used_names = {}
+    sheets_written = 0
+    total = len(selections) or 1
+
+    for index, sel in enumerate(selections, start=1):
+        group = groups_by_id.get(sel.get("id"))
+        if not group or not sel.get("dateFrom") or not sel.get("dateTo"):
+            continue
+        try:
+            date_from = datetime.strptime(sel["dateFrom"], "%Y-%m-%d").date()
+            date_to = datetime.strptime(sel["dateTo"], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        if date_from > date_to:
+            continue
+
+        group_start = 5 + int(((index - 1) / total) * 85)
+        group_end = 5 + int((index / total) * 85)
+        if progress:
+            progress(group_start, _("Loading payroll group"))
+
+        group_employees = _payroll_group_accessible_employees(request, group)
+        employee_ids = list(group_employees.values_list("id", flat=True))
+        activities = AttendanceActivity.objects.filter(
+            employee_id__in=employee_ids,
+            attendance_date__gte=date_from,
+            attendance_date__lte=date_to,
+        ).select_related(
+            *ATTENDANCE_ACTIVITY_EXPORT_RELATED_FIELDS
+        ).order_by(
+            "employee_id", "attendance_date", "clock_in_date", "clock_in", "id"
+        )
+
+        if progress:
+            progress(group_start + 3, _("Building daily rows"))
+        daily_rows = _attendance_activity_payroll_group_daily_rows(
+            activities, group_employees, date_from, date_to
+        )
+        data_export = _attendance_activity_export_data_from_rows(
+            daily_rows,
+            selected_columns,
+            employee,
+            progress,
+            group_start + 5,
+            max(group_start + 6, group_end - 8),
+        )
+        df = pd.DataFrame(data=data_export)
+        emp_no_col = str(_("Employee No."))
+        date_col = str(_("Attendance Date"))
+        sort_cols = [col for col in [emp_no_col, date_col] if col in df.columns]
+        if sort_cols:
+            df = df.sort_values(
+                by=sort_cols, ascending=[True for _ in sort_cols]
+            ).reset_index(drop=True)
+        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
+
+        sheet_name = _payroll_group_export_sheet_name(group.name, used_names)
+        worksheet = _write_plain_export_frame(writer, df, sheet_name)
+        _write_export_row_formulas(
+            writer.book, worksheet, df, selected_columns, total_ranges
+        )
+        _write_export_total_formulas(
+            writer.book, worksheet, df, selected_columns, total_ranges
+        )
+        sheets_written += 1
+        if progress:
+            progress(group_end, _("Writing workbook"))
+
+    if not sheets_written:
+        _write_plain_export_frame(writer, pd.DataFrame({"Message": ["No data"]}), "Sheet1")
+    writer.close()
+    if progress:
+        progress(95, _("Finalizing export"))
+
+
 @login_required
 @permission_required("attendance.change_attendanceactivity")
 def export_attendance_by_payroll_group(request):
@@ -2057,118 +2326,104 @@ def export_attendance_by_payroll_group(request):
             {"payroll_groups": payroll_groups, "groups_json": groups_json},
         )
 
-    # Generate multi-sheet XLSX from the selections JSON submitted by the modal
-    import json as _json
-
-    try:
-        selections = _json.loads(request.GET.get("selections", "[]"))
-    except (ValueError, TypeError):
-        selections = []
-
-    if not selections:
+    if not _payroll_group_export_selections(request):
         return HttpResponse("No groups selected", status=400)
 
-    employee = request.user.employee_get
-    form = AttendanceActivityExportForm()
-    _exclude = {
-        "daily_clock_in_location", "daily_clock_out_location",
-        "daily_break_in_location", "daily_break_out_location",
-        "daily_lunch_in_location", "daily_lunch_out_location",
-        "daily_clock_image", "daily_break_image", "daily_lunch_image",
-        "daily_leave",
-    }
-    selected_fields = [f for f in form.fields["selected_fields"].initial if f not in _exclude]
-    selected_columns = _attendance_activity_export_columns(form, selected_fields)
-
-    today_date = date.today().strftime("%Y-%m-%d")
+    file_name = _payroll_group_export_filename()
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    response[
-        "Content-Disposition"
-    ] = f'attachment; filename="Attendance_by_PayrollGroup_{today_date}.xlsx"'
-
-    writer = pd.ExcelWriter(response, engine="xlsxwriter")
-    used_names = {}
-
-    for sel in selections:
-        group = PayrollGroup.objects.filter(id=sel.get("id")).first()
-        if not group or not sel.get("dateFrom") or not sel.get("dateTo"):
-            continue
-        try:
-            date_from = datetime.strptime(sel["dateFrom"], "%Y-%m-%d").date()
-            date_to = datetime.strptime(sel["dateTo"], "%Y-%m-%d").date()
-        except (ValueError, TypeError):
-            continue
-        if date_from > date_to:
-            continue
-
-        group_employees = Employee.objects.filter(
-            employee_work_info__payroll_group_id=group
-        ).select_related(
-            "employee_work_info",
-            "employee_work_info__business_unit_id",
-            "employee_work_info__branch_id",
-            "employee_work_info__department_id",
-            "employee_work_info__payroll_group_id",
-            "employee_work_info__shift_id",
-            "employee_work_info__work_type_id",
-        )
-        self_employees = group_employees.filter(employee_user_id=request.user)
-        group_employees = filtersubordinatesemployeemodel(
-            request, group_employees, "attendance.view_attendanceovertime"
-        )
-        group_employees = (group_employees | self_employees).distinct().order_by(
-            "employee_no", "id"
-        )
-
-        activities = AttendanceActivity.objects.filter(
-            employee_id__employee_work_info__payroll_group_id=group,
-            employee_id__in=group_employees,
-            attendance_date__gte=date_from,
-            attendance_date__lte=date_to,
-        )
-        self_activities = activities.filter(employee_id__employee_user_id=request.user)
-        activities = filtersubordinates(
-            request, activities, "attendance.view_attendanceovertime"
-        )
-        activities = (activities | self_activities).distinct()
-
-        daily_rows = _attendance_activity_payroll_group_daily_rows(
-            activities, group_employees, date_from, date_to
-        )
-        data_export = _attendance_activity_export_data_from_rows(
-            daily_rows, selected_columns, employee
-        )
-        df = pd.DataFrame(data=data_export)
-        emp_no_col = str(_("Employee No."))
-        date_col = str(_("Attendance Date"))
-        sort_cols = [c for c in [emp_no_col, date_col] if c in df.columns]
-        if sort_cols:
-            ascending = [True for _ in sort_cols]
-            df = df.sort_values(by=sort_cols, ascending=ascending).reset_index(drop=True)
-        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
-        styled_df = df.style.map(
-            lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
-        )
-
-        base = group.name[:31]
-        n = used_names.get(base, 0) + 1
-        used_names[base] = n
-        sheet_name = base if n == 1 else f"{base[:28]} ({n})"
-
-        styled_df.to_excel(writer, index=False, sheet_name=sheet_name)
-        worksheet = writer.sheets[sheet_name]
-        _write_export_row_formulas(
-            writer.book, worksheet, df, selected_columns, total_ranges
-        )
-        _write_export_total_formulas(
-            writer.book, worksheet, df, selected_columns, total_ranges
-        )
-        worksheet.set_column("A:Z", 18)
-
-    writer.close()
+    response["Content-Disposition"] = f'attachment; filename="{file_name}"'
+    _write_attendance_payroll_group_export_workbook(request, response)
     return response
+
+
+def _export_post_data(request):
+    return {
+        key: request.POST.getlist(key)
+        if len(request.POST.getlist(key)) > 1
+        else request.POST.get(key)
+        for key in request.POST
+    }
+
+
+def _start_attendance_export_job(request, filename, writer):
+    user_id = request.user.id
+    data = _export_post_data(request)
+    session = {"selected_company": request.session.get("selected_company")}
+    job_id = create_export_job(user_id, filename)
+
+    def worker(output_path, progress):
+        user = get_user_model().objects.get(pk=user_id)
+        export_request = _export_request_from_data(user, data, session)
+        previous_request = getattr(_thread_locals, "request", None)
+        _thread_locals.request = export_request
+        try:
+            writer(export_request, output_path, progress)
+        finally:
+            _thread_locals.request = previous_request
+
+    start_export_job(job_id, worker)
+    return JsonResponse({"job_id": job_id})
+
+
+@login_required
+@permission_required("attendance.change_attendanceactivity")
+@require_http_methods(["POST"])
+def start_attendance_activity_export(request):
+    return _start_attendance_export_job(
+        request,
+        _attendance_activity_export_filename(),
+        _write_attendance_activity_export_workbook,
+    )
+
+
+@login_required
+@permission_required("attendance.change_attendanceactivity")
+@require_http_methods(["POST"])
+def start_attendance_payroll_group_export(request):
+    if not request.POST.get("selections"):
+        return JsonResponse({"error": "No groups selected"}, status=400)
+    return _start_attendance_export_job(
+        request,
+        _payroll_group_export_filename(),
+        _write_attendance_payroll_group_export_workbook,
+    )
+
+
+@login_required
+def attendance_export_progress(request, job_id):
+    status = read_job_status(job_id)
+    if not status or status.get("user_id") != request.user.id:
+        return JsonResponse({"error": "Export job not found"}, status=404)
+    return JsonResponse(
+        {
+            "status": status.get("status"),
+            "percent": status.get("percent", 0),
+            "message": status.get("message", ""),
+            "filename": status.get("filename", ""),
+            "error": status.get("error", ""),
+        }
+    )
+
+
+@login_required
+def attendance_export_download(request, job_id):
+    status = read_job_status(job_id)
+    if not status or status.get("user_id") != request.user.id:
+        return HttpResponse("Export job not found", status=404)
+    if status.get("status") != "complete":
+        return HttpResponse("Export is not ready", status=409)
+
+    path = export_job_file_path(job_id)
+    if not path.exists():
+        return HttpResponse("Export file not found", status=404)
+
+    return FileResponse(
+        path.open("rb"),
+        as_attachment=True,
+        filename=status.get("filename") or f"{job_id}.xlsx",
+    )
 
 
 def _daily_row_group_value(row, field):

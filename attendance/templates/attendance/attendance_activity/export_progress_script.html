@@ -1,0 +1,111 @@
+{% load i18n %}
+<script>
+(function () {
+    if (window.attendanceExportJobSubmit) return;
+
+    function progressModal() {
+        var modal = document.getElementById("attendance-export-progress-modal");
+        if (modal) return modal;
+
+        modal = document.createElement("div");
+        modal.id = "attendance-export-progress-modal";
+        modal.className = "oh-modal";
+        modal.innerHTML = `
+            <div class="oh-modal__dialog" style="max-width:420px;">
+                <div class="oh-modal__dialog-header pb-0">
+                    <span class="oh-modal__dialog-title" id="attendance-export-progress-title">{% trans "Exporting" %}</span>
+                </div>
+                <div class="oh-modal__dialog-body">
+                    <div class="mt-2 mb-2" style="height:10px; background:#eef0f4; border-radius:6px; overflow:hidden;">
+                        <div id="attendance-export-progress-bar" style="height:10px; width:0%; background:#27a376; transition:width .25s ease;"></div>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <span class="oh-label mb-0" id="attendance-export-progress-message">{% trans "Preparing export" %}</span>
+                        <strong id="attendance-export-progress-percent">0%</strong>
+                    </div>
+                    <div class="oh-modal__dialog-footer p-0 pt-3" id="attendance-export-progress-actions" style="display:none;">
+                        <button type="button" class="oh-btn oh-btn--secondary oh-btn--shadow" id="attendance-export-progress-close">
+                            {% trans "Close" %}
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+        modal.querySelector("#attendance-export-progress-close").addEventListener("click", function () {
+            modal.classList.remove("oh-modal--show");
+        });
+        return modal;
+    }
+
+    function setProgress(modal, percent, message, failed) {
+        percent = Math.max(0, Math.min(100, parseInt(percent || 0, 10)));
+        modal.querySelector("#attendance-export-progress-bar").style.width = percent + "%";
+        modal.querySelector("#attendance-export-progress-percent").textContent = percent + "%";
+        modal.querySelector("#attendance-export-progress-message").textContent = message || "{% trans 'Preparing export' %}";
+        modal.querySelector("#attendance-export-progress-bar").style.background = failed ? "#d33" : "#27a376";
+        modal.querySelector("#attendance-export-progress-actions").style.display = failed ? "block" : "none";
+    }
+
+    function closeOpenModal(form) {
+        var modal = form.closest(".oh-modal--show");
+        if (modal) modal.classList.remove("oh-modal--show");
+    }
+
+    window.attendanceExportJobSubmit = function (event, form) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        var startUrl = form.getAttribute("data-export-start-url");
+        var progressUrl = form.getAttribute("data-export-progress-url");
+        var downloadUrl = form.getAttribute("data-export-download-url");
+        var title = form.getAttribute("data-export-title") || "{% trans 'Exporting' %}";
+        var modal = progressModal();
+        modal.querySelector("#attendance-export-progress-title").textContent = title;
+        modal.querySelector("#attendance-export-progress-actions").style.display = "none";
+        modal.classList.add("oh-modal--show");
+        setProgress(modal, 1, "{% trans 'Queued' %}");
+        closeOpenModal(form);
+
+        fetch(startUrl, {
+            method: "POST",
+            body: new FormData(form),
+            headers: {"X-Requested-With": "XMLHttpRequest"}
+        })
+        .then(function (response) {
+            if (!response.ok) throw new Error("{% trans 'Unable to start export.' %}");
+            return response.json();
+        })
+        .then(function (payload) {
+            var jobId = payload.job_id;
+            var pollUrl = progressUrl.replace("JOB_ID", jobId);
+            var fileUrl = downloadUrl.replace("JOB_ID", jobId);
+            var timer = setInterval(function () {
+                fetch(pollUrl, {headers: {"X-Requested-With": "XMLHttpRequest"}})
+                    .then(function (response) { return response.json(); })
+                    .then(function (status) {
+                        setProgress(modal, status.percent, status.message, status.status === "failed");
+                        if (status.status === "complete") {
+                            clearInterval(timer);
+                            setProgress(modal, 100, "{% trans 'Download starting' %}");
+                            window.location.href = fileUrl;
+                            setTimeout(function () {
+                                modal.classList.remove("oh-modal--show");
+                            }, 1200);
+                        } else if (status.status === "failed") {
+                            clearInterval(timer);
+                            setProgress(modal, 100, status.message || "{% trans 'Export failed' %}", true);
+                        }
+                    })
+                    .catch(function () {
+                        clearInterval(timer);
+                        setProgress(modal, 100, "{% trans 'Unable to read export progress.' %}", true);
+                    });
+            }, 1000);
+        })
+        .catch(function (error) {
+            setProgress(modal, 100, error.message, true);
+        });
+        return false;
+    };
+})();
+</script>
