@@ -45,6 +45,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext as __
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
+from xlsxwriter.utility import xl_col_to_name
 
 from attendance.filters import (
     AttendanceActivityFilter,
@@ -1348,9 +1349,12 @@ def _attendance_activity_daily_export_value(row, field_name, employee):
             row.late_come_duration, employee
         )
     if field_name == "daily_early_out":
-        return _format_attendance_activity_export_value(
+        value = _format_attendance_activity_export_value(
             row.early_out_duration, employee
         )
+        if not value and getattr(row, "is_leave_only", False):
+            return ""
+        return value or "00:00"
     if field_name == "daily_work_hours":
         return _format_attendance_activity_export_value(row.work_hours, employee)
     if field_name == "daily_break_hours":
@@ -1428,12 +1432,93 @@ def _attendance_activity_export_daily_rows(activities):
     return filtered_rows
 
 
+def _payroll_group_empty_daily_row(employee, attendance_date):
+    work_info = getattr(employee, "employee_work_info", None)
+    return SimpleNamespace(
+        employee=employee,
+        attendance_date=attendance_date,
+        attendance_date_iso=attendance_date.isoformat() if attendance_date else "",
+        shift_day=attendance_date.strftime("%A").lower() if attendance_date else None,
+        attendance=None,
+        activity_ids=[],
+        activity_ids_json="[]",
+        detail_activity_id=None,
+        row_key=f"payroll-empty-{employee.id}-{attendance_date.isoformat()}",
+        work_segments=[],
+        break_segments=[],
+        lunch_segments=[],
+        work_in=None,
+        work_out=None,
+        has_work_images=False,
+        shift=getattr(work_info, "shift_id", None),
+        schedule=None,
+        work_type=getattr(work_info, "work_type_id", None),
+        min_hour="00:00",
+        late_come_duration="00:00",
+        early_out_duration="00:00",
+        work_hours="00:00",
+        break_hours="00:00",
+        lunch_hours="00:00",
+        pending_hour="00:00",
+        overtime="00:00",
+        leave=None,
+        leave_type=None,
+        leave_days=None,
+        is_leave_only=False,
+        holiday=None,
+    )
+
+
+def _date_range_inclusive(date_from, date_to):
+    current = date_from
+    while current <= date_to:
+        yield current
+        current += timedelta(days=1)
+
+
+def _attendance_activity_payroll_group_daily_rows(
+    activities, employees, date_from, date_to
+):
+    daily_rows = _attendance_activity_export_daily_rows(activities)
+    rows_by_key = {
+        (getattr(row.employee, "id", None), row.attendance_date): row
+        for row in daily_rows
+    }
+    complete_rows = []
+    for employee in employees:
+        for attendance_date in _date_range_inclusive(date_from, date_to):
+            key = (employee.id, attendance_date)
+            complete_rows.append(
+                rows_by_key.get(key)
+                or _payroll_group_empty_daily_row(employee, attendance_date)
+            )
+    complete_rows.sort(
+        key=lambda row: (
+            getattr(row.employee, "employee_no", None) or "",
+            row.attendance_date or date.min,
+        )
+    )
+    return complete_rows
+
+
 def _attendance_activity_export_columns(form, selected_fields):
     return [
         (field_name, verbose_name)
         for field_name, verbose_name in form.fields["selected_fields"].choices
         if field_name in selected_fields
     ]
+
+
+def _attendance_activity_export_data_from_rows(daily_rows, selected_columns, employee):
+    data_export = {verbose_name: [] for _, verbose_name in selected_columns}
+
+    for field_name, verbose_name in selected_columns:
+        for row in daily_rows:
+            data_export[verbose_name].append(
+                _attendance_activity_export_row_value(row, field_name, employee)
+            )
+
+    return data_export
 
 
 def _attendance_activity_export_data(export_objects, selected_columns, employee):
@@ -1449,15 +1534,9 @@ def _attendance_activity_export_data(export_objects, selected_columns, employee)
         )
     )
     daily_rows = _attendance_activity_export_daily_rows(activities)
-    data_export = {verbose_name: [] for _, verbose_name in selected_columns}
-
-    for field_name, verbose_name in selected_columns:
-        for row in daily_rows:
-            data_export[verbose_name].append(
-                _attendance_activity_export_row_value(row, field_name, employee)
-            )
-
-    return data_export
+    return _attendance_activity_export_data_from_rows(
+        daily_rows, selected_columns, employee
+    )
 
 
 def _get_payroll_period_dates(start_day, end_day):
@@ -1560,7 +1639,9 @@ def export_attendance_activity_data(request):
         export_objects, selected_columns, employee
     )
     data_frame = pd.DataFrame(data=data_export)
-    data_frame = _add_export_totals_per_employee(data_frame, selected_columns)
+    data_frame, total_ranges = _insert_export_formula_total_rows(
+        data_frame, selected_columns
+    )
     styled_data_frame = data_frame.style.map(
         lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
     )
@@ -1576,67 +1657,47 @@ def export_attendance_activity_data(request):
     writer = pd.ExcelWriter(response, engine="xlsxwriter")
     styled_data_frame.to_excel(writer, index=False, sheet_name="Sheet1")
     worksheet = writer.sheets["Sheet1"]
+    _write_export_row_formulas(
+        writer.book, worksheet, data_frame, selected_columns, total_ranges
+    )
+    _write_export_total_formulas(
+        writer.book, worksheet, data_frame, selected_columns, total_ranges
+    )
     worksheet.set_column("A:Z", 18)
     writer.close()
     return response
 
 
-def _parse_hhmm_to_minutes(val):
-    """Parse 'HH:MM' string to total integer minutes. Returns 0 for empty/invalid."""
-    if not val or not isinstance(val, str):
-        return 0
-    parts = val.strip().split(":")
-    if len(parts) != 2:
-        return 0
-    try:
-        return int(parts[0]) * 60 + int(parts[1])
-    except (ValueError, TypeError):
-        return 0
+EXPORT_TOTAL_MINUTE_FIELDS = {
+    "daily_late_come",
+    "daily_early_out",
+    "daily_overtime",
+    "daily_break_hours",
+    "daily_lunch_hours",
+}
+EXPORT_TOTAL_HOUR_FIELDS = {"daily_work_hours"}
+EXPORT_TOTAL_NUMERIC_FIELDS = {"daily_leave_days"}
+EXPORT_ROW_FORMULA_FIELDS = (
+    "daily_late_come",
+    "daily_early_out",
+    "daily_work_hours",
+    "daily_break_hours",
+    "daily_lunch_hours",
+    "daily_overtime",
+)
 
 
-def _build_totals_row(group_df, selected_columns):
-    """Build a single totals dict for a slice of the dataframe."""
-    MINUTE_FIELDS = {
-        "daily_late_come",
-        "daily_early_out",
-        "daily_overtime",
-        "daily_break_hours",
-        "daily_lunch_hours",
-    }
-    HOUR_FIELDS = {"daily_work_hours"}
-    NUMERIC_FIELDS = {"daily_leave_days"}
-
-    def _parse_numeric(val):
-        try:
-            return float(val)
-        except (TypeError, ValueError):
-            return 0.0
-
-    totals_row = {}
-    first = True
-    for field_name, verbose_name in selected_columns:
-        col = str(verbose_name)
-        if first:
-            totals_row[col] = str(_("Total"))
-            first = False
-        elif field_name in MINUTE_FIELDS and col in group_df.columns:
-            total_mins = int(group_df[col].apply(_parse_hhmm_to_minutes).sum())
-            totals_row[col] = f"{total_mins} min"
-        elif field_name in HOUR_FIELDS and col in group_df.columns:
-            total_mins = int(group_df[col].apply(_parse_hhmm_to_minutes).sum())
-            h, m = divmod(total_mins, 60)
-            totals_row[col] = f"{h:02d}:{m:02d} hr"
-        elif field_name in NUMERIC_FIELDS and col in group_df.columns:
-            total = group_df[col].apply(_parse_numeric).sum()
-            totals_row[col] = int(total) if total == int(total) else total
-        else:
-            totals_row[col] = ""
+def _build_blank_export_total_row(selected_columns):
+    totals_row = {str(verbose_name): "" for _, verbose_name in selected_columns}
+    if selected_columns:
+        totals_row[str(selected_columns[0][1])] = str(_("Total"))
     return totals_row
 
 
-def _add_export_totals_per_employee(df, selected_columns):
-    """Append a subtotal row after each employee's block of rows."""
+def _insert_export_formula_total_rows(df, selected_columns):
+    """Append subtotal placeholder rows and record ranges for Excel formulas."""
     df.columns = [str(c) for c in df.columns]
+    total_ranges = []
 
     # Determine the employee identifier column (prefer Employee No., fall back to Employee)
     emp_col = None
@@ -1648,12 +1709,27 @@ def _add_export_totals_per_employee(df, selected_columns):
                 if fn == "employee_number":
                     break
 
+    if not selected_columns:
+        return df, total_ranges
+
     if emp_col is None or df.empty:
-        totals_row = _build_totals_row(df, selected_columns)
-        return pd.concat([df, pd.DataFrame([totals_row])], ignore_index=True)
+        total_df_row = len(df)
+        total_ranges.append(
+            {
+                "start_df_row": 0 if not df.empty else None,
+                "end_df_row": len(df) - 1 if not df.empty else None,
+                "total_df_row": total_df_row,
+            }
+        )
+        totals_row = _build_blank_export_total_row(selected_columns)
+        return (
+            pd.concat([df, pd.DataFrame([totals_row])], ignore_index=True),
+            total_ranges,
+        )
 
     # Group consecutive rows by employee, preserving order
     result_frames = []
+    output_row_count = 0
     prev_emp = None
     group_start = 0
     rows = df[emp_col].tolist()
@@ -1661,15 +1737,297 @@ def _add_export_totals_per_employee(df, selected_columns):
         if i > 0 and emp_val != prev_emp:
             group_df = df.iloc[group_start:i]
             result_frames.append(group_df)
-            result_frames.append(pd.DataFrame([_build_totals_row(group_df, selected_columns)]))
+            output_row_count += len(group_df)
+            total_ranges.append(
+                {
+                    "start_df_row": output_row_count - len(group_df),
+                    "end_df_row": output_row_count - 1,
+                    "total_df_row": output_row_count,
+                }
+            )
+            result_frames.append(
+                pd.DataFrame([_build_blank_export_total_row(selected_columns)])
+            )
+            output_row_count += 1
             group_start = i
         prev_emp = emp_val
     # Last group
     group_df = df.iloc[group_start:]
     result_frames.append(group_df)
-    result_frames.append(pd.DataFrame([_build_totals_row(group_df, selected_columns)]))
+    output_row_count += len(group_df)
+    total_ranges.append(
+        {
+            "start_df_row": output_row_count - len(group_df),
+            "end_df_row": output_row_count - 1,
+            "total_df_row": output_row_count,
+        }
+    )
+    result_frames.append(pd.DataFrame([_build_blank_export_total_row(selected_columns)]))
 
-    return pd.concat(result_frames, ignore_index=True)
+    return pd.concat(result_frames, ignore_index=True), total_ranges
+
+
+def _formula_range_for_df_rows(col_idx, start_df_row, end_df_row):
+    if start_df_row is None or end_df_row is None or start_df_row > end_df_row:
+        return None
+    col_name = xl_col_to_name(col_idx)
+    start_excel_row = start_df_row + 2
+    end_excel_row = end_df_row + 2
+    return f"{col_name}{start_excel_row}:{col_name}{end_excel_row}"
+
+
+def _formula_cell_for_df_row(col_idx, df_row):
+    return f"{xl_col_to_name(col_idx)}{df_row + 2}"
+
+
+def _duration_minutes_formula(cell_range):
+    return (
+        f"SUMPRODUCT(N({cell_range})*1440+"
+        f'IFERROR(VALUE(LEFT({cell_range},FIND(":",{cell_range})-1))*60+'
+        f'VALUE(MID({cell_range},FIND(":",{cell_range})+1,2)),0))'
+    )
+
+
+def _time_value_formula(cell_ref):
+    return f"IF(ISNUMBER({cell_ref}),{cell_ref},TIMEVALUE({cell_ref}))"
+
+
+def _paired_duration_formula(start_ref, end_ref):
+    return (
+        f'IF(OR({start_ref}="",{end_ref}=""),0,'
+        f'SUM(IFERROR(MOD(TIMEVALUE(TRIM(TEXTSPLIT({end_ref},";")))-'
+        f'TIMEVALUE(TRIM(TEXTSPLIT({start_ref},";"))),1),0)))'
+    )
+
+
+def _format_duration_formula(duration_formula):
+    return f'=TEXT(MAX(0,{duration_formula}),"[hh]:mm")'
+
+
+def _selected_column_indexes(df, selected_columns):
+    df_col_indexes = {str(col): idx for idx, col in enumerate(df.columns)}
+    return {
+        field_name: df_col_indexes.get(str(verbose_name))
+        for field_name, verbose_name in selected_columns
+    }
+
+
+def _row_has_leave(df, row_idx, col_indexes):
+    for field_name in ("daily_leave", "daily_leave_type", "daily_leave_days"):
+        col_idx = col_indexes.get(field_name)
+        if col_idx is None:
+            continue
+        value = df.iat[row_idx, col_idx]
+        if value is not None and str(value).strip() and str(value).strip() != "nan":
+            return True
+    return False
+
+
+def _write_formula_cell(worksheet, row, col, formula, cell_format, use_array=False):
+    if use_array:
+        worksheet.write_array_formula(row, col, row, col, formula, cell_format)
+    else:
+        worksheet.write_formula(row, col, formula, cell_format)
+
+
+def _write_export_row_formulas(
+    workbook, worksheet, df, selected_columns, total_ranges
+):
+    """Write Excel formulas for per-day duration columns."""
+    if df.empty:
+        return
+
+    col_indexes = _selected_column_indexes(df, selected_columns)
+    total_df_rows = {total_range["total_df_row"] for total_range in total_ranges}
+    duration_format = workbook.add_format({"align": "center", "valign": "vcenter"})
+
+    def ref(field_name, row_idx):
+        col_idx = col_indexes.get(field_name)
+        if col_idx is None:
+            return None
+        return _formula_cell_for_df_row(col_idx, row_idx)
+
+    def target(field_name):
+        return col_indexes.get(field_name)
+
+    for df_row in range(len(df)):
+        if df_row in total_df_rows or _row_has_leave(df, df_row, col_indexes):
+            continue
+
+        xlsx_row = df_row + 1
+        clock_in = ref("daily_clock_in", df_row)
+        clock_out = ref("daily_clock_out", df_row)
+        shift_start = ref("daily_shift_start", df_row)
+        shift_end = ref("daily_shift_end", df_row)
+        break_in = ref("daily_break_in", df_row)
+        break_out = ref("daily_break_out", df_row)
+        lunch_in = ref("daily_lunch_in", df_row)
+        lunch_out = ref("daily_lunch_out", df_row)
+
+        shift_end_adjusted = None
+        clock_in_adjusted = None
+        clock_out_adjusted = None
+        if shift_start and shift_end:
+            shift_end_adjusted = (
+                f"({_time_value_formula(shift_end)}+"
+                f"IF({_time_value_formula(shift_end)}<{_time_value_formula(shift_start)},1,0))"
+            )
+            if clock_in:
+                clock_in_adjusted = (
+                    f"({_time_value_formula(clock_in)}+"
+                    f"IF(AND({_time_value_formula(shift_end)}<{_time_value_formula(shift_start)},"
+                    f"{_time_value_formula(clock_in)}<{_time_value_formula(shift_start)}),1,0))"
+                )
+            if clock_out:
+                clock_out_adjusted = (
+                    f"({_time_value_formula(clock_out)}+"
+                    f"IF(AND({_time_value_formula(shift_end)}<{_time_value_formula(shift_start)},"
+                    f"{_time_value_formula(clock_out)}<{_time_value_formula(shift_start)}),1,0))"
+                )
+
+        late_col = target("daily_late_come")
+        if late_col is not None and clock_in and shift_start and shift_end:
+            formula = (
+                f'=IF(OR({clock_in}="",{shift_start}="",{shift_end}=""),"00:00",'
+                f'TEXT(MAX(0,{clock_in_adjusted}-{_time_value_formula(shift_start)}),"[hh]:mm"))'
+            )
+            _write_formula_cell(worksheet, xlsx_row, late_col, formula, duration_format)
+
+        early_col = target("daily_early_out")
+        if early_col is not None and clock_out and shift_start and shift_end:
+            formula = (
+                f'=IF(OR({clock_out}="",{shift_start}="",{shift_end}=""),"00:00",'
+                f'TEXT(MAX(0,{shift_end_adjusted}-{clock_out_adjusted}),"[hh]:mm"))'
+            )
+            _write_formula_cell(worksheet, xlsx_row, early_col, formula, duration_format)
+
+        break_duration = "0"
+        if break_in and break_out:
+            break_duration = _paired_duration_formula(break_in, break_out)
+        break_col = target("daily_break_hours")
+        if break_col is not None and break_in and break_out:
+            formula = _format_duration_formula(break_duration)
+            _write_formula_cell(
+                worksheet, xlsx_row, break_col, formula, duration_format, True
+            )
+
+        lunch_duration = "0"
+        if lunch_in and lunch_out:
+            lunch_duration = _paired_duration_formula(lunch_in, lunch_out)
+        lunch_col = target("daily_lunch_hours")
+        if lunch_col is not None and lunch_in and lunch_out:
+            formula = _format_duration_formula(lunch_duration)
+            _write_formula_cell(
+                worksheet, xlsx_row, lunch_col, formula, duration_format, True
+            )
+
+        work_col = target("daily_work_hours")
+        if work_col is not None and clock_in and clock_out:
+            gross_duration = (
+                f'IF(OR({clock_in}="",{clock_out}=""),0,'
+                f"MOD({_time_value_formula(clock_out)}-{_time_value_formula(clock_in)},1))"
+            )
+            formula = _format_duration_formula(
+                f"{gross_duration}-{break_duration}-{lunch_duration}"
+            )
+            _write_formula_cell(
+                worksheet, xlsx_row, work_col, formula, duration_format, True
+            )
+
+        overtime_col = target("daily_overtime")
+        if overtime_col is not None and clock_out and shift_start and shift_end:
+            formula = (
+                f'=IF(OR({clock_out}="",{shift_start}="",{shift_end}=""),"00:00",'
+                f'TEXT(MAX(0,{clock_out_adjusted}-{shift_end_adjusted}),"[hh]:mm"))'
+            )
+            _write_formula_cell(
+                worksheet, xlsx_row, overtime_col, formula, duration_format
+            )
+
+
+def _write_export_total_formulas(
+    workbook, worksheet, df, selected_columns, total_ranges
+):
+    """Write Excel formulas into generated subtotal rows."""
+    if not total_ranges:
+        return
+
+    centered = workbook.add_format({"align": "center", "valign": "vcenter"})
+    hour_total_format = workbook.add_format(
+        {
+            "align": "center",
+            "valign": "vcenter",
+            "num_format": '[hh]:mm "hr"',
+        }
+    )
+    col_indexes = {str(col): idx for idx, col in enumerate(df.columns)}
+
+    for total_range in total_ranges:
+        total_xlsx_row = total_range["total_df_row"] + 1
+        for field_name, verbose_name in selected_columns:
+            col_name = str(verbose_name)
+            col_idx = col_indexes.get(col_name)
+            if col_idx is None:
+                continue
+
+            cell_range = _formula_range_for_df_rows(
+                col_idx,
+                total_range["start_df_row"],
+                total_range["end_df_row"],
+            )
+            if field_name in EXPORT_TOTAL_MINUTE_FIELDS:
+                formula = (
+                    f'={_duration_minutes_formula(cell_range)}&" min"'
+                    if cell_range
+                    else '=0&" min"'
+                )
+                if cell_range:
+                    worksheet.write_array_formula(
+                        total_xlsx_row,
+                        col_idx,
+                        total_xlsx_row,
+                        col_idx,
+                        formula,
+                        centered,
+                    )
+                else:
+                    worksheet.write_formula(total_xlsx_row, col_idx, formula, centered)
+            elif field_name in EXPORT_TOTAL_HOUR_FIELDS:
+                formula = (
+                    f"={_duration_minutes_formula(cell_range)}/1440"
+                    if cell_range
+                    else "=0"
+                )
+                if cell_range:
+                    worksheet.write_array_formula(
+                        total_xlsx_row,
+                        col_idx,
+                        total_xlsx_row,
+                        col_idx,
+                        formula,
+                        hour_total_format,
+                    )
+                else:
+                    worksheet.write_formula(
+                        total_xlsx_row, col_idx, formula, hour_total_format
+                    )
+            elif field_name in EXPORT_TOTAL_NUMERIC_FIELDS:
+                formula = (
+                    f'=SUMPRODUCT(VALUE({cell_range}))&" days"'
+                    if cell_range
+                    else '=0&" days"'
+                )
+                if cell_range:
+                    worksheet.write_array_formula(
+                        total_xlsx_row,
+                        col_idx,
+                        total_xlsx_row,
+                        col_idx,
+                        formula,
+                        centered,
+                    )
+                else:
+                    worksheet.write_formula(total_xlsx_row, col_idx, formula, centered)
 
 
 @login_required
@@ -1737,11 +2095,38 @@ def export_attendance_by_payroll_group(request):
         group = PayrollGroup.objects.filter(id=sel.get("id")).first()
         if not group or not sel.get("dateFrom") or not sel.get("dateTo"):
             continue
+        try:
+            date_from = datetime.strptime(sel["dateFrom"], "%Y-%m-%d").date()
+            date_to = datetime.strptime(sel["dateTo"], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        if date_from > date_to:
+            continue
+
+        group_employees = Employee.objects.filter(
+            employee_work_info__payroll_group_id=group
+        ).select_related(
+            "employee_work_info",
+            "employee_work_info__business_unit_id",
+            "employee_work_info__branch_id",
+            "employee_work_info__department_id",
+            "employee_work_info__payroll_group_id",
+            "employee_work_info__shift_id",
+            "employee_work_info__work_type_id",
+        )
+        self_employees = group_employees.filter(employee_user_id=request.user)
+        group_employees = filtersubordinatesemployeemodel(
+            request, group_employees, "attendance.view_attendanceovertime"
+        )
+        group_employees = (group_employees | self_employees).distinct().order_by(
+            "employee_no", "id"
+        )
 
         activities = AttendanceActivity.objects.filter(
             employee_id__employee_work_info__payroll_group_id=group,
-            attendance_date__gte=sel["dateFrom"],
-            attendance_date__lte=sel["dateTo"],
+            employee_id__in=group_employees,
+            attendance_date__gte=date_from,
+            attendance_date__lte=date_to,
         )
         self_activities = activities.filter(employee_id__employee_user_id=request.user)
         activities = filtersubordinates(
@@ -1749,8 +2134,11 @@ def export_attendance_by_payroll_group(request):
         )
         activities = (activities | self_activities).distinct()
 
-        data_export = _attendance_activity_export_data(
-            activities, selected_columns, employee
+        daily_rows = _attendance_activity_payroll_group_daily_rows(
+            activities, group_employees, date_from, date_to
+        )
+        data_export = _attendance_activity_export_data_from_rows(
+            daily_rows, selected_columns, employee
         )
         df = pd.DataFrame(data=data_export)
         emp_no_col = str(_("Employee No."))
@@ -1759,7 +2147,7 @@ def export_attendance_by_payroll_group(request):
         if sort_cols:
             ascending = [True for _ in sort_cols]
             df = df.sort_values(by=sort_cols, ascending=ascending).reset_index(drop=True)
-        df = _add_export_totals_per_employee(df, selected_columns)
+        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
         styled_df = df.style.map(
             lambda x: "text-align: center", subset=pd.IndexSlice[:, :]
         )
@@ -1770,7 +2158,14 @@ def export_attendance_by_payroll_group(request):
         sheet_name = base if n == 1 else f"{base[:28]} ({n})"
 
         styled_df.to_excel(writer, index=False, sheet_name=sheet_name)
-        writer.sheets[sheet_name].set_column("A:Z", 18)
+        worksheet = writer.sheets[sheet_name]
+        _write_export_row_formulas(
+            writer.book, worksheet, df, selected_columns, total_ranges
+        )
+        _write_export_total_formulas(
+            writer.book, worksheet, df, selected_columns, total_ranges
+        )
+        worksheet.set_column("A:Z", 18)
 
     writer.close()
     return response

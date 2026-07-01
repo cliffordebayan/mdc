@@ -1,4 +1,5 @@
 import json
+import io
 import importlib
 import uuid
 from contextlib import nullcontext
@@ -15,6 +16,8 @@ from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.utils import timezone
 from django.urls import resolve, reverse
 from django.urls.exceptions import Resolver404
+from openpyxl import load_workbook
+import pandas as pd
 
 from attendance.forms import AttendanceActivityExportForm, AttendanceExportForm
 from attendance.methods import utils as attendance_utils
@@ -49,7 +52,12 @@ from attendance.views.views import (
     _attendance_activity_daily_export_value,
     _attendance_activity_export_columns,
     _attendance_activity_export_data,
+    _attendance_activity_export_data_from_rows,
+    _attendance_activity_payroll_group_daily_rows,
     _delete_blocked_message,
+    _insert_export_formula_total_rows,
+    _write_export_row_formulas,
+    _write_export_total_formulas,
     build_daily_activity_rows,
     build_my_attendance_activity_meta,
 )
@@ -3238,62 +3246,12 @@ class AttendanceActivityExportTests(SimpleTestCase):
     def test_activity_export_defaults_use_split_daily_columns(self):
         form = AttendanceActivityExportForm()
 
-        expected_fields = [
-            "employee_id",
-            "employee_id__employee_work_info__branch_id",
-            "employee_id__employee_work_info__department_id",
-            "attendance_date",
-            "daily_clock_in",
-            "daily_clock_out",
-            "daily_break_in",
-            "daily_break_out",
-            "daily_lunch_in",
-            "daily_lunch_out",
-            "daily_clock_in_location",
-            "daily_clock_out_location",
-            "daily_break_in_location",
-            "daily_break_out_location",
-            "daily_lunch_in_location",
-            "daily_lunch_out_location",
-            "daily_clock_image",
-            "daily_break_image",
-            "daily_lunch_image",
-            "daily_shift",
-            "daily_late_come",
-            "daily_early_out",
-            "daily_work_hours",
-            "daily_break_hours",
-            "daily_lunch_hours",
-            "daily_overtime",
-        ]
-        expected_headers = [
-            "Employee",
-            "Branch",
-            "Department",
-            "Attendance Date",
-            "Clock In",
-            "Clock Out",
-            "Break In",
-            "Break Out",
-            "Lunch In",
-            "Lunch Out",
-            "Clock In Location",
-            "Clock Out Location",
-            "Break In Location",
-            "Break Out Location",
-            "Lunch In Location",
-            "Lunch Out Location",
-            "Clock Image",
-            "Break Image",
-            "Lunch Image",
-            "Shift",
-            "Late Come",
-            "Early Out",
-            "Work Hours",
-            "Break Hours",
-            "Lunch Hours",
-            "Overtime",
-        ]
+        expected_fields = AttendanceActivityExportForm.default_fields
+        choice_labels = {
+            field_name: str(label)
+            for field_name, label in form.fields["selected_fields"].choices
+        }
+        expected_headers = [choice_labels[field_name] for field_name in expected_fields]
 
         self.assertEqual(form.fields["selected_fields"].initial, expected_fields)
         self.assertEqual(
@@ -3383,6 +3341,26 @@ class AttendanceActivityExportTests(SimpleTestCase):
             "00:10",
         )
         self.assertEqual(
+            _attendance_activity_daily_export_value(
+                self._daily_row(early_out_duration=""), "daily_early_out", None
+            ),
+            "00:00",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                self._daily_row(early_out_duration=None), "daily_early_out", None
+            ),
+            "00:00",
+        )
+        leave_row = self._daily_row(early_out_duration="")
+        leave_row.is_leave_only = True
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                leave_row, "daily_early_out", None
+            ),
+            "",
+        )
+        self.assertEqual(
             _attendance_activity_daily_export_value(row, "daily_overtime", None),
             "00:30",
         )
@@ -3429,6 +3407,309 @@ class AttendanceActivityExportTests(SimpleTestCase):
         )
         self.assertEqual(data["Late Come"], ["07:00"])
         self.assertEqual(data["Early Out"], ["02:00"])
+
+    @patch("attendance.views.views.format_export_value")
+    @patch("attendance.views.views._attendance_activity_export_daily_rows")
+    def test_payroll_group_export_fills_every_employee_date_with_empty_rows(
+        self, daily_rows, format_export_value
+    ):
+        format_export_value.side_effect = self._format_export_value
+
+        def employee(pk, employee_no):
+            return SimpleNamespace(
+                id=pk,
+                employee_no=employee_no,
+                get_full_name=lambda: f"Employee {employee_no}",
+                employee_work_info=SimpleNamespace(
+                    branch_id="Main Branch",
+                    department_id="HR",
+                    payroll_group_id="Semi Monthly",
+                    shift_id="Morning",
+                    work_type_id="Office",
+                ),
+            )
+
+        emp1 = employee(101, "E001")
+        emp2 = employee(102, "E002")
+        real_row = self._daily_row()
+        real_row.employee = emp1
+        real_row.attendance_date = date(2026, 7, 1)
+        real_row.work_hours = "08:00"
+        leave_row = self._daily_row(early_out_duration="")
+        leave_row.employee = emp1
+        leave_row.attendance_date = date(2026, 7, 2)
+        leave_row.work_in = None
+        leave_row.work_out = None
+        leave_row.work_hours = None
+        leave_row.break_hours = None
+        leave_row.lunch_hours = None
+        leave_row.overtime = None
+        leave_row.leave = "Vacation Leave"
+        leave_row.leave_type = "Vacation Leave"
+        leave_row.leave_days = 1
+        leave_row.is_leave_only = True
+        daily_rows.return_value = [real_row, leave_row]
+
+        rows = _attendance_activity_payroll_group_daily_rows(
+            FakeActivityQuerySet([]),
+            [emp1, emp2],
+            date(2026, 7, 1),
+            date(2026, 7, 3),
+        )
+        data = _attendance_activity_export_data_from_rows(
+            rows,
+            [
+                ("employee_number", "Employee No."),
+                ("attendance_date", "Attendance Date"),
+                ("daily_clock_in", "Clock In"),
+                ("daily_early_out", "Early Out"),
+                ("daily_work_hours", "Work Hours"),
+                ("daily_break_hours", "Break Hours"),
+                ("daily_lunch_hours", "Lunch Hours"),
+                ("daily_overtime", "Overtime"),
+            ],
+            None,
+        )
+
+        self.assertEqual(len(rows), 6)
+        self.assertEqual(
+            data["Employee No."],
+            ["E001", "E001", "E001", "E002", "E002", "E002"],
+        )
+        self.assertEqual(
+            data["Attendance Date"],
+            [
+                date(2026, 7, 1),
+                date(2026, 7, 2),
+                date(2026, 7, 3),
+                date(2026, 7, 1),
+                date(2026, 7, 2),
+                date(2026, 7, 3),
+            ],
+        )
+        self.assertEqual(data["Clock In"], ["09:00", "", "", "", "", ""])
+        self.assertEqual(
+            data["Early Out"], ["00:10", "", "00:00", "00:00", "00:00", "00:00"]
+        )
+        self.assertEqual(
+            data["Work Hours"], ["08:00", "", "00:00", "00:00", "00:00", "00:00"]
+        )
+        self.assertEqual(
+            data["Break Hours"], ["00:25", "", "00:00", "00:00", "00:00", "00:00"]
+        )
+        self.assertEqual(
+            data["Lunch Hours"], ["01:00", "", "00:00", "00:00", "00:00", "00:00"]
+        )
+        self.assertEqual(
+            data["Overtime"], ["00:30", "", "00:00", "00:00", "00:00", "00:00"]
+        )
+
+    def _formula_workbook(self, df, selected_columns, total_ranges):
+        output = io.BytesIO()
+        writer = pd.ExcelWriter(output, engine="xlsxwriter")
+        df.to_excel(writer, index=False, sheet_name="Sheet1")
+        _write_export_row_formulas(
+            writer.book,
+            writer.sheets["Sheet1"],
+            df,
+            selected_columns,
+            total_ranges,
+        )
+        _write_export_total_formulas(
+            writer.book,
+            writer.sheets["Sheet1"],
+            df,
+            selected_columns,
+            total_ranges,
+        )
+        writer.close()
+        output.seek(0)
+        return load_workbook(output, data_only=False)
+
+    def _cell_formula_text(self, cell):
+        return getattr(cell.value, "text", cell.value)
+
+    def test_export_row_duration_columns_are_excel_formulas(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("daily_clock_in", "Clock In"),
+            ("daily_clock_out", "Clock Out"),
+            ("daily_break_in", "Break In"),
+            ("daily_break_out", "Break Out"),
+            ("daily_lunch_in", "Lunch In"),
+            ("daily_lunch_out", "Lunch Out"),
+            ("daily_shift_start", "Shift Start"),
+            ("daily_shift_end", "Shift End"),
+            ("daily_late_come", "Late Come"),
+            ("daily_early_out", "Early Out"),
+            ("daily_work_hours", "Work Hours"),
+            ("daily_break_hours", "Break Hours"),
+            ("daily_lunch_hours", "Lunch Hours"),
+            ("daily_overtime", "Overtime"),
+            ("daily_leave_type", "Leave Type"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001", "E001"],
+                "Clock In": ["09:15", ""],
+                "Clock Out": ["18:30", ""],
+                "Break In": ["10:00; 15:00", ""],
+                "Break Out": ["10:15; 15:10", ""],
+                "Lunch In": ["12:00", ""],
+                "Lunch Out": ["13:00", ""],
+                "Shift Start": ["09:00", ""],
+                "Shift End": ["18:00", ""],
+                "Late Come": ["", ""],
+                "Early Out": ["", ""],
+                "Work Hours": ["", ""],
+                "Break Hours": ["", ""],
+                "Lunch Hours": ["", ""],
+                "Overtime": ["", ""],
+                "Leave Type": ["", "Vacation Leave"],
+            }
+        )
+
+        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
+        workbook = self._formula_workbook(df, selected_columns, total_ranges)
+        sheet = workbook["Sheet1"]
+
+        late_formula = self._cell_formula_text(sheet["J2"])
+        early_formula = self._cell_formula_text(sheet["K2"])
+        work_formula = self._cell_formula_text(sheet["L2"])
+        break_formula = self._cell_formula_text(sheet["M2"])
+        lunch_formula = self._cell_formula_text(sheet["N2"])
+        overtime_formula = self._cell_formula_text(sheet["O2"])
+
+        self.assertIn("B2", late_formula)
+        self.assertIn("H2", late_formula)
+        self.assertIn('"[hh]:mm"', late_formula)
+        self.assertIn("C2", early_formula)
+        self.assertIn("I2", early_formula)
+        self.assertIn('"[hh]:mm"', early_formula)
+        self.assertIn("B2", work_formula)
+        self.assertIn("C2", work_formula)
+        self.assertIn('"[hh]:mm"', work_formula)
+        self.assertIn("TEXTSPLIT(E2", work_formula)
+        self.assertIn("TEXTSPLIT(D2", work_formula)
+        self.assertIn("TEXTSPLIT(E2", break_formula)
+        self.assertIn("TEXTSPLIT(D2", break_formula)
+        self.assertIn('"[hh]:mm"', break_formula)
+        self.assertIn("TEXTSPLIT(G2", lunch_formula)
+        self.assertIn("TEXTSPLIT(F2", lunch_formula)
+        self.assertIn('"[hh]:mm"', lunch_formula)
+        self.assertIn("C2", overtime_formula)
+        self.assertIn("I2", overtime_formula)
+        self.assertIn('"[hh]:mm"', overtime_formula)
+        for formula in (
+            late_formula,
+            early_formula,
+            work_formula,
+            break_formula,
+            lunch_formula,
+            overtime_formula,
+        ):
+            self.assertNotIn("@", formula)
+
+        for cell_ref in ("J3", "K3", "L3", "M3", "N3", "O3"):
+            self.assertIn(sheet[cell_ref].value, (None, ""))
+
+    def test_formula_total_rows_group_by_employee_and_point_to_employee_ranges(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("daily_late_come", "Late Come"),
+            ("daily_work_hours", "Work Hours"),
+            ("daily_leave_days", "Leave Days"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001", "E001", "E002"],
+                "Late Come": ["00:05", "00:10", "00:03"],
+                "Work Hours": ["07:30", "26:30", "06:45"],
+                "Leave Days": [0, 1, 0.5],
+            }
+        )
+
+        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
+        workbook = self._formula_workbook(df, selected_columns, total_ranges)
+        sheet = workbook["Sheet1"]
+
+        self.assertEqual(
+            df["Employee No."].tolist(), ["E001", "E001", "Total", "E002", "Total"]
+        )
+        self.assertEqual(
+            total_ranges,
+            [
+                {"start_df_row": 0, "end_df_row": 1, "total_df_row": 2},
+                {"start_df_row": 3, "end_df_row": 3, "total_df_row": 4},
+            ],
+        )
+        late_formula = self._cell_formula_text(sheet["B4"])
+        work_formula = self._cell_formula_text(sheet["C4"])
+        leave_formula = self._cell_formula_text(sheet["D4"])
+        second_late_formula = self._cell_formula_text(sheet["B6"])
+
+        self.assertIn('LEFT(B2:B3,FIND(":",B2:B3)-1)', late_formula)
+        self.assertIn("MID(B2:B3", late_formula)
+        self.assertIn(')&" min"', late_formula)
+        self.assertNotIn("@", late_formula)
+        self.assertIn('LEFT(C2:C3,FIND(":",C2:C3)-1)', work_formula)
+        self.assertTrue(work_formula.endswith("/1440"))
+        self.assertNotIn("@", work_formula)
+        self.assertEqual(leave_formula, '=SUMPRODUCT(VALUE(D2:D3))&" days"')
+        self.assertNotIn("@", leave_formula)
+        self.assertIn('LEFT(B5:B5,FIND(":",B5:B5)-1)', second_late_formula)
+        self.assertNotIn("@", second_late_formula)
+
+    def test_formula_total_rows_ignore_columns_without_total_rules(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("attendance_date", "Attendance Date"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001", "E002"],
+                "Attendance Date": [date(2026, 4, 10), date(2026, 4, 11)],
+            }
+        )
+
+        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
+        workbook = self._formula_workbook(df, selected_columns, total_ranges)
+        sheet = workbook["Sheet1"]
+
+        self.assertEqual(
+            df["Employee No."].tolist(), ["E001", "Total", "E002", "Total"]
+        )
+        self.assertIsNone(sheet["B3"].value)
+        self.assertIsNone(sheet["B5"].value)
+
+    def test_empty_formula_total_row_uses_zero_formulas(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("daily_late_come", "Late Come"),
+            ("daily_work_hours", "Work Hours"),
+            ("daily_leave_days", "Leave Days"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": [],
+                "Late Come": [],
+                "Work Hours": [],
+                "Leave Days": [],
+            }
+        )
+
+        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
+        workbook = self._formula_workbook(df, selected_columns, total_ranges)
+        sheet = workbook["Sheet1"]
+
+        self.assertEqual(df["Employee No."].tolist(), ["Total"])
+        self.assertEqual(
+            total_ranges,
+            [{"start_df_row": None, "end_df_row": None, "total_df_row": 0}],
+        )
+        self.assertEqual(sheet["B2"].value, '=0&" min"')
+        self.assertEqual(sheet["C2"].value, "=0")
+        self.assertEqual(sheet["D2"].value, '=0&" days"')
 
 
 class DailyActivityRowsTests(SimpleTestCase):
