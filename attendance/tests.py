@@ -57,10 +57,11 @@ from attendance.views.views import (
     _attendance_activity_export_data,
     _attendance_activity_export_data_from_rows,
     _attendance_activity_payroll_group_daily_rows,
+    _build_export_total_ranges,
     _delete_blocked_message,
-    _insert_export_formula_total_rows,
+    _payroll_group_export_selected_columns,
     _write_export_row_formulas,
-    _write_export_total_formulas,
+    _write_export_totals_sheet,
     build_daily_activity_rows,
     build_my_attendance_activity_meta,
 )
@@ -3285,6 +3286,10 @@ class AttendanceActivityExportTests(SimpleTestCase):
         clock_out_selfie=None,
         clock_in_location="",
         clock_out_location="",
+        clock_in_date=None,
+        clock_out_date=None,
+        in_datetime=None,
+        out_datetime=None,
     ):
         return SimpleNamespace(
             clock_in=clock_in,
@@ -3293,6 +3298,10 @@ class AttendanceActivityExportTests(SimpleTestCase):
             clock_out_selfie=clock_out_selfie,
             clock_in_location=clock_in_location,
             clock_out_location=clock_out_location,
+            clock_in_date=clock_in_date,
+            clock_out_date=clock_out_date,
+            in_datetime=in_datetime,
+            out_datetime=out_datetime,
         )
 
     def _daily_row(self, late_come_duration="00:05", early_out_duration="00:10"):
@@ -3303,9 +3312,16 @@ class AttendanceActivityExportTests(SimpleTestCase):
                 department_id="HR",
             ),
         )
+        work_segment = self._segment(
+            clock_in=time(9, 0),
+            clock_out=time(17, 0),
+            clock_in_date=date(2026, 4, 10),
+            clock_out_date=date(2026, 4, 10),
+        )
         return SimpleNamespace(
             employee=employee,
             attendance_date=date(2026, 4, 10),
+            work_segments=[work_segment],
             work_in=self._segment(
                 clock_in=time(9, 0),
                 clock_in_selfie=SimpleNamespace(url="/media/clock-in.jpg"),
@@ -3341,12 +3357,22 @@ class AttendanceActivityExportTests(SimpleTestCase):
                 )
             ],
             shift="Morning",
+            shift_day="friday",
+            shift_schedule="Mon, Tue, Wed, Thu, Fri",
+            has_shift_schedule=True,
+            schedule=SimpleNamespace(
+                start_time=time(9, 0), end_time=time(18, 0), is_night_shift=False
+            ),
             late_come_duration=late_come_duration,
             early_out_duration=early_out_duration,
             work_hours="07:30",
             break_hours="00:25",
             lunch_hours="01:00",
             overtime="00:30",
+            holiday=None,
+            holiday_type=None,
+            is_rest_day=False,
+            is_leave_only=False,
         )
 
     def test_activity_export_defaults_use_split_daily_columns(self):
@@ -3363,6 +3389,71 @@ class AttendanceActivityExportTests(SimpleTestCase):
         self.assertEqual(
             [str(label) for _, label in _attendance_activity_export_columns(form, expected_fields)],
             expected_headers,
+        )
+        self.assertEqual(
+            expected_fields.index("daily_basic_hours"),
+            expected_fields.index("daily_work_hours") + 1,
+        )
+        self.assertEqual(
+            expected_fields.index("daily_holiday_type"),
+            expected_fields.index("daily_holiday") + 1,
+        )
+        self.assertEqual(
+            expected_fields.index("daily_rest_day"),
+            expected_fields.index("daily_shift_end") + 1,
+        )
+        self.assertEqual(
+            expected_fields.index("daily_worked_special_holiday"),
+            expected_fields.index("daily_holiday_type") + 1,
+        )
+        self.assertEqual(choice_labels["daily_holiday_type"], "Holiday Type")
+        self.assertEqual(choice_labels["daily_rest_day"], "Rest Day")
+        self.assertNotIn("daily_shift_schedule", expected_fields)
+        premium_labels = {
+            "daily_worked_special_holiday": "Worked on Special Holiday",
+            "daily_ot_worked_special_holiday": "OT on Worked on Special Holiday",
+            "daily_worked_regular_holiday": "Worked on Regular Holiday",
+            "daily_ot_worked_regular_holiday": "OT on Worked on Regular Holiday",
+            "daily_worked_rest_day": "Worked on Restday",
+            "daily_ot_worked_rest_day": "OT on Worked Restday",
+            "daily_night_differential": "Night Differential Hours",
+            "daily_night_differential_overtime": "Night Differential Hours- OVERTIME",
+            "daily_night_differential_rest_day_overtime": "Night Differential - Rest Day Overtime",
+            "daily_night_differential_rest_day": "Night Differential Hours-REST DAY",
+            "daily_night_differential_regular_holiday": "Night Differential Regular Holiday - Hours",
+            "daily_night_differential_special_holiday": "Night Differential Special Holiday - Hours",
+            "daily_night_differential_special_holiday_overtime": "Night Differential Hours-SPECIAL HOL. OVERTIME",
+            "daily_night_differential_regular_holiday_overtime": "Night Differential - Overtime - Legal Hours",
+            "daily_rest_day_regular_holiday": "Rest Day Hours- Regular Holiday",
+            "daily_ot_regular_holiday_rest_day": "Overtime hours - Regular Holiday - Rest Day",
+            "daily_night_differential_rest_day_regular_holiday_overtime": "Night Differential Hours-REST DAY Regular HOL. OVERTIME",
+            "daily_night_differential_rest_day_regular_holiday": "Night Differential Hours-REST DAY Regular Pay.",
+            "daily_rest_day_special_holiday": "Rest Day Hours - Special Holiday",
+            "daily_night_differential_rest_day_special_holiday": "Night Differential Hours-REST DAY SPECIAL HOL.",
+            "daily_night_differential_rest_day_special_holiday_overtime": "Night Differential Hours-REST DAY Special HOL. OVERTIME",
+            "daily_ot_special_holiday_rest_day": "Overtime hours - Special Holiday - Rest Day",
+        }
+        for field_name, label in premium_labels.items():
+            self.assertIn(field_name, expected_fields)
+            self.assertEqual(choice_labels[field_name], label)
+
+    def test_payroll_group_export_includes_premium_columns(self):
+        selected_field_names = [
+            field_name for field_name, _ in _payroll_group_export_selected_columns()
+        ]
+
+        self.assertIn("daily_worked_special_holiday", selected_field_names)
+        self.assertIn("daily_holiday_type", selected_field_names)
+        self.assertIn("daily_rest_day", selected_field_names)
+        self.assertEqual(
+            selected_field_names.index("daily_rest_day"),
+            selected_field_names.index("daily_shift_end") + 1,
+        )
+        self.assertNotIn("daily_shift_schedule", selected_field_names)
+        self.assertIn("daily_ot_special_holiday_rest_day", selected_field_names)
+        self.assertIn(
+            "daily_night_differential_rest_day_regular_holiday_overtime",
+            selected_field_names,
         )
 
     @patch("attendance.views.views.format_export_value")
@@ -3470,6 +3561,221 @@ class AttendanceActivityExportTests(SimpleTestCase):
             _attendance_activity_daily_export_value(row, "daily_overtime", None),
             "00:30",
         )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(row, "daily_basic_hours", None),
+            "",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(row, "daily_rest_day", None),
+            "",
+        )
+        row.holiday = "Founding Day"
+        row.holiday_type = "special"
+        row.is_rest_day = True
+        self.assertEqual(
+            _attendance_activity_daily_export_value(row, "daily_shift_start", None),
+            "09:00",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(row, "daily_shift_end", None),
+            "18:00",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(row, "daily_rest_day", None),
+            "Yes",
+        )
+        leave_row.is_rest_day = True
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                leave_row, "daily_rest_day", None
+            ),
+            "",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(row, "daily_holiday_type", None),
+            "Special Holiday",
+        )
+        row.holiday_type = "unclassified"
+        row.is_rest_day = False
+        self.assertEqual(
+            _attendance_activity_daily_export_value(row, "daily_holiday_type", None),
+            "Unclassified",
+        )
+
+    def _premium_row(
+        self,
+        start,
+        end,
+        schedule_start=time(9, 0),
+        schedule_end=time(17, 0),
+        holiday_type=None,
+        is_rest_day=False,
+        is_night_shift=False,
+    ):
+        row = self._daily_row()
+        row.attendance_date = start.date()
+        row.schedule = (
+            SimpleNamespace(
+                start_time=schedule_start,
+                end_time=schedule_end,
+                is_night_shift=is_night_shift,
+            )
+            if schedule_end
+            else None
+        )
+        row.work_segments = [
+            self._segment(
+                clock_in=start.time(),
+                clock_out=end.time(),
+                clock_in_date=start.date(),
+                clock_out_date=end.date(),
+                in_datetime=start,
+                out_datetime=end,
+            )
+        ]
+        row.holiday_type = holiday_type
+        row.is_rest_day = is_rest_day
+        return row
+
+    def _premium_value(self, row, field_name):
+        return _attendance_activity_daily_export_value(row, field_name, None)
+
+    def test_premium_export_buckets_split_holiday_rest_day_and_overtime(self):
+        start = datetime(2026, 4, 10, 9, 0)
+        end = datetime(2026, 4, 10, 19, 0)
+
+        special = self._premium_row(start, end, holiday_type="special")
+        self.assertEqual(self._premium_value(special, "daily_worked_special_holiday"), "08:00")
+        self.assertEqual(self._premium_value(special, "daily_ot_worked_special_holiday"), "02:00")
+
+        regular = self._premium_row(start, end, holiday_type="regular")
+        self.assertEqual(self._premium_value(regular, "daily_worked_regular_holiday"), "08:00")
+        self.assertEqual(self._premium_value(regular, "daily_ot_worked_regular_holiday"), "02:00")
+
+        rest_day = self._premium_row(start, end, is_rest_day=True)
+        self.assertEqual(self._premium_value(rest_day, "daily_worked_rest_day"), "08:00")
+        self.assertEqual(self._premium_value(rest_day, "daily_ot_worked_rest_day"), "02:00")
+
+        regular_rest = self._premium_row(
+            start, end, holiday_type="regular", is_rest_day=True
+        )
+        self.assertEqual(
+            self._premium_value(regular_rest, "daily_rest_day_regular_holiday"),
+            "08:00",
+        )
+        self.assertEqual(
+            self._premium_value(regular_rest, "daily_ot_regular_holiday_rest_day"),
+            "02:00",
+        )
+        self.assertEqual(
+            self._premium_value(regular_rest, "daily_worked_regular_holiday"),
+            "00:00",
+        )
+        self.assertEqual(
+            self._premium_value(regular_rest, "daily_worked_rest_day"),
+            "00:00",
+        )
+
+        special_rest = self._premium_row(
+            start, end, holiday_type="special", is_rest_day=True
+        )
+        self.assertEqual(
+            self._premium_value(special_rest, "daily_rest_day_special_holiday"),
+            "08:00",
+        )
+        self.assertEqual(
+            self._premium_value(special_rest, "daily_ot_special_holiday_rest_day"),
+            "02:00",
+        )
+
+    def test_premium_export_buckets_split_night_differential(self):
+        row = self._premium_row(
+            datetime(2026, 4, 10, 20, 0),
+            datetime(2026, 4, 11, 6, 0),
+            schedule_start=time(20, 0),
+            schedule_end=time(4, 0),
+            is_night_shift=True,
+        )
+
+        self.assertEqual(self._premium_value(row, "daily_night_differential"), "06:00")
+        self.assertEqual(
+            self._premium_value(row, "daily_night_differential_overtime"),
+            "02:00",
+        )
+
+    def test_premium_export_buckets_split_holiday_rest_day_night_differential(self):
+        row = self._premium_row(
+            datetime(2026, 4, 10, 20, 0),
+            datetime(2026, 4, 11, 6, 0),
+            schedule_start=time(20, 0),
+            schedule_end=time(4, 0),
+            holiday_type="regular",
+            is_rest_day=True,
+            is_night_shift=True,
+        )
+
+        self.assertEqual(
+            self._premium_value(
+                row, "daily_night_differential_rest_day_regular_holiday"
+            ),
+            "06:00",
+        )
+        self.assertEqual(
+            self._premium_value(
+                row,
+                "daily_night_differential_rest_day_regular_holiday_overtime",
+            ),
+            "02:00",
+        )
+
+        special_row = self._premium_row(
+            datetime(2026, 4, 10, 21, 0),
+            datetime(2026, 4, 11, 2, 0),
+            schedule_start=time(21, 0),
+            schedule_end=time(1, 0),
+            holiday_type="special",
+            is_rest_day=True,
+            is_night_shift=True,
+        )
+        self.assertEqual(
+            self._premium_value(
+                special_row, "daily_night_differential_rest_day_special_holiday"
+            ),
+            "03:00",
+        )
+        self.assertEqual(
+            self._premium_value(
+                special_row,
+                "daily_night_differential_rest_day_special_holiday_overtime",
+            ),
+            "01:00",
+        )
+
+    def test_premium_export_no_schedule_treats_all_work_as_non_overtime(self):
+        row = self._premium_row(
+            datetime(2026, 4, 10, 9, 0),
+            datetime(2026, 4, 10, 19, 0),
+            schedule_end=None,
+            is_rest_day=True,
+        )
+
+        self.assertEqual(self._premium_value(row, "daily_worked_rest_day"), "10:00")
+        self.assertEqual(self._premium_value(row, "daily_ot_worked_rest_day"), "00:00")
+
+    def test_premium_export_blank_schedule_treats_all_work_as_non_overtime_rest_day(self):
+        row = self._premium_row(
+            datetime(2026, 4, 10, 9, 0),
+            datetime(2026, 4, 10, 19, 0),
+            is_rest_day=True,
+        )
+        row.schedule = SimpleNamespace(
+            start_time=None,
+            end_time=None,
+            is_night_shift=False,
+        )
+
+        self.assertEqual(self._premium_value(row, "daily_worked_rest_day"), "10:00")
+        self.assertEqual(self._premium_value(row, "daily_ot_worked_rest_day"), "00:00")
 
     @patch("attendance.views.views.format_export_value")
     @patch("attendance.views.views._attendance_activity_export_daily_rows")
@@ -3570,9 +3876,11 @@ class AttendanceActivityExportTests(SimpleTestCase):
                 ("daily_clock_in", "Clock In"),
                 ("daily_early_out", "Early Out"),
                 ("daily_work_hours", "Work Hours"),
+                ("daily_basic_hours", "Basic Hours"),
                 ("daily_break_hours", "Break Hours"),
                 ("daily_lunch_hours", "Lunch Hours"),
                 ("daily_overtime", "Overtime"),
+                ("daily_worked_special_holiday", "Worked on Special Holiday"),
             ],
             None,
         )
@@ -3600,6 +3908,7 @@ class AttendanceActivityExportTests(SimpleTestCase):
         self.assertEqual(
             data["Work Hours"], ["08:00", "", "00:00", "00:00", "00:00", "00:00"]
         )
+        self.assertEqual(data["Basic Hours"], ["", "", "", "", "", ""])
         self.assertEqual(
             data["Break Hours"], ["00:25", "", "00:00", "00:00", "00:00", "00:00"]
         )
@@ -3609,25 +3918,106 @@ class AttendanceActivityExportTests(SimpleTestCase):
         self.assertEqual(
             data["Overtime"], ["00:30", "", "00:00", "00:00", "00:00", "00:00"]
         )
+        self.assertEqual(
+            data["Worked on Special Holiday"],
+            ["00:00", "", "00:00", "00:00", "00:00", "00:00"],
+        )
 
-    def _formula_workbook(self, df, selected_columns, total_ranges):
+    @patch("attendance.views.views.format_export_value")
+    @patch("attendance.views.views._attendance_activity_export_daily_rows")
+    def test_payroll_group_export_keeps_rest_day_ot_from_fallback_schedule(
+        self, daily_rows, format_export_value
+    ):
+        format_export_value.side_effect = self._format_export_value
+        attendance_date = date(2026, 7, 4)
+        employee = SimpleNamespace(
+            id=101,
+            employee_no="E001",
+            get_full_name=lambda: "Employee E001",
+            employee_work_info=SimpleNamespace(
+                branch_id="Main Branch",
+                department_id="HR",
+                payroll_group_id="Semi Monthly",
+                shift_id="Morning",
+                work_type_id="Office",
+            ),
+        )
+        row = self._premium_row(
+            datetime(2026, 7, 4, 9, 0),
+            datetime(2026, 7, 4, 18, 0),
+            schedule_start=time(8, 0),
+            schedule_end=time(17, 0),
+            is_rest_day=True,
+        )
+        row.employee = employee
+        row.attendance_date = attendance_date
+        row.work_in = self._segment(
+            clock_in=time(9, 0),
+            clock_in_date=attendance_date,
+        )
+        row.work_out = self._segment(
+            clock_out=time(18, 0),
+            clock_out_date=attendance_date,
+        )
+        daily_rows.return_value = [row]
+
+        rows = _attendance_activity_payroll_group_daily_rows(
+            FakeActivityQuerySet(
+                [
+                    SimpleNamespace(
+                        employee_id_id=employee.id,
+                        attendance_date=attendance_date,
+                    )
+                ]
+            ),
+            [employee],
+            attendance_date,
+            attendance_date,
+        )
+        data = _attendance_activity_export_data_from_rows(
+            rows,
+            [
+                ("employee_number", "Employee No."),
+                ("attendance_date", "Attendance Date"),
+                ("daily_shift_start", "Shift Start"),
+                ("daily_shift_end", "Shift End"),
+                ("daily_rest_day", "Rest Day"),
+                ("daily_worked_rest_day", "Worked on Restday"),
+                ("daily_ot_worked_rest_day", "OT on Worked Restday"),
+            ],
+            None,
+        )
+
+        self.assertEqual(data["Shift Start"], ["08:00"])
+        self.assertEqual(data["Shift End"], ["17:00"])
+        self.assertEqual(data["Rest Day"], ["Yes"])
+        self.assertNotIn("__Rest Day", data)
+        self.assertEqual(data["Worked on Restday"], ["08:00"])
+        self.assertEqual(data["OT on Worked Restday"], ["01:00"])
+
+    def _formula_workbook(
+        self, df, selected_columns, total_ranges=None, totals_sheet_name=None
+    ):
         output = io.BytesIO()
         writer = pd.ExcelWriter(output, engine="xlsxwriter")
+        writer.book.set_calc_mode("auto")
         df.to_excel(writer, index=False, sheet_name="Sheet1")
         _write_export_row_formulas(
             writer.book,
             writer.sheets["Sheet1"],
             df,
             selected_columns,
-            total_ranges,
+            total_ranges or [],
         )
-        _write_export_total_formulas(
-            writer.book,
-            writer.sheets["Sheet1"],
-            df,
-            selected_columns,
-            total_ranges,
-        )
+        if totals_sheet_name:
+            _write_export_totals_sheet(
+                writer,
+                "Sheet1",
+                df,
+                selected_columns,
+                total_ranges or [],
+                totals_sheet_name,
+            )
         writer.close()
         output.seek(0)
         return load_workbook(output, data_only=False)
@@ -3649,6 +4039,7 @@ class AttendanceActivityExportTests(SimpleTestCase):
             ("daily_late_come", "Late Come"),
             ("daily_early_out", "Early Out"),
             ("daily_work_hours", "Work Hours"),
+            ("daily_basic_hours", "Basic Hours"),
             ("daily_break_hours", "Break Hours"),
             ("daily_lunch_hours", "Lunch Hours"),
             ("daily_overtime", "Overtime"),
@@ -3668,6 +4059,7 @@ class AttendanceActivityExportTests(SimpleTestCase):
                 "Late Come": ["", ""],
                 "Early Out": ["", ""],
                 "Work Hours": ["", ""],
+                "Basic Hours": ["", ""],
                 "Break Hours": ["", ""],
                 "Lunch Hours": ["", ""],
                 "Overtime": ["", ""],
@@ -3675,16 +4067,16 @@ class AttendanceActivityExportTests(SimpleTestCase):
             }
         )
 
-        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
-        workbook = self._formula_workbook(df, selected_columns, total_ranges)
+        workbook = self._formula_workbook(df, selected_columns)
         sheet = workbook["Sheet1"]
 
         late_formula = self._cell_formula_text(sheet["J2"])
         early_formula = self._cell_formula_text(sheet["K2"])
         work_formula = self._cell_formula_text(sheet["L2"])
-        break_formula = self._cell_formula_text(sheet["M2"])
-        lunch_formula = self._cell_formula_text(sheet["N2"])
-        overtime_formula = self._cell_formula_text(sheet["O2"])
+        basic_formula = self._cell_formula_text(sheet["M2"])
+        break_formula = self._cell_formula_text(sheet["N2"])
+        lunch_formula = self._cell_formula_text(sheet["O2"])
+        overtime_formula = self._cell_formula_text(sheet["P2"])
 
         self.assertIn("B2", late_formula)
         self.assertIn("H2", late_formula)
@@ -3697,6 +4089,12 @@ class AttendanceActivityExportTests(SimpleTestCase):
         self.assertIn('"[hh]:mm"', work_formula)
         self.assertIn("TEXTSPLIT(E2", work_formula)
         self.assertIn("TEXTSPLIT(D2", work_formula)
+        self.assertIn("B2", basic_formula)
+        self.assertIn("C2", basic_formula)
+        self.assertIn("H2", basic_formula)
+        self.assertIn("I2", basic_formula)
+        self.assertIn("TIME(1,0,0)", basic_formula)
+        self.assertIn('"[hh]:mm"', basic_formula)
         self.assertIn("TEXTSPLIT(E2", break_formula)
         self.assertIn("TEXTSPLIT(D2", break_formula)
         self.assertIn('"[hh]:mm"', break_formula)
@@ -3710,63 +4108,411 @@ class AttendanceActivityExportTests(SimpleTestCase):
             late_formula,
             early_formula,
             work_formula,
+            basic_formula,
             break_formula,
             lunch_formula,
             overtime_formula,
         ):
             self.assertNotIn("@", formula)
 
-        for cell_ref in ("J3", "K3", "L3", "M3", "N3", "O3"):
+        for cell_ref in ("J3", "K3", "L3", "M3", "N3", "O3", "P3"):
             self.assertIn(sheet[cell_ref].value, (None, ""))
 
-    def test_formula_total_rows_group_by_employee_and_point_to_employee_ranges(self):
+    def test_work_basic_and_overtime_formulas_zero_rest_day_and_holiday_rows(self):
         selected_columns = [
             ("employee_number", "Employee No."),
-            ("daily_late_come", "Late Come"),
+            ("daily_clock_in", "Clock In"),
+            ("daily_clock_out", "Clock Out"),
+            ("daily_shift_start", "Shift Start"),
+            ("daily_shift_end", "Shift End"),
             ("daily_work_hours", "Work Hours"),
-            ("daily_leave_days", "Leave Days"),
+            ("daily_basic_hours", "Basic Hours"),
+            ("daily_overtime", "Overtime"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001", "E002", "E003"],
+                "Clock In": ["09:00", "09:00", "09:00"],
+                "Clock Out": ["18:00", "18:00", ""],
+                "Shift Start": ["08:00", "08:00", "08:00"],
+                "Shift End": ["17:00", "17:00", "17:00"],
+                "Work Hours": ["", "", ""],
+                "Basic Hours": ["", "", ""],
+                "Overtime": ["", "", ""],
+                "__Rest Day": ["Yes", "", ""],
+                "__Holiday Type": ["", "Special Holiday", "Regular Holiday"],
+            }
+        )
+
+        workbook = self._formula_workbook(df, selected_columns)
+        sheet = workbook["Sheet1"]
+
+        rest_day_formulas = [
+            self._cell_formula_text(sheet[cell_ref])
+            for cell_ref in ("F2", "G2", "H2")
+        ]
+
+        for formula in rest_day_formulas:
+            self.assertIn('TRIM(I2&"")', formula)
+            self.assertIn('B2<>""', formula)
+            self.assertIn('C2<>""', formula)
+            self.assertIn('"00:00"', formula)
+            self.assertNotIn("@", formula)
+
+        holiday_formulas = [
+            self._cell_formula_text(sheet[cell_ref])
+            for cell_ref in ("F3", "G3", "H3")
+        ]
+        for formula in holiday_formulas:
+            self.assertIn('TRIM(J3&"")', formula)
+            self.assertIn('SEARCH("SPECIAL"', formula)
+            self.assertIn('SEARCH("REGULAR"', formula)
+            self.assertIn('B3<>""', formula)
+            self.assertIn('C3<>""', formula)
+            self.assertIn('"00:00"', formula)
+            self.assertNotIn("@", formula)
+
+        blank_clock_formulas = [
+            self._cell_formula_text(sheet[cell_ref])
+            for cell_ref in ("F4", "G4", "H4")
+        ]
+        for formula in blank_clock_formulas:
+            self.assertIn('TRIM(J4&"")', formula)
+            self.assertIn('B4<>""', formula)
+            self.assertIn('C4<>""', formula)
+            self.assertIn('C4=""', formula)
+
+    def test_premium_export_columns_are_excel_formulas(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("daily_clock_in", "Clock In"),
+            ("daily_clock_out", "Clock Out"),
+            ("daily_break_in", "Break In"),
+            ("daily_break_out", "Break Out"),
+            ("daily_lunch_in", "Lunch In"),
+            ("daily_lunch_out", "Lunch Out"),
+            ("daily_shift_start", "Shift Start"),
+            ("daily_shift_end", "Shift End"),
+            ("daily_shift_day", "Shift Day"),
+            ("daily_holiday_type", "Holiday Type"),
+            ("daily_worked_special_holiday", "Worked on Special Holiday"),
+            ("daily_ot_worked_special_holiday", "OT on Worked on Special Holiday"),
+            ("daily_worked_regular_holiday", "Worked on Regular Holiday"),
+            ("daily_ot_worked_regular_holiday", "OT on Worked on Regular Holiday"),
+            ("daily_worked_rest_day", "Worked on Restday"),
+            ("daily_ot_worked_rest_day", "OT on Worked Restday"),
+            ("daily_night_differential", "Night Differential Hours"),
+            (
+                "daily_night_differential_overtime",
+                "Night Differential Hours- OVERTIME",
+            ),
+            (
+                "daily_night_differential_rest_day_overtime",
+                "Night Differential - Rest Day Overtime",
+            ),
+            (
+                "daily_night_differential_rest_day",
+                "Night Differential Hours-REST DAY",
+            ),
+            (
+                "daily_night_differential_regular_holiday",
+                "Night Differential Regular Holiday - Hours",
+            ),
+            (
+                "daily_night_differential_special_holiday",
+                "Night Differential Special Holiday - Hours",
+            ),
+            (
+                "daily_night_differential_special_holiday_overtime",
+                "Night Differential Hours-SPECIAL HOL. OVERTIME",
+            ),
+            (
+                "daily_night_differential_regular_holiday_overtime",
+                "Night Differential - Overtime - Legal Hours",
+            ),
+            ("daily_rest_day_regular_holiday", "Rest Day Hours- Regular Holiday"),
+            (
+                "daily_ot_regular_holiday_rest_day",
+                "Overtime hours - Regular Holiday - Rest Day",
+            ),
+            (
+                "daily_night_differential_rest_day_regular_holiday_overtime",
+                "Night Differential Hours-REST DAY Regular HOL. OVERTIME",
+            ),
+            (
+                "daily_night_differential_rest_day_regular_holiday",
+                "Night Differential Hours-REST DAY Regular Pay.",
+            ),
+            ("daily_rest_day_special_holiday", "Rest Day Hours - Special Holiday"),
+            (
+                "daily_night_differential_rest_day_special_holiday",
+                "Night Differential Hours-REST DAY SPECIAL HOL.",
+            ),
+            (
+                "daily_night_differential_rest_day_special_holiday_overtime",
+                "Night Differential Hours-REST DAY Special HOL. OVERTIME",
+            ),
+            (
+                "daily_ot_special_holiday_rest_day",
+                "Overtime hours - Special Holiday - Rest Day",
+            ),
+            ("daily_leave_type", "Leave Type"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001"] * 7,
+                "Clock In": ["20:00", "20:00", "20:00", "20:00", "20:00", "20:00", ""],
+                "Clock Out": ["06:00", "06:00", "06:00", "06:00", "06:00", "06:00", ""],
+                "Break In": [""] * 7,
+                "Break Out": [""] * 7,
+                "Lunch In": [""] * 7,
+                "Lunch Out": [""] * 7,
+                "Shift Start": ["20:00", "20:00", "20:00", "20:00", "20:00", "20:00", ""],
+                "Shift End": ["04:00", "04:00", "04:00", "04:00", "04:00", "04:00", ""],
+                "Shift Day": [
+                    "Friday",
+                    "Friday",
+                    "Saturday",
+                    "Saturday",
+                    "Saturday",
+                    "Friday",
+                    "Friday",
+                ],
+                "Holiday Type": [
+                    "Special Holiday",
+                    "Regular Holiday",
+                    "",
+                    "Regular Holiday",
+                    "Special Holiday",
+                    "",
+                    "",
+                ],
+                "Worked on Special Holiday": [""] * 7,
+                "OT on Worked on Special Holiday": [""] * 7,
+                "Worked on Regular Holiday": [""] * 7,
+                "OT on Worked on Regular Holiday": [""] * 7,
+                "Worked on Restday": [""] * 7,
+                "OT on Worked Restday": [""] * 7,
+                "Night Differential Hours": [""] * 7,
+                "Night Differential Hours- OVERTIME": [""] * 7,
+                "Night Differential - Rest Day Overtime": [""] * 7,
+                "Night Differential Hours-REST DAY": [""] * 7,
+                "Night Differential Regular Holiday - Hours": [""] * 7,
+                "Night Differential Special Holiday - Hours": [""] * 7,
+                "Night Differential Hours-SPECIAL HOL. OVERTIME": [""] * 7,
+                "Night Differential - Overtime - Legal Hours": [""] * 7,
+                "Rest Day Hours- Regular Holiday": [""] * 7,
+                "Overtime hours - Regular Holiday - Rest Day": [""] * 7,
+                "Night Differential Hours-REST DAY Regular HOL. OVERTIME": [""] * 7,
+                "Night Differential Hours-REST DAY Regular Pay.": [""] * 7,
+                "Rest Day Hours - Special Holiday": [""] * 7,
+                "Night Differential Hours-REST DAY SPECIAL HOL.": [""] * 7,
+                "Night Differential Hours-REST DAY Special HOL. OVERTIME": [""] * 7,
+                "Overtime hours - Special Holiday - Rest Day": [""] * 7,
+                "Leave Type": ["", "", "", "", "", "", "Vacation Leave"],
+                "__Rest Day": ["", "", "Yes", "Yes", "Yes", "", ""],
+            }
+        )
+
+        workbook = self._formula_workbook(df, selected_columns, [])
+        sheet = workbook["Sheet1"]
+
+        field_columns = {
+            field_name: index
+            for index, (field_name, _label) in enumerate(selected_columns, start=1)
+        }
+
+        def formula(field_name, row_number):
+            return self._cell_formula_text(
+                sheet.cell(row=row_number, column=field_columns[field_name])
+            )
+
+        special_formula = formula("daily_worked_special_holiday", 2)
+        regular_formula = formula("daily_worked_regular_holiday", 3)
+        rest_formula = formula("daily_worked_rest_day", 4)
+        regular_rest_formula = formula("daily_rest_day_regular_holiday", 5)
+        special_rest_formula = formula("daily_rest_day_special_holiday", 6)
+        ordinary_nd_formula = formula("daily_night_differential", 7)
+        leave_formula = formula("daily_worked_special_holiday", 8)
+
+        self.assertNotIn("daily_rest_day", field_columns)
+        self.assertNotIn("daily_shift_schedule", field_columns)
+        hidden_rest_day_cell = sheet.cell(
+            row=2, column=len(df.columns)
+        ).coordinate
+        hidden_rest_day_col = hidden_rest_day_cell.rstrip("2")
+
+        self.assertIn('SEARCH("Special",K2)', special_formula)
+        self.assertIn(f'TRIM({hidden_rest_day_col}2&"")', special_formula)
+        self.assertIn('""', special_formula)
+        self.assertIn('SEARCH("Regular",K3)', regular_formula)
+        self.assertIn(f'TRIM({hidden_rest_day_col}4&"")', rest_formula)
+        self.assertIn('SEARCH("Regular",K5)', regular_rest_formula)
+        self.assertIn(f'TRIM({hidden_rest_day_col}5&"")', regular_rest_formula)
+        self.assertIn('SEARCH("Special",K6)', special_rest_formula)
+        self.assertIn(f'TRIM({hidden_rest_day_col}6&"")', special_rest_formula)
+        self.assertIn('NOT(ISNUMBER(SEARCH("Regular",K7)))', ordinary_nd_formula)
+        self.assertIn('NOT(ISNUMBER(SEARCH("Special",K7)))', ordinary_nd_formula)
+        self.assertIn("TIME(22,0,0)", ordinary_nd_formula)
+        for formula_text in (
+            special_formula,
+            regular_formula,
+            rest_formula,
+            regular_rest_formula,
+            special_rest_formula,
+            ordinary_nd_formula,
+        ):
+            self.assertTrue(formula_text.startswith("="))
+            self.assertNotIn("@", formula_text)
+        self.assertIn(leave_formula, (None, ""))
+
+    def test_premium_export_formulas_prefer_visible_rest_day_column(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("daily_clock_in", "Clock In"),
+            ("daily_clock_out", "Clock Out"),
+            ("daily_shift_start", "Shift Start"),
+            ("daily_shift_end", "Shift End"),
+            ("daily_rest_day", "Rest Day"),
+            ("daily_holiday_type", "Holiday Type"),
+            ("daily_worked_rest_day", "Worked on Restday"),
+            ("daily_ot_worked_rest_day", "OT on Worked Restday"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001"],
+                "Clock In": ["09:00"],
+                "Clock Out": ["18:00"],
+                "Shift Start": ["08:00"],
+                "Shift End": ["17:00"],
+                "Rest Day": ["Yes"],
+                "Holiday Type": [""],
+                "Worked on Restday": [""],
+                "OT on Worked Restday": [""],
+            }
+        )
+
+        workbook = self._formula_workbook(df, selected_columns, [])
+        sheet = workbook["Sheet1"]
+
+        rest_formula = self._cell_formula_text(sheet["H2"])
+        overtime_formula = self._cell_formula_text(sheet["I2"])
+
+        self.assertIn('TRIM(F2&"")', rest_formula)
+        self.assertIn('TRIM(F2&"")', overtime_formula)
+        self.assertNotIn("__Rest Day", [cell.value for cell in sheet[1]])
+
+    def test_premium_export_formulas_allow_blank_shift_times_for_rest_day_work(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("daily_clock_in", "Clock In"),
+            ("daily_clock_out", "Clock Out"),
+            ("daily_shift_start", "Shift Start"),
+            ("daily_shift_end", "Shift End"),
+            ("daily_holiday_type", "Holiday Type"),
+            ("daily_worked_rest_day", "Worked on Restday"),
+            ("daily_ot_worked_rest_day", "OT on Worked Restday"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001"],
+                "Clock In": ["09:00"],
+                "Clock Out": ["17:00"],
+                "Shift Start": [""],
+                "Shift End": [""],
+                "Holiday Type": [""],
+                "Worked on Restday": [""],
+                "OT on Worked Restday": [""],
+                "__Rest Day": ["Yes"],
+            }
+        )
+
+        workbook = self._formula_workbook(df, selected_columns, [])
+        sheet = workbook["Sheet1"]
+
+        rest_formula = self._cell_formula_text(sheet["G2"])
+        overtime_formula = self._cell_formula_text(sheet["H2"])
+
+        self.assertIn('=IF(AND(AND(B2<>"",C2<>""),', rest_formula)
+        self.assertIn("IF(AND(D2<>\"\",E2<>\"\"),MIN", rest_formula)
+        self.assertIn('""', overtime_formula)
+
+    def test_totals_sheet_groups_by_employee_and_points_to_employee_ranges(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("employee_id", "Employee"),
+            ("daily_basic_hours", "Basic Hours"),
+            ("daily_overtime", "Overtime"),
+            ("daily_worked_special_holiday", "Worked on Special Holiday"),
+            ("daily_late_come", "Late Come"),
         ]
         df = pd.DataFrame(
             {
                 "Employee No.": ["E001", "E001", "E002"],
+                "Employee": ["Ada Lovelace", "Ada Lovelace", "Grace Hopper"],
+                "Basic Hours": ["08:00", "08:00", "08:00"],
+                "Overtime": ["00:30", "01:00", "00:15"],
+                "Worked on Special Holiday": ["02:00", "00:30", "00:00"],
                 "Late Come": ["00:05", "00:10", "00:03"],
-                "Work Hours": ["07:30", "26:30", "06:45"],
-                "Leave Days": [0, 1, 0.5],
             }
         )
 
-        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
-        workbook = self._formula_workbook(df, selected_columns, total_ranges)
+        total_ranges = _build_export_total_ranges(df, selected_columns)
+        workbook = self._formula_workbook(
+            df, selected_columns, total_ranges, totals_sheet_name="Totals"
+        )
         sheet = workbook["Sheet1"]
+        totals_sheet = workbook["Totals"]
+        headers = [cell.value for cell in totals_sheet[1]]
 
         self.assertEqual(
-            df["Employee No."].tolist(), ["E001", "E001", "Total", "E002", "Total"]
+            sheet["A2"].value,
+            "E001",
         )
+        self.assertEqual(sheet["A4"].value, "E002")
+        self.assertNotIn("Total", df["Employee No."].tolist())
         self.assertEqual(
             total_ranges,
             [
-                {"start_df_row": 0, "end_df_row": 1, "total_df_row": 2},
-                {"start_df_row": 3, "end_df_row": 3, "total_df_row": 4},
+                {
+                    "start_df_row": 0,
+                    "end_df_row": 1,
+                    "employee_number": "E001",
+                    "employee_name": "Ada Lovelace",
+                },
+                {
+                    "start_df_row": 2,
+                    "end_df_row": 2,
+                    "employee_number": "E002",
+                    "employee_name": "Grace Hopper",
+                },
             ],
         )
-        late_formula = self._cell_formula_text(sheet["B4"])
-        work_formula = self._cell_formula_text(sheet["C4"])
-        leave_formula = self._cell_formula_text(sheet["D4"])
-        second_late_formula = self._cell_formula_text(sheet["B6"])
 
-        self.assertIn('LEFT(B2:B3,FIND(":",B2:B3)-1)', late_formula)
-        self.assertIn("MID(B2:B3", late_formula)
-        self.assertIn(')&" min"', late_formula)
-        self.assertNotIn("@", late_formula)
-        self.assertIn('LEFT(C2:C3,FIND(":",C2:C3)-1)', work_formula)
-        self.assertTrue(work_formula.endswith("/1440"))
-        self.assertNotIn("@", work_formula)
-        self.assertEqual(leave_formula, '=SUMPRODUCT(VALUE(D2:D3))&" days"')
-        self.assertNotIn("@", leave_formula)
-        self.assertIn('LEFT(B5:B5,FIND(":",B5:B5)-1)', second_late_formula)
-        self.assertNotIn("@", second_late_formula)
+        basic_col = headers.index("Total Basic Hours") + 1
+        overtime_col = headers.index("OT Hours") + 1
+        special_col = headers.index("Worked on Special Holiday") + 1
+        late_col = headers.index("Late") + 1
 
-    def test_formula_total_rows_ignore_columns_without_total_rules(self):
+        self.assertEqual(totals_sheet["A2"].value, "E001")
+        self.assertEqual(totals_sheet["B2"].value, "Ada Lovelace")
+        formula_ranges = (
+            (totals_sheet.cell(2, basic_col), "'Sheet1'!C2:C3"),
+            (totals_sheet.cell(2, overtime_col), "'Sheet1'!D2:D3"),
+            (totals_sheet.cell(2, special_col), "'Sheet1'!E2:E3"),
+            (totals_sheet.cell(2, late_col), "'Sheet1'!F2:F3"),
+            (totals_sheet.cell(3, basic_col), "'Sheet1'!C4:C4"),
+        )
+        for cell, expected_range in formula_ranges:
+            formula = self._cell_formula_text(cell)
+            self.assertTrue(formula.startswith("=SUMPRODUCT("))
+            self.assertIn(f"IFERROR(N({expected_range}),0)", formula)
+            self.assertIn(f"LEFT({expected_range},FIND", formula)
+            self.assertIn(f"MID({expected_range},FIND", formula)
+            self.assertNotIn("TIMEVALUE", formula)
+            self.assertNotIn("@", formula)
+
+    def test_totals_sheet_leaves_missing_total_sources_blank(self):
         selected_columns = [
             ("employee_number", "Employee No."),
             ("attendance_date", "Attendance Date"),
@@ -3778,47 +4524,52 @@ class AttendanceActivityExportTests(SimpleTestCase):
             }
         )
 
-        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
-        workbook = self._formula_workbook(df, selected_columns, total_ranges)
+        total_ranges = _build_export_total_ranges(df, selected_columns)
+        workbook = self._formula_workbook(
+            df, selected_columns, total_ranges, totals_sheet_name="Totals"
+        )
         sheet = workbook["Sheet1"]
+        totals_sheet = workbook["Totals"]
 
         self.assertEqual(
-            df["Employee No."].tolist(), ["E001", "Total", "E002", "Total"]
+            [sheet["A2"].value, sheet["A3"].value],
+            ["E001", "E002"],
         )
-        self.assertIsNone(sheet["B3"].value)
-        self.assertIsNone(sheet["B5"].value)
+        self.assertEqual(totals_sheet["A2"].value, "E001")
+        self.assertIsNone(totals_sheet["C2"].value)
+        self.assertIsNone(totals_sheet["C3"].value)
 
-    def test_empty_formula_total_row_uses_zero_formulas(self):
+    def test_empty_totals_sheet_has_headers_only(self):
         selected_columns = [
             ("employee_number", "Employee No."),
             ("daily_late_come", "Late Come"),
-            ("daily_work_hours", "Work Hours"),
-            ("daily_leave_days", "Leave Days"),
+            ("daily_basic_hours", "Basic Hours"),
+            ("daily_worked_special_holiday", "Worked on Special Holiday"),
         ]
         df = pd.DataFrame(
             {
                 "Employee No.": [],
                 "Late Come": [],
-                "Work Hours": [],
-                "Leave Days": [],
+                "Basic Hours": [],
+                "Worked on Special Holiday": [],
             }
         )
 
-        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
-        workbook = self._formula_workbook(df, selected_columns, total_ranges)
-        sheet = workbook["Sheet1"]
-
-        self.assertEqual(df["Employee No."].tolist(), ["Total"])
-        self.assertEqual(
-            total_ranges,
-            [{"start_df_row": None, "end_df_row": None, "total_df_row": 0}],
+        total_ranges = _build_export_total_ranges(df, selected_columns)
+        workbook = self._formula_workbook(
+            df, selected_columns, total_ranges, totals_sheet_name="Totals"
         )
-        self.assertEqual(sheet["B2"].value, '=0&" min"')
-        self.assertEqual(sheet["C2"].value, "=0")
-        self.assertEqual(sheet["D2"].value, '=0&" days"')
+        totals_sheet = workbook["Totals"]
+
+        self.assertEqual(total_ranges, [])
+        self.assertEqual(totals_sheet["A1"].value, "EMP No.")
+        self.assertEqual(totals_sheet["C1"].value, "Total Basic Hours")
+        self.assertEqual(totals_sheet.max_row, 1)
 
 
 class DailyActivityRowsTests(SimpleTestCase):
+    databases = {"default"}
+
     def _template_employee(self):
         return SimpleNamespace(
             id=101,
@@ -3948,6 +4699,206 @@ class DailyActivityRowsTests(SimpleTestCase):
         self.assertEqual(row.pending_hour, "00:30")
         self.assertEqual(row.late_come_duration, "")
         self.assertEqual(row.early_out_duration, "")
+
+    def test_build_daily_rows_treats_blank_shift_schedule_as_rest_day(self):
+        saturday = date(2026, 4, 11)
+        shift_day = SimpleNamespace(id=6, day="saturday")
+        employee = SimpleNamespace(
+            id=118,
+            employee_work_info=SimpleNamespace(shift_id="Morning", shift_id_id=1),
+        )
+        weekday_schedule = SimpleNamespace(
+            shift_id_id=1,
+            day_id=1,
+            day=SimpleNamespace(day="monday"),
+            start_time=time(8, 0),
+            end_time=time(17, 0),
+            is_night_shift=False,
+        )
+        blank_rest_schedule = SimpleNamespace(
+            shift_id_id=1,
+            day_id=6,
+            day=SimpleNamespace(day="saturday"),
+            start_time=None,
+            end_time=None,
+            is_night_shift=False,
+        )
+
+        with patch("attendance.views.views.Attendance") as attendance_model, patch(
+            "attendance.views.views.EmployeeShiftSchedule"
+        ) as schedule_model:
+            attendance_model.objects.filter.return_value = []
+            schedule_model.objects.filter.return_value = [
+                weekday_schedule,
+                blank_rest_schedule,
+            ]
+
+            rows = build_daily_activity_rows(
+                FakeActivityQuerySet(
+                    [
+                        self._activity(
+                            42,
+                            employee,
+                            "work",
+                            time(9, 0),
+                            time(18, 0),
+                            shift_day=shift_day,
+                            attendance_date=saturday,
+                        )
+                    ]
+                )
+            )
+
+        self.assertTrue(rows[0].is_rest_day)
+        self.assertEqual(rows[0].shift_schedule, "Mon")
+        self.assertEqual(rows[0].overtime, "01:00")
+        with patch(
+            "attendance.views.views.format_export_value",
+            side_effect=lambda value, employee: value,
+        ):
+            self.assertEqual(
+                _attendance_activity_daily_export_value(
+                    rows[0], "daily_shift_start", None
+                ),
+                "08:00",
+            )
+            self.assertEqual(
+                _attendance_activity_daily_export_value(
+                    rows[0], "daily_shift_end", None
+                ),
+                "17:00",
+            )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                rows[0], "daily_worked_rest_day", None
+            ),
+            "08:00",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                rows[0], "daily_ot_worked_rest_day", None
+            ),
+            "01:00",
+        )
+        if hasattr(rows[0], "_premium_export_buckets"):
+            delattr(rows[0], "_premium_export_buckets")
+        rows[0].holiday_type = "regular"
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                rows[0], "daily_rest_day_regular_holiday", None
+            ),
+            "08:00",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                rows[0], "daily_ot_regular_holiday_rest_day", None
+            ),
+            "01:00",
+        )
+        if hasattr(rows[0], "_premium_export_buckets"):
+            delattr(rows[0], "_premium_export_buckets")
+        rows[0].holiday_type = "special"
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                rows[0], "daily_rest_day_special_holiday", None
+            ),
+            "08:00",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                rows[0], "daily_ot_special_holiday_rest_day", None
+            ),
+            "01:00",
+        )
+
+    def test_build_daily_rows_treats_explicit_schedule_flag_as_rest_day(self):
+        saturday = date(2026, 4, 11)
+        shift_day = SimpleNamespace(id=6, day="saturday")
+        employee = SimpleNamespace(
+            id=119,
+            employee_work_info=SimpleNamespace(shift_id="Morning", shift_id_id=1),
+        )
+        weekday_schedule = SimpleNamespace(
+            shift_id_id=1,
+            day_id=1,
+            day=SimpleNamespace(day="monday"),
+            start_time=time(8, 0),
+            end_time=time(17, 0),
+            is_night_shift=False,
+            is_rest_day=False,
+        )
+        explicit_rest_schedule = SimpleNamespace(
+            shift_id_id=1,
+            day_id=6,
+            day=SimpleNamespace(day="saturday"),
+            start_time=time(8, 0),
+            end_time=time(17, 0),
+            is_night_shift=False,
+            is_rest_day=True,
+        )
+
+        with patch("attendance.views.views.Attendance") as attendance_model, patch(
+            "attendance.views.views.EmployeeShiftSchedule"
+        ) as schedule_model:
+            attendance_model.objects.filter.return_value = []
+            schedule_model.objects.filter.return_value = [
+                weekday_schedule,
+                explicit_rest_schedule,
+            ]
+
+            rows = build_daily_activity_rows(
+                FakeActivityQuerySet(
+                    [
+                        self._activity(
+                            43,
+                            employee,
+                            "work",
+                            time(9, 0),
+                            time(18, 0),
+                            shift_day=shift_day,
+                            attendance_date=saturday,
+                        )
+                    ]
+                )
+            )
+
+        self.assertTrue(rows[0].is_rest_day)
+        self.assertTrue(rows[0].has_shift_schedule)
+        self.assertEqual(rows[0].shift_schedule, "Mon")
+        with patch(
+            "attendance.views.views.format_export_value",
+            side_effect=lambda value, employee: value,
+        ):
+            self.assertEqual(
+                _attendance_activity_daily_export_value(
+                    rows[0], "daily_shift_start", None
+                ),
+                "08:00",
+            )
+            self.assertEqual(
+                _attendance_activity_daily_export_value(
+                    rows[0], "daily_shift_end", None
+                ),
+                "17:00",
+            )
+            self.assertEqual(
+                _attendance_activity_daily_export_value(
+                    rows[0], "daily_rest_day", None
+                ),
+                "Yes",
+            )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                rows[0], "daily_worked_rest_day", None
+            ),
+            "08:00",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(
+                rows[0], "daily_ot_worked_rest_day", None
+            ),
+            "01:00",
+        )
 
     def test_build_daily_rows_keeps_all_work_segment_images(self):
         row = self._multi_work_image_row()
@@ -4110,20 +5061,26 @@ class DailyActivityRowsTests(SimpleTestCase):
             attendance_clock_out=time(15, 0),
             hours_pending=lambda: "06:00",
         )
-        monday_schedule = SimpleNamespace(
-            shift_id_id=1,
-            day_id=1,
-            day=SimpleNamespace(day="monday"),
-            start_time=time(8, 0),
-            end_time=time(17, 0),
-            is_night_shift=False,
-        )
+        weekday_schedules = [
+            SimpleNamespace(
+                shift_id_id=1,
+                day_id=day_id,
+                day=SimpleNamespace(day=day_name),
+                start_time=time(8, 0),
+                end_time=time(17, 0),
+                is_night_shift=False,
+            )
+            for day_id, day_name in enumerate(
+                ["monday", "tuesday", "wednesday", "thursday", "friday"],
+                start=1,
+            )
+        ]
 
         with patch("attendance.views.views.Attendance") as attendance_model, patch(
             "attendance.views.views.EmployeeShiftSchedule"
         ) as schedule_model:
             attendance_model.objects.filter.return_value = [attendance]
-            schedule_model.objects.filter.return_value = [monday_schedule]
+            schedule_model.objects.filter.return_value = weekday_schedules
 
             rows = build_daily_activity_rows(
                 FakeActivityQuerySet(
@@ -4143,6 +5100,25 @@ class DailyActivityRowsTests(SimpleTestCase):
 
         self.assertEqual(rows[0].late_come_duration, "02:30")
         self.assertEqual(rows[0].early_out_duration, "02:00")
+        self.assertTrue(rows[0].is_rest_day)
+        self.assertFalse(rows[0].has_shift_schedule)
+        self.assertEqual(rows[0].shift_schedule, "Mon, Tue, Wed, Thu, Fri")
+        with patch(
+            "attendance.views.views.format_export_value",
+            side_effect=lambda value, employee: value,
+        ):
+            self.assertEqual(
+                _attendance_activity_daily_export_value(
+                    rows[0], "daily_shift_start", None
+                ),
+                "",
+            )
+            self.assertEqual(
+                _attendance_activity_daily_export_value(
+                    rows[0], "daily_shift_end", None
+                ),
+                "",
+            )
 
     def test_build_daily_rows_prefers_exact_day_schedule_over_weekday_fallback(self):
         employee = SimpleNamespace(id=119)
@@ -4208,6 +5184,25 @@ class DailyActivityRowsTests(SimpleTestCase):
 
         self.assertEqual(rows[0].late_come_duration, "01:00")
         self.assertEqual(rows[0].early_out_duration, "03:00")
+        self.assertFalse(rows[0].is_rest_day)
+        self.assertTrue(rows[0].has_shift_schedule)
+        self.assertEqual(rows[0].shift_schedule, "Mon, Sat")
+        with patch(
+            "attendance.views.views.format_export_value",
+            side_effect=lambda value, employee: value,
+        ):
+            self.assertEqual(
+                _attendance_activity_daily_export_value(
+                    rows[0], "daily_shift_start", None
+                ),
+                "10:00",
+            )
+            self.assertEqual(
+                _attendance_activity_daily_export_value(
+                    rows[0], "daily_shift_end", None
+                ),
+                "19:00",
+            )
 
     def test_build_daily_rows_uses_activity_clock_in_when_attendance_is_stale(self):
         employee = SimpleNamespace(id=106)

@@ -743,6 +743,7 @@ class EmployeeShiftSchedule(HorillaModel):
     start_time = models.TimeField(null=True, verbose_name=_("Start Time"))
     end_time = models.TimeField(null=True, verbose_name=_("End Time"))
     is_night_shift = models.BooleanField(default=False, verbose_name=_("Night Shift"))
+    is_rest_day = models.BooleanField(default=False, verbose_name=_("Is Rest Day"))
     is_auto_punch_out_enabled = models.BooleanField(
         default=False,
         verbose_name=_("Enable Automatic Check Out"),
@@ -1876,10 +1877,22 @@ class TrackLateComeEarlyOut(HorillaModel):
 
 
 class Holidays(HorillaModel):
+    HOLIDAY_TYPE_CHOICES = [
+        ("unclassified", _("Unclassified")),
+        ("regular", _("Regular Holiday")),
+        ("special", _("Special Holiday")),
+    ]
+
     name = models.CharField(max_length=30, null=False, verbose_name=_("Name"))
     start_date = models.DateField(verbose_name=_("Start Date"))
     end_date = models.DateField(null=True, blank=True, verbose_name=_("End Date"))
     recurring = models.BooleanField(default=False, verbose_name=_("Recurring"))
+    holiday_type = models.CharField(
+        max_length=20,
+        choices=HOLIDAY_TYPE_CHOICES,
+        default="unclassified",
+        verbose_name=_("Holiday Type"),
+    )
     company_id = models.ForeignKey(
         Company,
         null=True,

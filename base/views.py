@@ -7413,7 +7413,7 @@ def excel_holiday_import(file):
 
 
 @login_required
-@permission_required("base.add_holiday")
+@permission_required("base.add_holidays")
 def holidays_info_import(request):
     result = None
     file_name = "HolidaysImportError.xlsx"
@@ -7602,7 +7602,7 @@ def holiday_delete(request, obj_id):
 
 @login_required
 @require_http_methods(["POST"])
-@permission_required("base.delete_holiday")
+@permission_required("base.delete_holidays")
 def bulk_holiday_delete(request):
     """
     Deletes multiple holidays based on IDs passed in the POST request.

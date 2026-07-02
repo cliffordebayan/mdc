@@ -44,6 +44,9 @@
 															{{schedule.day|capfirst}}
 															<small class="d-block text-muted">
 																{{schedule.start_time|time:"H:i"}} - {{schedule.end_time|time:"H:i"}}
+																{% if schedule.is_rest_day %}
+																	<span class="oh-badge oh-badge--secondary oh-badge--small oh-badge--round ms-2">{% trans "Rest Day" %}</span>
+																{% endif %}
 																{% trans "Minimum" %}: {{schedule.minimum_working_hour}}
 															</small>
 														</span>

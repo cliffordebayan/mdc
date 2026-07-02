@@ -69,6 +69,7 @@ from attendance.filters import (
     LateComeEarlyOutReGroup,
 )
 from attendance.forms import (
+    ATTENDANCE_PREMIUM_EXPORT_FIELDS,
     AttendanceActivityExportForm,
     AttendanceActivityUpdateForm,
     AttendanceExportForm,
@@ -477,6 +478,8 @@ def _daily_activity_segment(activity):
     return SimpleNamespace(
         activity=activity,
         activity_type=_activity_type(activity),
+        in_datetime=getattr(activity, "in_datetime", None),
+        out_datetime=getattr(activity, "out_datetime", None),
         clock_in=activity.clock_in,
         clock_in_date=activity.clock_in_date,
         clock_out=activity.clock_out,
@@ -525,6 +528,229 @@ def _activity_duration_seconds(activity):
 
 def _activity_total_hours(activities):
     return format_time(sum(_activity_duration_seconds(activity) for activity in activities))
+
+
+NIGHT_DIFFERENTIAL_START = time(22, 0)
+NIGHT_DIFFERENTIAL_END = time(6, 0)
+ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES = {
+    field_name for field_name, _ in ATTENDANCE_PREMIUM_EXPORT_FIELDS
+}
+
+
+def _premium_empty_buckets():
+    return {field_name: 0 for field_name in ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES}
+
+
+def _premium_bucket_time(seconds):
+    return format_time(max(0, int(seconds or 0)))
+
+
+def _segment_datetime(segment, row_date, date_attr, time_attr, direct_attr):
+    direct_value = getattr(segment, direct_attr, None)
+    direct_datetime = _naive_local_datetime(direct_value) if direct_value else None
+    if direct_datetime:
+        return direct_datetime
+    clock_time = getattr(segment, time_attr, None)
+    if not clock_time:
+        return None
+    clock_date = getattr(segment, date_attr, None) or row_date
+    if not clock_date:
+        return None
+    return datetime.combine(clock_date, clock_time)
+
+
+def _work_segment_interval(segment, row_date):
+    start = _segment_datetime(
+        segment, row_date, "clock_in_date", "clock_in", "in_datetime"
+    )
+    end = _segment_datetime(
+        segment, row_date, "clock_out_date", "clock_out", "out_datetime"
+    )
+    if not start or not end:
+        return None
+    if end <= start and getattr(segment, "clock_out_date", None) is None:
+        end += timedelta(days=1)
+    if end <= start:
+        return None
+    return start, end
+
+
+def _row_schedule_end_datetime(row):
+    schedule = getattr(row, "schedule", None)
+    attendance_date = getattr(row, "attendance_date", None)
+    if not schedule or not attendance_date or not getattr(schedule, "end_time", None):
+        return None
+    start_time = getattr(schedule, "start_time", None)
+    end_time = schedule.end_time
+    is_night_shift = bool(getattr(schedule, "is_night_shift", False))
+    if start_time and start_time > end_time:
+        is_night_shift = True
+    end_date = attendance_date + timedelta(days=1) if is_night_shift else attendance_date
+    return datetime.combine(end_date, end_time)
+
+
+def _interval_overlap_seconds(start, end, window_start, window_end):
+    latest_start = max(start, window_start)
+    earliest_end = min(end, window_end)
+    if earliest_end <= latest_start:
+        return 0
+    return int((earliest_end - latest_start).total_seconds())
+
+
+def _night_differential_seconds(start, end):
+    total = 0
+    current = start.date() - timedelta(days=1)
+    while current <= end.date():
+        window_start = datetime.combine(current, NIGHT_DIFFERENTIAL_START)
+        window_end = datetime.combine(current + timedelta(days=1), NIGHT_DIFFERENTIAL_END)
+        total += _interval_overlap_seconds(start, end, window_start, window_end)
+        current += timedelta(days=1)
+    return total
+
+
+def _premium_row_category(row):
+    holiday_type = getattr(row, "holiday_type", None)
+    if holiday_type not in {"regular", "special"}:
+        holiday_type = None
+    return holiday_type, bool(getattr(row, "is_rest_day", False))
+
+
+def _add_premium_bucket(buckets, field_name, seconds):
+    if seconds > 0:
+        buckets[field_name] += seconds
+
+
+def _add_premium_interval_buckets(buckets, holiday_type, is_rest_day, seconds, nd_seconds, overtime):
+    if seconds <= 0:
+        return
+
+    if holiday_type == "regular" and is_rest_day:
+        _add_premium_bucket(
+            buckets,
+            "daily_ot_regular_holiday_rest_day" if overtime else "daily_rest_day_regular_holiday",
+            seconds,
+        )
+        _add_premium_bucket(
+            buckets,
+            (
+                "daily_night_differential_rest_day_regular_holiday_overtime"
+                if overtime
+                else "daily_night_differential_rest_day_regular_holiday"
+            ),
+            nd_seconds,
+        )
+        return
+
+    if holiday_type == "special" and is_rest_day:
+        _add_premium_bucket(
+            buckets,
+            "daily_ot_special_holiday_rest_day" if overtime else "daily_rest_day_special_holiday",
+            seconds,
+        )
+        _add_premium_bucket(
+            buckets,
+            (
+                "daily_night_differential_rest_day_special_holiday_overtime"
+                if overtime
+                else "daily_night_differential_rest_day_special_holiday"
+            ),
+            nd_seconds,
+        )
+        return
+
+    if holiday_type == "regular":
+        _add_premium_bucket(
+            buckets,
+            "daily_ot_worked_regular_holiday" if overtime else "daily_worked_regular_holiday",
+            seconds,
+        )
+        _add_premium_bucket(
+            buckets,
+            (
+                "daily_night_differential_regular_holiday_overtime"
+                if overtime
+                else "daily_night_differential_regular_holiday"
+            ),
+            nd_seconds,
+        )
+        return
+
+    if holiday_type == "special":
+        _add_premium_bucket(
+            buckets,
+            "daily_ot_worked_special_holiday" if overtime else "daily_worked_special_holiday",
+            seconds,
+        )
+        _add_premium_bucket(
+            buckets,
+            (
+                "daily_night_differential_special_holiday_overtime"
+                if overtime
+                else "daily_night_differential_special_holiday"
+            ),
+            nd_seconds,
+        )
+        return
+
+    if is_rest_day:
+        _add_premium_bucket(
+            buckets,
+            "daily_ot_worked_rest_day" if overtime else "daily_worked_rest_day",
+            seconds,
+        )
+        _add_premium_bucket(
+            buckets,
+            (
+                "daily_night_differential_rest_day_overtime"
+                if overtime
+                else "daily_night_differential_rest_day"
+            ),
+            nd_seconds,
+        )
+        return
+
+    _add_premium_bucket(
+        buckets,
+        "daily_night_differential_overtime" if overtime else "daily_night_differential",
+        nd_seconds,
+    )
+
+
+def _attendance_activity_premium_buckets(row):
+    cached = getattr(row, "_premium_export_buckets", None)
+    if cached is not None:
+        return cached
+
+    buckets = _premium_empty_buckets()
+    if not row or getattr(row, "is_leave_only", False):
+        if row is not None:
+            row._premium_export_buckets = buckets
+        return buckets
+
+    holiday_type, is_rest_day = _premium_row_category(row)
+    shift_end = _row_schedule_end_datetime(row)
+
+    for segment in getattr(row, "work_segments", []) or []:
+        interval = _work_segment_interval(segment, getattr(row, "attendance_date", None))
+        if not interval:
+            continue
+        start, end = interval
+        split_points = [start, end]
+        if shift_end and start < shift_end < end:
+            split_points.insert(1, shift_end)
+
+        for idx in range(len(split_points) - 1):
+            part_start = split_points[idx]
+            part_end = split_points[idx + 1]
+            seconds = int((part_end - part_start).total_seconds())
+            nd_seconds = _night_differential_seconds(part_start, part_end)
+            overtime = bool(shift_end and part_start >= shift_end)
+            _add_premium_interval_buckets(
+                buckets, holiday_type, is_rest_day, seconds, nd_seconds, overtime
+            )
+
+    row._premium_export_buckets = buckets
+    return buckets
 
 
 def _attendance_row_hours(attendance):
@@ -608,6 +834,99 @@ def _row_shift_day_name(attendance, activity_shift_day, attendance_date):
     if attendance_date:
         return attendance_date.strftime("%A").lower()
     return None
+
+
+SHIFT_SCHEDULE_DAY_ORDER = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
+SHIFT_SCHEDULE_DAY_LABELS = {
+    "monday": "Mon",
+    "tuesday": "Tue",
+    "wednesday": "Wed",
+    "thursday": "Thu",
+    "friday": "Fri",
+    "saturday": "Sat",
+    "sunday": "Sun",
+}
+
+
+def _normalize_shift_day_name(day_name):
+    if not day_name:
+        return None
+    normalized = str(day_name).strip().lower()
+    if not normalized:
+        return None
+    for full_day_name in SHIFT_SCHEDULE_DAY_ORDER:
+        if normalized == full_day_name or normalized[:3] == full_day_name[:3]:
+            return full_day_name
+    return normalized
+
+
+def _shift_schedule_days_label(day_names):
+    ordered_days = [
+        day_name
+        for day_name in SHIFT_SCHEDULE_DAY_ORDER
+        if day_name in set(day_names or [])
+    ]
+    return ", ".join(SHIFT_SCHEDULE_DAY_LABELS[day_name] for day_name in ordered_days)
+
+
+def _shift_schedule_days_by_shift_id(shift_ids):
+    shift_ids = {shift_id for shift_id in shift_ids if shift_id}
+    if not shift_ids:
+        return {}
+
+    schedules = EmployeeShiftSchedule.objects.filter(shift_id_id__in=shift_ids)
+    if hasattr(schedules, "select_related"):
+        schedules = schedules.select_related("day")
+
+    days_by_shift_id = {shift_id: set() for shift_id in shift_ids}
+    for schedule in schedules:
+        shift_id = getattr(schedule, "shift_id_id", None)
+        day_name = getattr(getattr(schedule, "day", None), "day", None)
+        day_name = _normalize_shift_day_name(day_name)
+        if (
+            shift_id
+            and day_name
+            and getattr(schedule, "start_time", None)
+            and getattr(schedule, "end_time", None)
+            and not getattr(schedule, "is_rest_day", False)
+        ):
+            days_by_shift_id.setdefault(shift_id, set()).add(day_name)
+
+    return {
+        shift_id: [
+            day_name
+            for day_name in SHIFT_SCHEDULE_DAY_ORDER
+            if day_name in day_names
+        ]
+        for shift_id, day_names in days_by_shift_id.items()
+    }
+
+
+def _shift_day_is_rest_day(shift_schedule_days, shift_day_name):
+    shift_day_name = _normalize_shift_day_name(shift_day_name)
+    if not shift_schedule_days or not shift_day_name:
+        return False
+    return shift_day_name not in set(shift_schedule_days)
+
+
+def _schedule_is_blank_rest_day(schedule):
+    if not schedule:
+        return False
+    return not getattr(schedule, "start_time", None) or not getattr(
+        schedule, "end_time", None
+    )
+
+
+def _schedule_is_explicit_rest_day(schedule):
+    return bool(schedule and getattr(schedule, "is_rest_day", False))
 
 
 def _row_attendance_date(attendance, activity):
@@ -797,6 +1116,7 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
 
     leave_by_key = {}
     holiday_by_date = {}
+    holiday_type_by_date = {}
     all_check_dates = set(attendance_dates)
     if date_from and date_to:
         current = date_from
@@ -840,10 +1160,13 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
             while current <= end:
                 if current in all_check_dates and current not in holiday_by_date:
                     holiday_by_date[current] = holiday.name
+                    holiday_type_by_date[current] = getattr(
+                        holiday, "holiday_type", "unclassified"
+                    )
                 current += timedelta(days=1)
-
     row_contexts = []
     schedule_keys = set()
+    shift_ids = set()
     for (employee_id, attendance_date), row_data in grouped.items():
         row_activities = sorted(row_data["activities"], key=_activity_in_datetime)
         work_activities = [
@@ -900,6 +1223,8 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
         )
         if schedule_key[0] and (schedule_key[1] or schedule_key[2]):
             schedule_keys.add(schedule_key)
+        if schedule_key[0]:
+            shift_ids.add(schedule_key[0])
         row_contexts.append(
             {
                 "employee_id": employee_id,
@@ -922,6 +1247,7 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
         )
 
     schedule_by_key = _employee_shift_schedules(schedule_keys)
+    schedule_days_by_shift_id = _shift_schedule_days_by_shift_id(shift_ids)
 
     rows = []
     for row_context in row_contexts:
@@ -938,11 +1264,24 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
         attendance = row_context["attendance"]
         hours = row_context["hours"]
         schedule_key = row_context["schedule_key"]
-        schedule = schedule_by_key.get(
+        exact_schedule = schedule_by_key.get(
             (schedule_key[0], schedule_key[1], None)
-        ) or schedule_by_key.get(
-            (schedule_key[0], None, schedule_key[2])
-        ) or schedule_by_key.get((schedule_key[0], None, "__weekday_fallback__"))
+        ) or schedule_by_key.get((schedule_key[0], None, schedule_key[2]))
+        fallback_schedule = schedule_by_key.get(
+            (schedule_key[0], None, "__weekday_fallback__")
+        )
+        schedule = (
+            fallback_schedule
+            if _schedule_is_blank_rest_day(exact_schedule) and fallback_schedule
+            else exact_schedule or fallback_schedule
+        )
+        shift_schedule_days = schedule_days_by_shift_id.get(schedule_key[0], [])
+        shift_schedule = _shift_schedule_days_label(shift_schedule_days)
+        is_rest_day = (
+            _schedule_is_explicit_rest_day(exact_schedule)
+            or _schedule_is_blank_rest_day(exact_schedule)
+            or _shift_day_is_rest_day(shift_schedule_days, schedule_key[2])
+        )
         late_early_durations = {
             report_type: _activity_late_early_duration(
                 first_work_clock_in,
@@ -983,6 +1322,9 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
                     for segment in work_segments
                 ),
                 shift=row_context["shift"],
+                shift_schedule=shift_schedule,
+                shift_schedule_days=shift_schedule_days,
+                has_shift_schedule=bool(exact_schedule),
                 schedule=schedule,
                 work_type=hours.work_type,
                 min_hour=hours.min_hour,
@@ -1008,6 +1350,8 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
                 ),
                 is_leave_only=False,
                 holiday=holiday_by_date.get(attendance_date),
+                holiday_type=holiday_type_by_date.get(attendance_date),
+                is_rest_day=is_rest_day,
             )
         )
 
@@ -1029,6 +1373,10 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
             if not employee:
                 continue
             leave_type_val, leave_days_val = leave_data
+            employee_shift_id = _row_shift_id(None, employee)
+            leave_shift_schedule_days = schedule_days_by_shift_id.get(
+                employee_shift_id, []
+            )
             rows.append(
                 SimpleNamespace(
                     employee=employee,
@@ -1046,7 +1394,12 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
                     work_in=None,
                     work_out=None,
                     has_work_images=False,
-                    shift=None,
+                    shift=_row_shift(None, employee),
+                    shift_schedule=_shift_schedule_days_label(
+                        leave_shift_schedule_days
+                    ),
+                    shift_schedule_days=leave_shift_schedule_days,
+                    has_shift_schedule=False,
                     schedule=None,
                     work_type=None,
                     min_hour=None,
@@ -1062,6 +1415,8 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
                     leave_days=leave_days_val,
                     is_leave_only=True,
                     holiday=holiday_by_date.get(date_val),
+                    holiday_type=holiday_type_by_date.get(date_val),
+                    is_rest_day=False,
                 )
             )
 
@@ -1099,6 +1454,9 @@ def _empty_daily_attendance_row(attendance):
         work_out=fallback_work_out,
         has_work_images=False,
         shift=hours.shift,
+        shift_schedule="",
+        shift_schedule_days=[],
+        has_shift_schedule=False,
         work_type=hours.work_type,
         min_hour=hours.min_hour,
         late_come_duration="",
@@ -1113,6 +1471,8 @@ def _empty_daily_attendance_row(attendance):
         leave_days=None,
         is_leave_only=False,
         holiday=None,
+        holiday_type=None,
+        is_rest_day=False,
     )
 
 
@@ -1174,10 +1534,12 @@ ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS = {
     "daily_shift",
     "daily_shift_start",
     "daily_shift_end",
+    "daily_rest_day",
     "daily_shift_day",
     "daily_late_come",
     "daily_early_out",
     "daily_work_hours",
+    "daily_basic_hours",
     "daily_break_hours",
     "daily_lunch_hours",
     "daily_overtime",
@@ -1185,6 +1547,33 @@ ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS = {
     "daily_leave_type",
     "daily_leave_days",
     "daily_holiday",
+    "daily_holiday_type",
+    *ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES,
+}
+
+INTERNAL_REST_DAY_EXPORT_FIELD = "daily_rest_day"
+INTERNAL_REST_DAY_EXPORT_HEADER = "__Rest Day"
+INTERNAL_HOLIDAY_TYPE_EXPORT_FIELD = "daily_holiday_type"
+INTERNAL_HOLIDAY_TYPE_EXPORT_HEADER = "__Holiday Type"
+INTERNAL_ZERO_HOURS_EXPORT_FIELDS = {
+    "daily_work_hours",
+    "daily_basic_hours",
+    "daily_overtime",
+}
+INTERNAL_EXPORT_HEADERS = {
+    INTERNAL_REST_DAY_EXPORT_HEADER,
+    INTERNAL_HOLIDAY_TYPE_EXPORT_HEADER,
+}
+
+ATTENDANCE_FORMULA_DAILY_EXPORT_FIELDS = {
+    "daily_late_come",
+    "daily_early_out",
+    "daily_work_hours",
+    "daily_basic_hours",
+    "daily_break_hours",
+    "daily_lunch_hours",
+    "daily_overtime",
+    *ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES,
 }
 
 
@@ -1314,8 +1703,36 @@ def _attendance_activity_export_locations(segments, field_name):
     )
 
 
+def _holiday_type_export_label(holiday_type):
+    if not holiday_type:
+        return ""
+    labels = dict(Holidays.HOLIDAY_TYPE_CHOICES)
+    return str(labels.get(holiday_type, ""))
+
+
+def _row_is_leave_export_row(row):
+    return bool(
+        getattr(row, "is_leave_only", False)
+        or getattr(row, "leave", None)
+        or getattr(row, "leave_type", None)
+        or getattr(row, "leave_days", None)
+    )
+
+
+def _attendance_activity_rest_day_export_value(row):
+    if _row_is_leave_export_row(row):
+        return ""
+    return "Yes" if getattr(row, "is_rest_day", False) else ""
+
+
 def _attendance_activity_daily_export_value(row, field_name, employee, formatter=None):
     if not row:
+        return ""
+
+    if (
+        field_name in ATTENDANCE_FORMULA_DAILY_EXPORT_FIELDS
+        and _row_is_leave_export_row(row)
+    ):
         return ""
 
     if field_name == "daily_clock_in":
@@ -1389,18 +1806,28 @@ def _attendance_activity_daily_export_value(row, field_name, employee, formatter
         return _format_attendance_activity_export_value(row.shift, employee)
     if field_name == "daily_shift_start":
         schedule = getattr(row, "schedule", None)
-        if not schedule or not schedule.start_time:
+        if (
+            not getattr(row, "has_shift_schedule", False)
+            or not schedule
+            or not schedule.start_time
+        ):
             return ""
         return _strip_time_seconds_str(_format_attendance_activity_export_value(
             _drop_time_seconds(schedule.start_time), employee, formatter
         ))
     if field_name == "daily_shift_end":
         schedule = getattr(row, "schedule", None)
-        if not schedule or not schedule.end_time:
+        if (
+            not getattr(row, "has_shift_schedule", False)
+            or not schedule
+            or not schedule.end_time
+        ):
             return ""
         return _strip_time_seconds_str(_format_attendance_activity_export_value(
             _drop_time_seconds(schedule.end_time), employee, formatter
         ))
+    if field_name == "daily_rest_day":
+        return _attendance_activity_rest_day_export_value(row)
     if field_name == "daily_shift_day":
         shift_day = row.shift_day
         if shift_day is None:
@@ -1424,6 +1851,8 @@ def _attendance_activity_daily_export_value(row, field_name, employee, formatter
         return _format_attendance_activity_export_value(
             row.work_hours, employee, formatter
         )
+    if field_name == "daily_basic_hours":
+        return ""
     if field_name == "daily_break_hours":
         return _format_attendance_activity_export_value(
             row.break_hours, employee, formatter
@@ -1443,6 +1872,12 @@ def _attendance_activity_daily_export_value(row, field_name, employee, formatter
         return str(days) if days is not None else ""
     if field_name == "daily_holiday":
         return row.holiday or ""
+    if field_name == "daily_holiday_type":
+        return _holiday_type_export_label(getattr(row, "holiday_type", None))
+    if field_name in ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES:
+        return _premium_bucket_time(
+            _attendance_activity_premium_buckets(row).get(field_name, 0)
+        )
 
     return ""
 
@@ -1529,8 +1964,11 @@ def _attendance_activity_export_daily_rows(activities):
     return filtered_rows
 
 
-def _payroll_group_empty_daily_row(employee, attendance_date):
+def _payroll_group_empty_daily_row(
+    employee, attendance_date, shift_schedule_days=None, schedule=None
+):
     work_info = getattr(employee, "employee_work_info", None)
+    shift_schedule_days = shift_schedule_days or []
     return SimpleNamespace(
         employee=employee,
         attendance_date=attendance_date,
@@ -1548,7 +1986,10 @@ def _payroll_group_empty_daily_row(employee, attendance_date):
         work_out=None,
         has_work_images=False,
         shift=getattr(work_info, "shift_id", None),
-        schedule=None,
+        shift_schedule=_shift_schedule_days_label(shift_schedule_days),
+        shift_schedule_days=shift_schedule_days,
+        has_shift_schedule=bool(schedule),
+        schedule=schedule,
         work_type=getattr(work_info, "work_type_id", None),
         min_hour="00:00",
         late_come_duration="00:00",
@@ -1563,6 +2004,15 @@ def _payroll_group_empty_daily_row(employee, attendance_date):
         leave_days=None,
         is_leave_only=False,
         holiday=None,
+        holiday_type=None,
+        is_rest_day=(
+            _schedule_is_explicit_rest_day(schedule)
+            or _schedule_is_blank_rest_day(schedule)
+            or _shift_day_is_rest_day(
+                shift_schedule_days,
+                attendance_date.strftime("%A").lower() if attendance_date else None,
+            )
+        ),
     )
 
 
@@ -1581,13 +2031,46 @@ def _attendance_activity_payroll_group_daily_rows(
         (getattr(row.employee, "id", None), row.attendance_date): row
         for row in daily_rows
     }
+    employee_shift_ids = {
+        _row_shift_id(None, employee)
+        for employee in employees
+        if _row_shift_id(None, employee)
+    }
+    schedule_days_by_shift_id = _shift_schedule_days_by_shift_id(employee_shift_ids)
+    payroll_schedule_keys = {
+        (
+            _row_shift_id(None, employee),
+            None,
+            attendance_date.strftime("%A").lower(),
+        )
+        for employee in employees
+        for attendance_date in _date_range_inclusive(date_from, date_to)
+        if _row_shift_id(None, employee)
+    }
+    payroll_schedules_by_key = _employee_shift_schedules(payroll_schedule_keys)
     complete_rows = []
     for employee in employees:
+        shift_id = _row_shift_id(None, employee)
+        shift_schedule_days = schedule_days_by_shift_id.get(shift_id, [])
         for attendance_date in _date_range_inclusive(date_from, date_to):
             key = (employee.id, attendance_date)
+            shift_day_name = attendance_date.strftime("%A").lower()
+            exact_schedule = payroll_schedules_by_key.get(
+                (shift_id, None, shift_day_name)
+            )
+            fallback_schedule = payroll_schedules_by_key.get(
+                (shift_id, None, "__weekday_fallback__")
+            )
+            schedule = (
+                fallback_schedule
+                if _schedule_is_blank_rest_day(exact_schedule) and fallback_schedule
+                else exact_schedule
+            )
             complete_rows.append(
                 rows_by_key.get(key)
-                or _payroll_group_empty_daily_row(employee, attendance_date)
+                or _payroll_group_empty_daily_row(
+                    employee, attendance_date, shift_schedule_days, schedule
+                )
             )
     complete_rows.sort(
         key=lambda row: (
@@ -1610,6 +2093,25 @@ def _attendance_activity_export_data_from_rows(
     daily_rows, selected_columns, employee, progress=None, progress_start=20, progress_end=70
 ):
     data_export = {verbose_name: [] for _, verbose_name in selected_columns}
+    selected_field_names = {field_name for field_name, _verbose_name in selected_columns}
+    include_rest_day_helper = (
+        INTERNAL_REST_DAY_EXPORT_FIELD not in selected_field_names
+    ) and any(
+        field_name in ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES
+        or field_name in INTERNAL_ZERO_HOURS_EXPORT_FIELDS
+        for field_name, _verbose_name in selected_columns
+    )
+    include_holiday_type_helper = (
+        INTERNAL_HOLIDAY_TYPE_EXPORT_FIELD not in selected_field_names
+    ) and any(
+        field_name in ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES
+        or field_name in INTERNAL_ZERO_HOURS_EXPORT_FIELDS
+        for field_name, _verbose_name in selected_columns
+    )
+    if include_rest_day_helper:
+        data_export[INTERNAL_REST_DAY_EXPORT_HEADER] = []
+    if include_holiday_type_helper:
+        data_export[INTERNAL_HOLIDAY_TYPE_EXPORT_HEADER] = []
     formatter = _attendance_activity_export_formatter(employee)
     total_rows = len(daily_rows) or 1
 
@@ -1617,6 +2119,14 @@ def _attendance_activity_export_data_from_rows(
         for field_name, verbose_name in selected_columns:
             data_export[verbose_name].append(
                 _attendance_activity_export_row_value(row, field_name, employee, formatter)
+            )
+        if include_rest_day_helper:
+            data_export[INTERNAL_REST_DAY_EXPORT_HEADER].append(
+                _attendance_activity_rest_day_export_value(row)
+            )
+        if include_holiday_type_helper:
+            data_export[INTERNAL_HOLIDAY_TYPE_EXPORT_HEADER].append(
+                _holiday_type_export_label(getattr(row, "holiday_type", None))
             )
         if progress and (index == total_rows or index % 100 == 0):
             span = progress_end - progress_start
@@ -1724,7 +2234,11 @@ def _write_plain_export_frame(writer, data_frame, sheet_name):
     data_frame.to_excel(writer, index=False, sheet_name=sheet_name)
     worksheet = writer.sheets[sheet_name]
     centered = writer.book.add_format({"align": "center", "valign": "vcenter"})
-    worksheet.set_column("A:Z", 18, centered)
+    if len(data_frame.columns):
+        worksheet.set_column(0, len(data_frame.columns) - 1, 18, centered)
+    for col_idx, column_name in enumerate(data_frame.columns):
+        if column_name in INTERNAL_EXPORT_HEADERS:
+            worksheet.set_column(col_idx, col_idx, 18, centered, {"hidden": True})
     return worksheet
 
 
@@ -1763,17 +2277,16 @@ def _write_attendance_activity_export_workbook(request, output, progress=None):
     if progress:
         progress(75, _("Writing workbook"))
     data_frame = pd.DataFrame(data=data_export)
-    data_frame, total_ranges = _insert_export_formula_total_rows(
-        data_frame, selected_columns
-    )
+    total_ranges = _build_export_total_ranges(data_frame, selected_columns)
 
     writer = pd.ExcelWriter(output, engine="xlsxwriter")
+    writer.book.set_calc_mode("auto")
     worksheet = _write_plain_export_frame(writer, data_frame, "Sheet1")
     _write_export_row_formulas(
         writer.book, worksheet, data_frame, selected_columns, total_ranges
     )
-    _write_export_total_formulas(
-        writer.book, worksheet, data_frame, selected_columns, total_ranges
+    _write_export_totals_sheet(
+        writer, "Sheet1", data_frame, selected_columns, total_ranges, "Totals"
     )
     writer.close()
     if progress:
@@ -1790,103 +2303,125 @@ def export_attendance_activity_data(request):
     return response
 
 
-EXPORT_TOTAL_MINUTE_FIELDS = {
-    "daily_late_come",
-    "daily_early_out",
-    "daily_overtime",
-    "daily_break_hours",
-    "daily_lunch_hours",
-}
-EXPORT_TOTAL_HOUR_FIELDS = {"daily_work_hours"}
-EXPORT_TOTAL_NUMERIC_FIELDS = {"daily_leave_days"}
 EXPORT_ROW_FORMULA_FIELDS = (
     "daily_late_come",
     "daily_early_out",
     "daily_work_hours",
+    "daily_basic_hours",
     "daily_break_hours",
     "daily_lunch_hours",
     "daily_overtime",
 )
 
+EXPORT_TOTAL_SHEET_COLUMNS = [
+    ("EMP No.", "employee_number"),
+    ("EMP NAME", "employee_id"),
+    ("Total Basic Hours", "daily_basic_hours"),
+    ("OT Hours", "daily_overtime"),
+    ("Worked on Special Holiday", "daily_worked_special_holiday"),
+    ("Worked on Regular Holiday", "daily_worked_regular_holiday"),
+    ("OT on Worked on Special Holiday", "daily_ot_worked_special_holiday"),
+    ("OT on Worked on Regular Holiday", "daily_ot_worked_regular_holiday"),
+    ("Worked on Restday", "daily_worked_rest_day"),
+    ("OT on Worked Restday", "daily_ot_worked_rest_day"),
+    ("Night Differential Hours", "daily_night_differential"),
+    ("Night Differential Hours- OVERTIME", "daily_night_differential_overtime"),
+    (
+        "Night Differential - Rest Day Overtime",
+        "daily_night_differential_rest_day_overtime",
+    ),
+    ("Night Differential Hours-REST DAY", "daily_night_differential_rest_day"),
+    (
+        "Night Differential Regular Holiday - Hours",
+        "daily_night_differential_regular_holiday",
+    ),
+    (
+        "Night Differential Special Holiday - Hours",
+        "daily_night_differential_special_holiday",
+    ),
+    (
+        "Night Differential Hours-SPECIAL HOL. OVERTIME",
+        "daily_night_differential_special_holiday_overtime",
+    ),
+    (
+        "Night Differential - Overtime - Legal Hours",
+        "daily_night_differential_regular_holiday_overtime",
+    ),
+    ("Rest Day Hours- Regular Holiday", "daily_rest_day_regular_holiday"),
+    (
+        "Overtime hours - Regular Holiday - Rest Day",
+        "daily_ot_regular_holiday_rest_day",
+    ),
+    (
+        "Night Differential Hours-REST DAY Regular HOL. OVERTIME",
+        "daily_night_differential_rest_day_regular_holiday_overtime",
+    ),
+    (
+        "Night Differential Hours-REST DAY Regular Pay.",
+        "daily_night_differential_rest_day_regular_holiday",
+    ),
+    ("Rest Day Hours - Special Holiday", "daily_rest_day_special_holiday"),
+    (
+        "Night Differential Hours-REST DAY SPECIAL HOL.",
+        "daily_night_differential_rest_day_special_holiday",
+    ),
+    (
+        "Night Differential Hours-REST DAY Special HOL. OVERTIME",
+        "daily_night_differential_rest_day_special_holiday_overtime",
+    ),
+    (
+        "Overtime hours - Special Holiday - Rest Day",
+        "daily_ot_special_holiday_rest_day",
+    ),
+    ("Late", "daily_late_come"),
+    ("Undertime", "daily_early_out"),
+]
 
-def _build_blank_export_total_row(selected_columns):
-    totals_row = {str(verbose_name): "" for _, verbose_name in selected_columns}
-    if selected_columns:
-        totals_row[str(selected_columns[0][1])] = str(_("Total"))
-    return totals_row
+EXPORT_TOTAL_SHEET_DURATION_FIELDS = {
+    field_name
+    for _column_name, field_name in EXPORT_TOTAL_SHEET_COLUMNS
+    if field_name not in {"employee_number", "employee_id"}
+}
 
 
-def _insert_export_formula_total_rows(df, selected_columns):
-    """Append subtotal placeholder rows and record ranges for Excel formulas."""
+def _build_export_total_ranges(df, selected_columns):
+    """Record detail-sheet row ranges for each employee without adding subtotal rows."""
     df.columns = [str(c) for c in df.columns]
     total_ranges = []
+    if df.empty:
+        return total_ranges
 
-    # Determine the employee identifier column (prefer Employee No., fall back to Employee)
-    emp_col = None
-    for fn, vn in selected_columns:
-        if fn in ("employee_number", "employee_id"):
-            candidate = str(vn)
-            if candidate in df.columns:
-                emp_col = candidate
-                if fn == "employee_number":
-                    break
+    field_columns = {
+        field_name: str(verbose_name)
+        for field_name, verbose_name in selected_columns
+        if str(verbose_name) in df.columns
+    }
+    emp_no_col = field_columns.get("employee_number")
+    emp_name_col = field_columns.get("employee_id")
+    emp_col = emp_no_col or emp_name_col
 
-    if not selected_columns:
-        return df, total_ranges
-
-    if emp_col is None or df.empty:
-        total_df_row = len(df)
-        total_ranges.append(
-            {
-                "start_df_row": 0 if not df.empty else None,
-                "end_df_row": len(df) - 1 if not df.empty else None,
-                "total_df_row": total_df_row,
-            }
-        )
-        totals_row = _build_blank_export_total_row(selected_columns)
-        return (
-            pd.concat([df, pd.DataFrame([totals_row])], ignore_index=True),
-            total_ranges,
-        )
-
-    # Group consecutive rows by employee, preserving order
-    result_frames = []
-    output_row_count = 0
-    prev_emp = None
-    group_start = 0
-    rows = df[emp_col].tolist()
-    for i, emp_val in enumerate(rows):
-        if i > 0 and emp_val != prev_emp:
-            group_df = df.iloc[group_start:i]
-            result_frames.append(group_df)
-            output_row_count += len(group_df)
-            total_ranges.append(
-                {
-                    "start_df_row": output_row_count - len(group_df),
-                    "end_df_row": output_row_count - 1,
-                    "total_df_row": output_row_count,
-                }
-            )
-            result_frames.append(
-                pd.DataFrame([_build_blank_export_total_row(selected_columns)])
-            )
-            output_row_count += 1
-            group_start = i
-        prev_emp = emp_val
-    # Last group
-    group_df = df.iloc[group_start:]
-    result_frames.append(group_df)
-    output_row_count += len(group_df)
-    total_ranges.append(
-        {
-            "start_df_row": output_row_count - len(group_df),
-            "end_df_row": output_row_count - 1,
-            "total_df_row": output_row_count,
+    def range_info(start_df_row, end_df_row):
+        first_row = df.iloc[start_df_row] if start_df_row is not None else {}
+        return {
+            "start_df_row": start_df_row,
+            "end_df_row": end_df_row,
+            "employee_number": first_row.get(emp_no_col, "") if emp_no_col else "",
+            "employee_name": first_row.get(emp_name_col, "") if emp_name_col else "",
         }
-    )
-    result_frames.append(pd.DataFrame([_build_blank_export_total_row(selected_columns)]))
 
-    return pd.concat(result_frames, ignore_index=True), total_ranges
+    if emp_col is None:
+        total_ranges.append(range_info(0, len(df) - 1))
+        return total_ranges
+
+    prev_emp = df.iloc[0][emp_col]
+    group_start = 0
+    for row_idx, emp_val in enumerate(df[emp_col].tolist()):
+        if row_idx > 0 and emp_val != prev_emp:
+            total_ranges.append(range_info(group_start, row_idx - 1))
+            group_start = row_idx
+        prev_emp = emp_val
+    total_ranges.append(range_info(group_start, len(df) - 1))
+    return total_ranges
 
 
 def _formula_range_for_df_rows(col_idx, start_df_row, end_df_row):
@@ -1902,12 +2437,23 @@ def _formula_cell_for_df_row(col_idx, df_row):
     return f"{xl_col_to_name(col_idx)}{df_row + 2}"
 
 
-def _duration_minutes_formula(cell_range):
-    return (
-        f"SUMPRODUCT(N({cell_range})*1440+"
-        f'IFERROR(VALUE(LEFT({cell_range},FIND(":",{cell_range})-1))*60+'
-        f'VALUE(MID({cell_range},FIND(":",{cell_range})+1,2)),0))'
+def _quote_excel_sheet_name(sheet_name):
+    return f"'{str(sheet_name).replace(chr(39), chr(39) * 2)}'"
+
+
+def _sheet_formula_range_for_df_rows(sheet_name, col_idx, start_df_row, end_df_row):
+    cell_range = _formula_range_for_df_rows(col_idx, start_df_row, end_df_row)
+    if not cell_range:
+        return None
+    return f"{_quote_excel_sheet_name(sheet_name)}!{cell_range}"
+
+
+def _duration_time_formula(cell_range):
+    text_duration = (
+        f"(VALUE(LEFT({cell_range},FIND(\":\",{cell_range})-1))*60+"
+        f"VALUE(MID({cell_range},FIND(\":\",{cell_range})+1,2)))/1440"
     )
+    return f"SUMPRODUCT(IFERROR(N({cell_range}),0)+IFERROR({text_duration},0))"
 
 
 def _time_value_formula(cell_ref):
@@ -1923,15 +2469,97 @@ def _paired_duration_formula(start_ref, end_ref):
 
 
 def _format_duration_formula(duration_formula):
-    return f'=TEXT(MAX(0,{duration_formula}),"[hh]:mm")'
+    return (
+        f'=IF(MAX(0,{duration_formula})=0,"",'
+        f'TEXT(MAX(0,{duration_formula}),"[hh]:mm"))'
+    )
+
+
+def _excel_false():
+    return "FALSE"
+
+
+def _premium_duration_formula(duration_formula, condition_formula):
+    return (
+        f'=IF({condition_formula},'
+        f'IF(MAX(0,{duration_formula})=0,"",'
+        f'TEXT(MAX(0,{duration_formula}),"[hh]:mm")),'
+        f'""'
+        f")"
+    )
+
+
+def _night_overlap_formula(start_expr, end_expr):
+    windows = (
+        ("TIME(22,0,0)", "1+TIME(6,0,0)"),
+        ("1+TIME(22,0,0)", "2+TIME(6,0,0)"),
+    )
+    parts = [
+        f"MAX(0,MIN({end_expr},{window_end})-MAX({start_expr},{window_start}))"
+        for window_start, window_end in windows
+    ]
+    return "+".join(parts)
+
+
+PREMIUM_ROW_FORMULA_SPECS = {
+    "daily_worked_special_holiday": ("regular_duration", "special_only"),
+    "daily_ot_worked_special_holiday": ("overtime_duration", "special_only"),
+    "daily_worked_regular_holiday": ("regular_duration", "regular_only"),
+    "daily_ot_worked_regular_holiday": ("overtime_duration", "regular_only"),
+    "daily_worked_rest_day": ("regular_duration", "rest_only"),
+    "daily_ot_worked_rest_day": ("overtime_duration", "rest_only"),
+    "daily_night_differential": ("regular_nd", "ordinary"),
+    "daily_night_differential_overtime": ("overtime_nd", "ordinary"),
+    "daily_night_differential_rest_day_overtime": ("overtime_nd", "rest_only"),
+    "daily_night_differential_rest_day": ("regular_nd", "rest_only"),
+    "daily_night_differential_regular_holiday": ("regular_nd", "regular_only"),
+    "daily_night_differential_special_holiday": ("regular_nd", "special_only"),
+    "daily_night_differential_special_holiday_overtime": (
+        "overtime_nd",
+        "special_only",
+    ),
+    "daily_night_differential_regular_holiday_overtime": (
+        "overtime_nd",
+        "regular_only",
+    ),
+    "daily_rest_day_regular_holiday": ("regular_duration", "regular_rest"),
+    "daily_ot_regular_holiday_rest_day": ("overtime_duration", "regular_rest"),
+    "daily_night_differential_rest_day_regular_holiday_overtime": (
+        "overtime_nd",
+        "regular_rest",
+    ),
+    "daily_night_differential_rest_day_regular_holiday": (
+        "regular_nd",
+        "regular_rest",
+    ),
+    "daily_rest_day_special_holiday": ("regular_duration", "special_rest"),
+    "daily_night_differential_rest_day_special_holiday": (
+        "regular_nd",
+        "special_rest",
+    ),
+    "daily_night_differential_rest_day_special_holiday_overtime": (
+        "overtime_nd",
+        "special_rest",
+    ),
+    "daily_ot_special_holiday_rest_day": ("overtime_duration", "special_rest"),
+}
 
 
 def _selected_column_indexes(df, selected_columns):
     df_col_indexes = {str(col): idx for idx, col in enumerate(df.columns)}
-    return {
+    indexes = {
         field_name: df_col_indexes.get(str(verbose_name))
         for field_name, verbose_name in selected_columns
     }
+    if indexes.get(INTERNAL_REST_DAY_EXPORT_FIELD) is None:
+        indexes[INTERNAL_REST_DAY_EXPORT_FIELD] = df_col_indexes.get(
+            INTERNAL_REST_DAY_EXPORT_HEADER
+        )
+    if indexes.get(INTERNAL_HOLIDAY_TYPE_EXPORT_FIELD) is None:
+        indexes[INTERNAL_HOLIDAY_TYPE_EXPORT_FIELD] = df_col_indexes.get(
+            INTERNAL_HOLIDAY_TYPE_EXPORT_HEADER
+        )
+    return indexes
 
 
 def _row_has_leave(df, row_idx, col_indexes):
@@ -1952,6 +2580,104 @@ def _write_formula_cell(worksheet, row, col, formula, cell_format, use_array=Fal
         worksheet.write_formula(row, col, formula, cell_format)
 
 
+def _write_premium_row_formulas(
+    worksheet,
+    xlsx_row,
+    target,
+    ref,
+    clock_in,
+    clock_out,
+    shift_start,
+    shift_end,
+    break_duration,
+    lunch_duration,
+    duration_format,
+):
+    if not any(
+        target(field_name) is not None
+        for field_name in ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES
+    ):
+        return
+
+    zero_formula = '=""'
+    rest_day = ref("daily_rest_day")
+    required_refs = (clock_in, clock_out, rest_day)
+    if not all(required_refs):
+        for field_name in ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES:
+            col = target(field_name)
+            if col is not None:
+                _write_formula_cell(
+                    worksheet, xlsx_row, col, zero_formula, duration_format
+                )
+        return
+
+    shift_times_present = (
+        f'AND({shift_start}<>"",{shift_end}<>"")'
+        if shift_start and shift_end
+        else _excel_false()
+    )
+    shift_end_adjusted = (
+        f"IF({shift_times_present},"
+        f"{_time_value_formula(shift_end)}+"
+        f"IF({_time_value_formula(shift_end)}<{_time_value_formula(shift_start)},1,0),0)"
+        if shift_start and shift_end
+        else "0"
+    )
+    clock_in_adjusted = _time_value_formula(clock_in)
+    clock_out_adjusted = (
+        f"({_time_value_formula(clock_out)}+"
+        f"IF({_time_value_formula(clock_out)}<{_time_value_formula(clock_in)},1,0))"
+    )
+    source_present = f'AND({clock_in}<>"",{clock_out}<>"")'
+
+    holiday_type = ref("daily_holiday_type")
+    regular_holiday = (
+        f'ISNUMBER(SEARCH("Regular",{holiday_type}))' if holiday_type else _excel_false()
+    )
+    special_holiday = (
+        f'ISNUMBER(SEARCH("Special",{holiday_type}))' if holiday_type else _excel_false()
+    )
+    is_rest_day = (
+        f'OR(UPPER(TRIM({rest_day}&""))="YES",UPPER(TRIM({rest_day}&""))="TRUE")'
+    )
+
+    category_conditions = {
+        "ordinary": (
+            f"AND(NOT({regular_holiday}),"
+            f"NOT({special_holiday}),NOT({is_rest_day}))"
+        ),
+        "regular_only": f"AND({regular_holiday},NOT({is_rest_day}))",
+        "special_only": f"AND({special_holiday},NOT({is_rest_day}))",
+        "rest_only": (
+            f"AND({is_rest_day},"
+            f"NOT({regular_holiday}),NOT({special_holiday}))"
+        ),
+        "regular_rest": f"AND({regular_holiday},{is_rest_day})",
+        "special_rest": f"AND({special_holiday},{is_rest_day})",
+    }
+
+    regular_end = f"IF({shift_times_present},MIN({clock_out_adjusted},{shift_end_adjusted}),{clock_out_adjusted})"
+    overtime_start = f"IF({shift_times_present},MAX({clock_in_adjusted},{shift_end_adjusted}),{clock_out_adjusted})"
+    durations = {
+        "regular_duration": (
+            f"MAX(0,{regular_end}-{clock_in_adjusted}-{break_duration}-{lunch_duration})"
+        ),
+        "overtime_duration": (
+            f"IF({shift_times_present},MAX(0,{clock_out_adjusted}-{overtime_start}),0)"
+        ),
+        "regular_nd": _night_overlap_formula(clock_in_adjusted, regular_end),
+        "overtime_nd": _night_overlap_formula(overtime_start, clock_out_adjusted),
+    }
+
+    for field_name, (duration_key, category_key) in PREMIUM_ROW_FORMULA_SPECS.items():
+        col = target(field_name)
+        if col is None:
+            continue
+        condition = f"AND({source_present},{category_conditions[category_key]})"
+        formula = _premium_duration_formula(durations[duration_key], condition)
+        _write_formula_cell(worksheet, xlsx_row, col, formula, duration_format)
+
+
 def _write_export_row_formulas(
     workbook, worksheet, df, selected_columns, total_ranges
 ):
@@ -1960,7 +2686,11 @@ def _write_export_row_formulas(
         return
 
     col_indexes = _selected_column_indexes(df, selected_columns)
-    total_df_rows = {total_range["total_df_row"] for total_range in total_ranges}
+    total_df_rows = {
+        total_range.get("total_df_row")
+        for total_range in total_ranges
+        if total_range.get("total_df_row") is not None
+    }
     duration_format = workbook.add_format({"align": "center", "valign": "vcenter"})
 
     def ref(field_name, row_idx):
@@ -1985,6 +2715,32 @@ def _write_export_row_formulas(
         break_out = ref("daily_break_out", df_row)
         lunch_in = ref("daily_lunch_in", df_row)
         lunch_out = ref("daily_lunch_out", df_row)
+        rest_day = ref("daily_rest_day", df_row)
+        holiday_type = ref("daily_holiday_type", df_row)
+        rest_day_condition = (
+            f'OR(UPPER(TRIM({rest_day}&""))="YES",UPPER(TRIM({rest_day}&""))="TRUE")'
+            if rest_day
+            else None
+        )
+        holiday_condition = (
+            f'OR(ISNUMBER(SEARCH("SPECIAL",UPPER(TRIM({holiday_type}&"")))),'
+            f'ISNUMBER(SEARCH("REGULAR",UPPER(TRIM({holiday_type}&"")))))'
+            if holiday_type
+            else None
+        )
+        zero_hour_conditions = [
+            condition for condition in (rest_day_condition, holiday_condition) if condition
+        ]
+        zero_hours_clocked_condition = (
+            f'AND({clock_in}<>"",{clock_out}<>"",OR({",".join(zero_hour_conditions)}))'
+            if clock_in and clock_out and zero_hour_conditions
+            else None
+        )
+
+        def zero_hours_formula(formula):
+            if not zero_hours_clocked_condition:
+                return formula
+            return f'=IF({zero_hours_clocked_condition},"00:00",{formula[1:]})'
 
         shift_end_adjusted = None
         clock_in_adjusted = None
@@ -2009,17 +2765,19 @@ def _write_export_row_formulas(
 
         late_col = target("daily_late_come")
         if late_col is not None and clock_in and shift_start and shift_end:
+            late_duration = f"MAX(0,{clock_in_adjusted}-{_time_value_formula(shift_start)})"
             formula = (
-                f'=IF(OR({clock_in}="",{shift_start}="",{shift_end}=""),"00:00",'
-                f'TEXT(MAX(0,{clock_in_adjusted}-{_time_value_formula(shift_start)}),"[hh]:mm"))'
+                f'=IF(OR({clock_in}="",{shift_start}="",{shift_end}=""),"",'
+                f'IF({late_duration}=0,"",TEXT({late_duration},"[hh]:mm")))'
             )
             _write_formula_cell(worksheet, xlsx_row, late_col, formula, duration_format)
 
         early_col = target("daily_early_out")
         if early_col is not None and clock_out and shift_start and shift_end:
+            early_duration = f"MAX(0,{shift_end_adjusted}-{clock_out_adjusted})"
             formula = (
-                f'=IF(OR({clock_out}="",{shift_start}="",{shift_end}=""),"00:00",'
-                f'TEXT(MAX(0,{shift_end_adjusted}-{clock_out_adjusted}),"[hh]:mm"))'
+                f'=IF(OR({clock_out}="",{shift_start}="",{shift_end}=""),"",'
+                f'IF({early_duration}=0,"",TEXT({early_duration},"[hh]:mm")))'
             )
             _write_formula_cell(worksheet, xlsx_row, early_col, formula, duration_format)
 
@@ -2052,28 +2810,79 @@ def _write_export_row_formulas(
             formula = _format_duration_formula(
                 f"{gross_duration}-{break_duration}-{lunch_duration}"
             )
+            formula = zero_hours_formula(formula)
             _write_formula_cell(
                 worksheet, xlsx_row, work_col, formula, duration_format, True
             )
 
+        basic_col = target("daily_basic_hours")
+        if (
+            basic_col is not None
+            and clock_in
+            and clock_out
+            and shift_start
+            and shift_end
+        ):
+            basic_duration = (
+                f"MAX(0,{shift_end_adjusted}-"
+                f"{_time_value_formula(shift_start)}-TIME(1,0,0))"
+            )
+            formula = (
+                f'=IF(OR({clock_in}="",{clock_out}="",'
+                f'{shift_start}="",{shift_end}=""),"",'
+                f'IF({basic_duration}=0,"",TEXT({basic_duration},"[hh]:mm")))'
+            )
+            formula = zero_hours_formula(formula)
+            _write_formula_cell(
+                worksheet, xlsx_row, basic_col, formula, duration_format
+            )
+        elif basic_col is not None and zero_hours_clocked_condition:
+            formula = f'=IF({zero_hours_clocked_condition},"00:00","")'
+            _write_formula_cell(
+                worksheet, xlsx_row, basic_col, formula, duration_format
+            )
+
         overtime_col = target("daily_overtime")
         if overtime_col is not None and clock_out and shift_start and shift_end:
+            overtime_duration = f"MAX(0,{clock_out_adjusted}-{shift_end_adjusted})"
             formula = (
-                f'=IF(OR({clock_out}="",{shift_start}="",{shift_end}=""),"00:00",'
-                f'TEXT(MAX(0,{clock_out_adjusted}-{shift_end_adjusted}),"[hh]:mm"))'
+                f'=IF(OR({clock_out}="",{shift_start}="",{shift_end}=""),"",'
+                f'IF({overtime_duration}=0,"",TEXT({overtime_duration},"[hh]:mm")))'
             )
+            formula = zero_hours_formula(formula)
+            _write_formula_cell(
+                worksheet, xlsx_row, overtime_col, formula, duration_format
+            )
+        elif overtime_col is not None and zero_hours_clocked_condition:
+            formula = f'=IF({zero_hours_clocked_condition},"00:00","")'
             _write_formula_cell(
                 worksheet, xlsx_row, overtime_col, formula, duration_format
             )
 
+        _write_premium_row_formulas(
+            worksheet,
+            xlsx_row,
+            target,
+            lambda field_name: ref(field_name, df_row),
+            clock_in,
+            clock_out,
+            shift_start,
+            shift_end,
+            break_duration,
+            lunch_duration,
+            duration_format,
+        )
 
-def _write_export_total_formulas(
-    workbook, worksheet, df, selected_columns, total_ranges
+
+def _write_export_totals_sheet(
+    writer, detail_sheet_name, df, selected_columns, total_ranges, sheet_name
 ):
-    """Write Excel formulas into generated subtotal rows."""
-    if not total_ranges:
-        return
-
+    workbook = writer.book
+    worksheet = workbook.add_worksheet(sheet_name)
+    writer.sheets[sheet_name] = worksheet
+    header_format = workbook.add_format(
+        {"align": "center", "valign": "vcenter", "bold": True}
+    )
     centered = workbook.add_format({"align": "center", "valign": "vcenter"})
     hour_total_format = workbook.add_format(
         {
@@ -2082,74 +2891,53 @@ def _write_export_total_formulas(
             "num_format": '[hh]:mm "hr"',
         }
     )
-    col_indexes = {str(col): idx for idx, col in enumerate(df.columns)}
 
-    for total_range in total_ranges:
-        total_xlsx_row = total_range["total_df_row"] + 1
-        for field_name, verbose_name in selected_columns:
-            col_name = str(verbose_name)
-            col_idx = col_indexes.get(col_name)
-            if col_idx is None:
+    for col_idx, (column_name, _field_name) in enumerate(EXPORT_TOTAL_SHEET_COLUMNS):
+        worksheet.write(0, col_idx, column_name, header_format)
+    worksheet.set_column(0, len(EXPORT_TOTAL_SHEET_COLUMNS) - 1, 18, centered)
+    worksheet.set_column(1, 1, 28, centered)
+
+    if not total_ranges:
+        return worksheet
+
+    df_col_indexes = {str(col): idx for idx, col in enumerate(df.columns)}
+    source_col_indexes = {
+        field_name: df_col_indexes.get(str(verbose_name))
+        for field_name, verbose_name in selected_columns
+    }
+
+    for output_row, total_range in enumerate(total_ranges, start=1):
+        worksheet.write(output_row, 0, total_range.get("employee_number", ""), centered)
+        worksheet.write(output_row, 1, total_range.get("employee_name", ""), centered)
+        for output_col, (_column_name, field_name) in enumerate(
+            EXPORT_TOTAL_SHEET_COLUMNS[2:], start=2
+        ):
+            source_col = source_col_indexes.get(field_name)
+            if source_col is None or field_name not in EXPORT_TOTAL_SHEET_DURATION_FIELDS:
+                worksheet.write_blank(output_row, output_col, None, centered)
                 continue
 
-            cell_range = _formula_range_for_df_rows(
-                col_idx,
-                total_range["start_df_row"],
-                total_range["end_df_row"],
+            cell_range = _sheet_formula_range_for_df_rows(
+                detail_sheet_name,
+                source_col,
+                total_range.get("start_df_row"),
+                total_range.get("end_df_row"),
             )
-            if field_name in EXPORT_TOTAL_MINUTE_FIELDS:
-                formula = (
-                    f'={_duration_minutes_formula(cell_range)}&" min"'
-                    if cell_range
-                    else '=0&" min"'
-                )
-                if cell_range:
-                    worksheet.write_array_formula(
-                        total_xlsx_row,
-                        col_idx,
-                        total_xlsx_row,
-                        col_idx,
-                        formula,
-                        centered,
-                    )
-                else:
-                    worksheet.write_formula(total_xlsx_row, col_idx, formula, centered)
-            elif field_name in EXPORT_TOTAL_HOUR_FIELDS:
-                formula = (
-                    f"={_duration_minutes_formula(cell_range)}/1440"
-                    if cell_range
-                    else "=0"
-                )
-                if cell_range:
-                    worksheet.write_array_formula(
-                        total_xlsx_row,
-                        col_idx,
-                        total_xlsx_row,
-                        col_idx,
-                        formula,
-                        hour_total_format,
-                    )
-                else:
-                    worksheet.write_formula(
-                        total_xlsx_row, col_idx, formula, hour_total_format
-                    )
-            elif field_name in EXPORT_TOTAL_NUMERIC_FIELDS:
-                formula = (
-                    f'=SUMPRODUCT(VALUE({cell_range}))&" days"'
-                    if cell_range
-                    else '=0&" days"'
-                )
-                if cell_range:
-                    worksheet.write_array_formula(
-                        total_xlsx_row,
-                        col_idx,
-                        total_xlsx_row,
-                        col_idx,
-                        formula,
-                        centered,
-                    )
-                else:
-                    worksheet.write_formula(total_xlsx_row, col_idx, formula, centered)
+            formula = (
+                f"={_duration_time_formula(cell_range)}"
+                if cell_range
+                else "=0"
+            )
+            worksheet.write_array_formula(
+                output_row,
+                output_col,
+                output_row,
+                output_col,
+                formula,
+                hour_total_format,
+            )
+
+    return worksheet
 
 
 def _payroll_group_export_filename():
@@ -2224,6 +3012,7 @@ def _write_attendance_payroll_group_export_workbook(request, output, progress=No
     }
 
     writer = pd.ExcelWriter(output, engine="xlsxwriter")
+    writer.book.set_calc_mode("auto")
     used_names = {}
     sheets_written = 0
     total = len(selections) or 1
@@ -2278,15 +3067,18 @@ def _write_attendance_payroll_group_export_workbook(request, output, progress=No
             df = df.sort_values(
                 by=sort_cols, ascending=[True for _ in sort_cols]
             ).reset_index(drop=True)
-        df, total_ranges = _insert_export_formula_total_rows(df, selected_columns)
+        total_ranges = _build_export_total_ranges(df, selected_columns)
 
         sheet_name = _payroll_group_export_sheet_name(group.name, used_names)
         worksheet = _write_plain_export_frame(writer, df, sheet_name)
         _write_export_row_formulas(
             writer.book, worksheet, df, selected_columns, total_ranges
         )
-        _write_export_total_formulas(
-            writer.book, worksheet, df, selected_columns, total_ranges
+        totals_sheet_name = _payroll_group_export_sheet_name(
+            f"Totals - {sheet_name}", used_names
+        )
+        _write_export_totals_sheet(
+            writer, sheet_name, df, selected_columns, total_ranges, totals_sheet_name
         )
         sheets_written += 1
         if progress:

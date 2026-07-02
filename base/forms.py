@@ -2890,6 +2890,7 @@ class HolidaysColumnExportForm(forms.Form):
         self.fields["selected_fields"].choices = field_choices
         self.fields["selected_fields"].initial = [
             "name",
+            "holiday_type",
             "start_date",
             "end_date",
             "recurring",

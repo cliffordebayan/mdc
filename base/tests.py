@@ -10,17 +10,19 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.mail import EmailMessage
 from django.test import RequestFactory
+from django.template.loader import render_to_string
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from base.backends import ConfiguredEmailBackend
-from base.forms import CompanyForm
+from base.forms import CompanyForm, HolidayForm, HolidaysColumnExportForm
 from base.models import (
     Company,
     DynamicEmailConfiguration,
     EmployeeShift,
     EmployeeShiftDay,
     EmployeeShiftSchedule,
+    Holidays,
 )
 from employee.forms import EmployeeForm
 from employee.models import Employee
@@ -121,6 +123,43 @@ class PhilippinesPlaceholderFormTests(TestCase):
         )
         self.assertEqual(form.fields["state"].label, "Province")
         self.assertEqual(form.fields["zip"].widget.attrs.get("placeholder"), "e.g. 2900")
+
+
+class HolidayTypeTests(TestCase):
+    def test_holiday_type_defaults_and_forms_include_field(self):
+        company = Company.objects.create(
+            company="Holiday Co",
+            address="HQ",
+            country="PH",
+            state="NCR",
+            city="Manila",
+            zip="1000",
+        )
+        holiday = Holidays.objects.create(
+            name="Founding Day",
+            start_date="2026-04-10",
+            end_date="2026-04-10",
+            company_id=company,
+        )
+
+        self.assertEqual(holiday.holiday_type, "unclassified")
+        self.assertIn("holiday_type", HolidayForm().fields)
+        self.assertIn(
+            "holiday_type",
+            HolidaysColumnExportForm().fields["selected_fields"].initial,
+        )
+
+    def test_holiday_modal_templates_render_holiday_type(self):
+        context = {"form": HolidayForm(), "pd": "", "id": 1}
+
+        self.assertIn(
+            'name="holiday_type"',
+            render_to_string("holiday/holiday_form.html", context),
+        )
+        self.assertIn(
+            'name="holiday_type"',
+            render_to_string("holiday/holiday_update_form.html", context),
+        )
 
 
 class DynamicEmailBackendSenderTests(TestCase):
@@ -305,6 +344,43 @@ class EmployeeShiftScheduleSettingsTests(TestCase):
         self.assertIsNone(self.schedule.auto_punch_out_time)
         self.assertEqual(self.schedule.start_time, time(8, 0))
         self.assertEqual(self.schedule.minimum_working_hour, "07:30")
+
+    def test_rest_day_schedule_keeps_required_start_and_end_times(self):
+        response = self.client.post(
+            reverse("employee-shift-schedule-update", args=[self.schedule.id]),
+            self._schedule_payload(is_rest_day="on"),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.schedule.refresh_from_db()
+        self.assertTrue(self.schedule.is_rest_day)
+        self.assertEqual(self.schedule.start_time, time(8, 0))
+        self.assertEqual(self.schedule.end_time, time(16, 30))
+
+        refreshed_response = self.client.get(reverse("employee-shift-schedule-view"))
+        self.assertContains(refreshed_response, "08:00 - 16:30")
+        self.assertContains(refreshed_response, "Rest Day")
+
+    def test_rest_day_schedule_still_requires_start_and_end_times(self):
+        response = self.client.post(
+            reverse("employee-shift-schedule-update", args=[self.schedule.id]),
+            self._schedule_payload(
+                is_rest_day="on",
+                start_time="",
+                end_time="",
+            ),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response, "Please correct the errors below and save again."
+        )
+        self.schedule.refresh_from_db()
+        self.assertFalse(self.schedule.is_rest_day)
+        self.assertEqual(self.schedule.start_time, time(9, 0))
+        self.assertEqual(self.schedule.end_time, time(17, 0))
 
     @patch("attendance.methods.utils.recalculate_attendance_for_shift")
     def test_update_still_persists_when_attendance_recalculation_fails(

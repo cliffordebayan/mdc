@@ -1081,6 +1081,65 @@ class LateComeEarlyOutExportForm(forms.Form):
     )
 
 
+ATTENDANCE_PREMIUM_EXPORT_FIELDS = [
+    ("daily_worked_special_holiday", _("Worked on Special Holiday")),
+    ("daily_ot_worked_special_holiday", _("OT on Worked on Special Holiday")),
+    ("daily_worked_regular_holiday", _("Worked on Regular Holiday")),
+    ("daily_ot_worked_regular_holiday", _("OT on Worked on Regular Holiday")),
+    ("daily_worked_rest_day", _("Worked on Restday")),
+    ("daily_ot_worked_rest_day", _("OT on Worked Restday")),
+    ("daily_night_differential", _("Night Differential Hours")),
+    ("daily_night_differential_overtime", _("Night Differential Hours- OVERTIME")),
+    (
+        "daily_night_differential_rest_day_overtime",
+        _("Night Differential - Rest Day Overtime"),
+    ),
+    ("daily_night_differential_rest_day", _("Night Differential Hours-REST DAY")),
+    (
+        "daily_night_differential_regular_holiday",
+        _("Night Differential Regular Holiday - Hours"),
+    ),
+    (
+        "daily_night_differential_special_holiday",
+        _("Night Differential Special Holiday - Hours"),
+    ),
+    (
+        "daily_night_differential_special_holiday_overtime",
+        _("Night Differential Hours-SPECIAL HOL. OVERTIME"),
+    ),
+    (
+        "daily_night_differential_regular_holiday_overtime",
+        _("Night Differential - Overtime - Legal Hours"),
+    ),
+    ("daily_rest_day_regular_holiday", _("Rest Day Hours- Regular Holiday")),
+    (
+        "daily_ot_regular_holiday_rest_day",
+        _("Overtime hours - Regular Holiday - Rest Day"),
+    ),
+    (
+        "daily_night_differential_rest_day_regular_holiday_overtime",
+        _("Night Differential Hours-REST DAY Regular HOL. OVERTIME"),
+    ),
+    (
+        "daily_night_differential_rest_day_regular_holiday",
+        _("Night Differential Hours-REST DAY Regular Pay."),
+    ),
+    ("daily_rest_day_special_holiday", _("Rest Day Hours - Special Holiday")),
+    (
+        "daily_night_differential_rest_day_special_holiday",
+        _("Night Differential Hours-REST DAY SPECIAL HOL."),
+    ),
+    (
+        "daily_night_differential_rest_day_special_holiday_overtime",
+        _("Night Differential Hours-REST DAY Special HOL. OVERTIME"),
+    ),
+    (
+        "daily_ot_special_holiday_rest_day",
+        _("Overtime hours - Special Holiday - Rest Day"),
+    ),
+]
+
+
 class AttendanceActivityExportForm(forms.Form):
     """
     This form allows users to choose specific fields from the `AttendanceActivity`
@@ -1105,10 +1164,12 @@ class AttendanceActivityExportForm(forms.Form):
         "daily_shift",
         "daily_shift_start",
         "daily_shift_end",
+        "daily_rest_day",
         "daily_shift_day",
         "daily_late_come",
         "daily_early_out",
         "daily_work_hours",
+        "daily_basic_hours",
         "daily_break_hours",
         "daily_lunch_hours",
         "daily_overtime",
@@ -1116,6 +1177,8 @@ class AttendanceActivityExportForm(forms.Form):
         "daily_leave_type",
         "daily_leave_days",
         "daily_holiday",
+        "daily_holiday_type",
+        *[field_name for field_name, _ in ATTENDANCE_PREMIUM_EXPORT_FIELDS],
     ]
 
     field_choices = [
@@ -1144,10 +1207,12 @@ class AttendanceActivityExportForm(forms.Form):
         ("daily_shift", _("Shift")),
         ("daily_shift_start", _("Shift Start")),
         ("daily_shift_end", _("Shift End")),
+        ("daily_rest_day", _("Rest Day")),
         ("daily_shift_day", _("Shift Day")),
         ("daily_late_come", _("Late Come")),
         ("daily_early_out", _("Early Out")),
         ("daily_work_hours", _("Work Hours")),
+        ("daily_basic_hours", _("Basic Hours")),
         ("daily_break_hours", _("Break Hours")),
         ("daily_lunch_hours", _("Lunch Hours")),
         ("daily_overtime", _("Overtime")),
@@ -1155,6 +1220,8 @@ class AttendanceActivityExportForm(forms.Form):
         ("daily_leave_type", _("Leave Type")),
         ("daily_leave_days", _("Leave Days")),
         ("daily_holiday", _("Holiday")),
+        ("daily_holiday_type", _("Holiday Type")),
+        *ATTENDANCE_PREMIUM_EXPORT_FIELDS,
     ]
     selected_fields = forms.MultipleChoiceField(
         choices=field_choices,
