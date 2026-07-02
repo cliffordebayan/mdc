@@ -7,7 +7,7 @@
 <div class="oh-wrapper" id="attendance-container">
     <div class="oh-tabs">
         <ul class="oh-tabs__tablist">
-            <li class="oh-tabs__tab" data-target="#tab_1">
+            <li class="oh-tabs__tab{% if active_tab_key == 'validate' %} oh-tabs__tab--active{% endif %}" data-target="#tab_1" data-tab="validate">
                 {% trans "Attendance To Validate " %}
                 <div class="oh-dropdown float-end" x-data="{open: false}">
                     <button class="oh-btn oh-stop-prop oh-btn--transparent oh-accordion-meta__btn" @click="open = !open"
@@ -25,7 +25,7 @@
                     </div>
                 </div>
             </li>
-            <li class="oh-tabs__tab oh-tabs__tab" data-target="#tab_3">
+            <li class="oh-tabs__tab{% if active_tab_key == 'overtime' %} oh-tabs__tab--active{% endif %}" data-target="#tab_3" data-tab="overtime">
                 {% trans "OT Attendances" %}
                 <div class="oh-dropdown float-end" x-data="{open: false}">
                     <button class="oh-btn oh-stop-prop oh-btn--transparent oh-accordion-meta__btn" @click="open = !open"
@@ -43,7 +43,7 @@
                     </div>
                 </div>
             </li>
-            <li class="oh-tabs__tab" data-target="#tab_2">
+            <li class="oh-tabs__tab{% if active_tab_key == 'validated' %} oh-tabs__tab--active{% endif %}" data-target="#tab_2" data-tab="validated">
                 {% trans "Validated Attendances" %}
             </li>
         </ul>

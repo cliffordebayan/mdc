@@ -5,7 +5,6 @@ This is moduel is used to register end point related to the search filter functi
 """
 
 import json
-from datetime import datetime
 from django.utils.dateparse import parse_date
 from urllib.parse import parse_qs
 
@@ -25,10 +24,10 @@ from attendance.models import (
     AttendanceActivity,
     AttendanceLateComeEarlyOut,
     AttendanceOverTime,
-    AttendanceValidationCondition,
 )
 from attendance.views.views import (
     build_daily_attendance_rows,
+    build_attendance_tab_context,
     build_my_attendance_activity_meta,
     build_daily_activity_rows,
     get_current_cut_off_dates,
@@ -54,148 +53,11 @@ def attendance_search(request):
     """
     This method is used to search attendances
     """
-    month_name = ""
-    params = [
-        "employee_id",
-        "attendance_validated",
-        "attendance_date__gte",
-        "attendance_date__lte",
-    ]
-    remove_params = []
-    if params == list(request.GET.keys()):
-        remove_params = [param for param in params if param != "employee_id"]
-    previous_data = request.GET.urlencode()
-    field = request.GET.get("field")
-    minot = strtime_seconds("00:00")
-    condition = AttendanceValidationCondition.objects.first()
-    all_attendances = Attendance.objects.all()
-    if request.GET.get("sortby"):
-        all_attendances = sortby(request, all_attendances, "sortby")
-
-    if condition is not None and condition.minimum_overtime_to_approve is not None:
-        minot = strtime_seconds(condition.minimum_overtime_to_approve)
-
-    validate_attendances = all_attendances.filter(attendance_validated=False)
-    attendances = all_attendances.filter(attendance_validated=True)
-    ot_attendances = all_attendances.filter(
-        overtime_second__gt=0,
-        attendance_validated=True,
-    )
-
-    validate_attendances = AttendanceFilters(request.GET, validate_attendances).qs
-    attendances = AttendanceFilters(request.GET, attendances).qs
-    ot_attendances = AttendanceFilters(request.GET, ot_attendances).qs
-
-    if not request.user.has_perm("attendance.view_attendance"):
-        attendances = filtersubordinates(
-            request, attendances, "attendance.view_attendance"
-        )
-        validate_attendances = filtersubordinates(
-            request, validate_attendances, "attendance.view_attendance"
-        )
-        ot_attendances = filtersubordinates(
-            request, ot_attendances, "attendance.view_attendance"
-        )
-    data_dict = parse_qs(previous_data)
-    get_key_instances(Attendance, data_dict)
-    keys_to_remove = [
-        key
-        for key, value in data_dict.items()
-        if value == ["unknown"] or key in remove_params
-    ]
-    for key in keys_to_remove:
-        data_dict.pop(key)
-    if params == list(request.GET.keys()):
-        ot_attendances = validate_attendances = attendances
-        template = "attendance/attendance/validate_attendance.html"
-        if not attendances:
-            date_object = datetime.strptime(
-                request.GET.get("attendance_date__gte"), "%Y-%m-%d"
-            )
-            month_name = _(date_object.strftime("%B"))
-            template = "attendance/attendance/validate_attendance_empty.html"
-
-    template = "attendance/attendance/tab_content.html"
-    validate_attendances_ids, ot_attendances_ids, attendances_ids = [], [], []
-    if field != "" and field is not None:
-        attendances = group_by_queryset(
-            attendances, field, request.GET.get("page"), "page"
-        )
-        _attach_daily_rows_to_grouped_attendances(attendances)
-        list_values = [entry["list"] for entry in attendances]
-        id_list = []
-        for value in list_values:
-            for instance in value.object_list:
-                id_list.append(instance.id)
-        attendances_ids = json.dumps(list(id_list))
-
-        validate_attendances = group_by_queryset(
-            validate_attendances, field, request.GET.get("vpage"), "vpage"
-        )
-        _attach_daily_rows_to_grouped_attendances(validate_attendances)
-        list_values = [entry["list"] for entry in validate_attendances]
-        id_list = []
-        for value in list_values:
-            for instance in value.object_list:
-                id_list.append(instance.id)
-        validate_attendances_ids = json.dumps(list(id_list))
-
-        ot_attendances = group_by_queryset(
-            ot_attendances, field, request.GET.get("opage"), "opage"
-        )
-        _attach_daily_rows_to_grouped_attendances(ot_attendances)
-        list_values = [entry["list"] for entry in ot_attendances]
-        id_list = []
-        for value in list_values:
-            for instance in value.object_list:
-                id_list.append(instance.id)
-        ot_attendances_ids = json.dumps(list(id_list))
-
-        template = "attendance/attendance/group_by.html"
-    else:
-        validate_attendances = paginator_qry(
-            validate_attendances, request.GET.get("vpage")
-        )
-        ot_attendances = paginator_qry(ot_attendances, request.GET.get("opage"))
-        attendances = paginator_qry(attendances, request.GET.get("page"))
-        build_my_attendance_activity_meta(validate_attendances)
-        build_my_attendance_activity_meta(ot_attendances)
-        build_my_attendance_activity_meta(attendances)
-        validate_attendance_rows = build_daily_attendance_rows(validate_attendances)
-        overtime_attendance_rows = build_daily_attendance_rows(ot_attendances)
-        attendance_rows = build_daily_attendance_rows(attendances)
-        validate_attendances_ids = json.dumps(
-            [instance.id for instance in validate_attendances.object_list]
-        )
-        ot_attendances_ids = json.dumps(
-            [instance.id for instance in ot_attendances.object_list]
-        )
-        attendances_ids = json.dumps(
-            [instance.id for instance in attendances.object_list]
-        )
+    context = build_attendance_tab_context(request)
     return render(
         request,
-        template,
-        {
-            "validate_attendances": validate_attendances,
-            "attendances": attendances,
-            "overtime_attendances": ot_attendances,
-            "validate_attendance_rows": validate_attendance_rows
-            if field == "" or field is None
-            else [],
-            "attendance_rows": attendance_rows if field == "" or field is None else [],
-            "overtime_attendance_rows": overtime_attendance_rows
-            if field == "" or field is None
-            else [],
-            "validate_attendances_ids": validate_attendances_ids,
-            "ot_attendances_ids": ot_attendances_ids,
-            "attendances_ids": attendances_ids,
-            "pd": previous_data,
-            "field": field,
-            "filter_dict": data_dict,
-            "month_name": month_name,
-            "minot": minot,
-        },
+        context["tab_template"],
+        context,
     )
 
 

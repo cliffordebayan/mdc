@@ -129,6 +129,7 @@
     <div class="oh-main__titlebar oh-main__titlebar--right">
         <form hx-get='{% url "attendance-search" %}' id="filterForm" hx-swap="innerHTML" hx-target="#tab_contents"
             class="d-flex" onsubmit="event.preventDefault()">
+            <input type="hidden" name="tab" id="attendanceActiveTab" value="{{ active_tab_key|default:'validate' }}" />
             <div class="oh-input-group oh-input__search-group"
                 :class="searchShow ? 'oh-input__search-group--show' : ''">
                 <ion-icon name="search-outline" class="oh-input-group__icon oh-input-group__icon--left"></ion-icon>
@@ -276,6 +277,37 @@
             $('#id_field').on('change', function () {
                 $('.filterButton')[0].click();
             })
+            const targetToTab = {
+                "#tab_1": "validate",
+                "#tab_3": "overtime",
+                "#tab_2": "validated",
+            };
+            const tabToTarget = {
+                validate: "#tab_1",
+                overtime: "#tab_3",
+                validated: "#tab_2",
+            };
+            function activateAttendanceTab(tabKey, fetchTab) {
+                const target = tabToTarget[tabKey] || "#tab_1";
+                $("#attendanceActiveTab").val(tabKey || "validate");
+                $(".oh-tabs__tab").removeClass("oh-tabs__tab--active");
+                $(`[data-target="${target}"]`).addClass("oh-tabs__tab--active");
+                localStorage.setItem("activeTabAttendance", target);
+                if (fetchTab) {
+                    $(".filterButton").eq(0).click();
+                }
+            }
+            $(".oh-tabs__tab").on("click", function () {
+                activateAttendanceTab(targetToTab[$(this).attr("data-target")] || "validate", true);
+            });
+            const savedTarget = localStorage.getItem("activeTabAttendance");
+            const savedTab = targetToTab[savedTarget];
+            const currentTab = $("#attendanceActiveTab").val() || "validate";
+            if (savedTab && savedTab !== currentTab) {
+                activateAttendanceTab(savedTab, true);
+            } else {
+                activateAttendanceTab(currentTab, false);
+            }
         })
     </script>
 </section>

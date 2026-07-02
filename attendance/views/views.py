@@ -50,6 +50,7 @@ from django.http import (
 )
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
+from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone as django_timezone
 from django.utils.timezone import now
@@ -133,6 +134,7 @@ from base.methods import (
     format_export_value,
     get_key_instances,
     get_pagination,
+    sortby,
 )
 from base.models import (
     AttendanceAllowedIP,
@@ -155,6 +157,7 @@ from horilla.decorators import (
     manager_can_enter,
     permission_required,
 )
+from horilla.group_by import group_by_queryset
 from notifications.signals import notify
 
 ACTIVITY_IMPORT_HEADERS = [
@@ -535,6 +538,109 @@ NIGHT_DIFFERENTIAL_END = time(6, 0)
 ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES = {
     field_name for field_name, _ in ATTENDANCE_PREMIUM_EXPORT_FIELDS
 }
+
+ATTENDANCE_TAB_VALIDATE = "validate"
+ATTENDANCE_TAB_OVERTIME = "overtime"
+ATTENDANCE_TAB_VALIDATED = "validated"
+ATTENDANCE_DEFAULT_TAB = ATTENDANCE_TAB_VALIDATE
+
+ATTENDANCE_TAB_CONFIG = {
+    ATTENDANCE_TAB_VALIDATE: {
+        "key": ATTENDANCE_TAB_VALIDATE,
+        "target": "#tab_1",
+        "panel_id": "tab_1",
+        "page_param": "vpage",
+        "context_name": "validate_attendances",
+        "rows_context_name": "validate_attendance_rows",
+        "ids_context_name": "validate_attendances_ids",
+        "checkbox_header_class": "validate",
+        "checkbox_class": "validate-row",
+        "confirmation_type": "validate",
+        "detail_query": "validate=true",
+        "table_id": "validate-attendance-table",
+        "table_name": "validate_attendances_tab_v2",
+        "field_container_id": "fieldContainerTableValidate",
+        "empty_message": _("No attendance to validate."),
+    },
+    ATTENDANCE_TAB_OVERTIME: {
+        "key": ATTENDANCE_TAB_OVERTIME,
+        "target": "#tab_3",
+        "panel_id": "tab_3",
+        "page_param": "opage",
+        "context_name": "overtime_attendances",
+        "rows_context_name": "overtime_attendance_rows",
+        "ids_context_name": "ot_attendances_ids",
+        "checkbox_header_class": "ot-attendances",
+        "checkbox_class": "ot-attendance-row",
+        "confirmation_type": "overtime",
+        "detail_query": "ot=true",
+        "table_id": "ot-attendance-table",
+        "table_name": "ot_attendances_tab_v2",
+        "field_container_id": "fieldContainerTableOverTime",
+        "empty_message": _("No validated attendance to show."),
+    },
+    ATTENDANCE_TAB_VALIDATED: {
+        "key": ATTENDANCE_TAB_VALIDATED,
+        "target": "#tab_2",
+        "panel_id": "tab_2",
+        "page_param": "page",
+        "context_name": "attendances",
+        "rows_context_name": "attendance_rows",
+        "ids_context_name": "attendances_ids",
+        "checkbox_header_class": "all-attendances",
+        "checkbox_class": "all-attendance-row",
+        "confirmation_type": "",
+        "detail_query": "",
+        "table_id": "validated-attendance-table",
+        "table_name": "validated_attendances_tab_v2",
+        "field_container_id": "fieldContainerTable",
+        "empty_message": _("No search result found!"),
+    },
+}
+
+ATTENDANCE_RELATED_FIELDS = (
+    "employee_id",
+    "employee_id__employee_work_info",
+    "employee_id__employee_work_info__business_unit_id",
+    "employee_id__employee_work_info__branch_id",
+    "employee_id__employee_work_info__department_id",
+    "employee_id__employee_work_info__payroll_group_id",
+    "employee_id__employee_work_info__shift_id",
+    "employee_id__employee_work_info__work_type_id",
+    "shift_id",
+    "work_type_id",
+    "attendance_day",
+)
+
+ATTENDANCE_ACTIVITY_RELATED_FIELDS = (
+    "employee_id",
+    "employee_id__employee_work_info",
+    "employee_id__employee_work_info__business_unit_id",
+    "employee_id__employee_work_info__branch_id",
+    "employee_id__employee_work_info__department_id",
+    "employee_id__employee_work_info__payroll_group_id",
+    "employee_id__employee_work_info__shift_id",
+    "employee_id__employee_work_info__work_type_id",
+    "shift_day",
+)
+
+
+def attendance_active_tab(tab):
+    if tab in ATTENDANCE_TAB_CONFIG:
+        return tab
+    return ATTENDANCE_DEFAULT_TAB
+
+
+def attendance_tab_querystring(request, active_tab):
+    data = request.GET.copy()
+    data["tab"] = active_tab
+    return data.urlencode()
+
+
+def attendance_preload_queryset(queryset):
+    if not hasattr(queryset, "select_related"):
+        return queryset
+    return queryset.select_related(*ATTENDANCE_RELATED_FIELDS)
 
 
 def _premium_empty_buckets():
@@ -1068,7 +1174,12 @@ def _leave_days_for_row(leave_by_key, emp_id, date_val):
     return data[1] if data else None
 
 
-def build_daily_activity_rows(attendance_activities, date_from=None, date_to=None):
+def build_daily_activity_rows(
+    attendance_activities,
+    date_from=None,
+    date_to=None,
+    attendance_by_key=None,
+):
     """
     Convert activity records into one row per employee and attendance date.
     Break/lunch rows keep all underlying activity ids for bulk actions.
@@ -1078,11 +1189,7 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
 
     activities = list(
         attendance_activities.select_related(
-            "employee_id",
-            "employee_id__employee_work_info",
-            "employee_id__employee_work_info__branch_id",
-            "employee_id__employee_work_info__department_id",
-            "shift_day",
+            *ATTENDANCE_ACTIVITY_RELATED_FIELDS,
         )
     )
     grouped = {}
@@ -1105,14 +1212,17 @@ def build_daily_activity_rows(attendance_activities, date_from=None, date_to=Non
         if activity.attendance_date:
             attendance_dates.add(activity.attendance_date)
 
-    attendances = Attendance.objects.filter(
-        employee_id_id__in=employee_ids,
-        attendance_date__in=attendance_dates,
-    )
-    attendance_by_key = {
-        (attendance.employee_id_id, attendance.attendance_date): attendance
-        for attendance in attendances
-    }
+    if attendance_by_key is None:
+        attendances = attendance_preload_queryset(
+            Attendance.objects.filter(
+                employee_id_id__in=employee_ids,
+                attendance_date__in=attendance_dates,
+            )
+        )
+        attendance_by_key = {
+            (attendance.employee_id_id, attendance.attendance_date): attendance
+            for attendance in attendances
+        }
 
     leave_by_key = {}
     holiday_by_date = {}
@@ -1476,6 +1586,23 @@ def _empty_daily_attendance_row(attendance):
     )
 
 
+def _employee_avatar_url(employee):
+    profile = getattr(employee, "employee_profile", None)
+    if profile:
+        try:
+            return profile.url
+        except ValueError:
+            pass
+    return static("images/ui/default_avatar.jpg")
+
+
+def _attach_attendance_row_defaults(row):
+    employee = getattr(row, "employee", None)
+    if employee is not None and not getattr(row, "employee_avatar_url", None):
+        row.employee_avatar_url = _employee_avatar_url(employee)
+    return row
+
+
 def build_daily_attendance_rows(attendances):
     """
     Build activity-table shaped rows for Attendance querysets/pages.
@@ -1496,12 +1623,19 @@ def build_daily_attendance_rows(attendances):
         if getattr(attendance, "attendance_date", None)
     }
     activity_rows_by_key = {}
+    attendance_by_key = {
+        (attendance.employee_id_id, attendance.attendance_date): attendance
+        for attendance in attendance_rows
+    }
     if employee_ids and attendance_dates:
         activities = AttendanceActivity.objects.filter(
             employee_id_id__in=employee_ids,
             attendance_date__in=attendance_dates,
         ).order_by("clock_in_date", "clock_in", "id")
-        for row in build_daily_activity_rows(activities):
+        for row in build_daily_activity_rows(
+            activities,
+            attendance_by_key=attendance_by_key,
+        ):
             employee_id = getattr(getattr(row, "employee", None), "id", None)
             activity_rows_by_key[(employee_id, row.attendance_date)] = row
 
@@ -1511,8 +1645,115 @@ def build_daily_attendance_rows(attendances):
         row = activity_rows_by_key.get(key) or _empty_daily_attendance_row(attendance)
         row.attendance = attendance
         row.row_key = f"attendance-{attendance.id}"
-        rows.append(row)
+        rows.append(_attach_attendance_row_defaults(row))
     return rows
+
+
+def _attendance_group_ids(grouped_attendances):
+    ids = []
+    for entry in getattr(grouped_attendances, "object_list", grouped_attendances or []):
+        page = entry.get("list")
+        for instance in getattr(page, "object_list", page or []):
+            ids.append(instance.id)
+    return ids
+
+
+def _attach_daily_rows_to_grouped_attendances(grouped_attendances):
+    for group in getattr(grouped_attendances, "object_list", grouped_attendances or []):
+        group["rows"] = build_daily_attendance_rows(group.get("list", []))
+
+
+def _attendance_tab_queryset(tab, queryset):
+    if tab == ATTENDANCE_TAB_OVERTIME:
+        return queryset.filter(
+            overtime_second__gt=0,
+            attendance_validated=True,
+        )
+    if tab == ATTENDANCE_TAB_VALIDATED:
+        return queryset.filter(attendance_validated=True)
+    return queryset.filter(attendance_validated=False)
+
+
+def build_attendance_tab_context(request, active_tab=None, include_filter=False):
+    active_tab = attendance_active_tab(active_tab or request.GET.get("tab"))
+    config = ATTENDANCE_TAB_CONFIG[active_tab]
+    previous_data = attendance_tab_querystring(request, active_tab)
+    page_param = config["page_param"]
+    field = request.GET.get("field")
+    month_name = ""
+
+    condition = AttendanceValidationCondition.objects.first()
+    minot = strtime_seconds("00:00")
+    if condition is not None and condition.minimum_overtime_to_approve is not None:
+        minot = strtime_seconds(condition.minimum_overtime_to_approve)
+
+    queryset = Attendance.objects.filter(employee_id__is_active=True)
+    if request.GET.get("sortby"):
+        queryset = sortby(request, queryset, "sortby")
+    queryset = _attendance_tab_queryset(active_tab, queryset)
+
+    filter_obj = AttendanceFilters(request.GET, queryset=queryset)
+    queryset = filtersubordinates(
+        request,
+        filter_obj.qs,
+        "attendance.view_attendance",
+    )
+    queryset = attendance_preload_queryset(queryset)
+
+    data_dict = parse_qs(previous_data)
+    get_key_instances(Attendance, data_dict)
+    for key in [
+        key
+        for key, value in data_dict.items()
+        if value == ["unknown"] or key in (config["page_param"], "tab")
+    ]:
+        data_dict.pop(key)
+
+    is_grouped = bool(field)
+    active_rows = []
+    if is_grouped:
+        active_page = group_by_queryset(
+            queryset,
+            field,
+            request.GET.get(page_param),
+            page_param,
+        )
+        _attach_daily_rows_to_grouped_attendances(active_page)
+        active_id_list = _attendance_group_ids(active_page)
+        active_ids = json.dumps(active_id_list)
+        active_has_results = bool(active_id_list)
+        template = "attendance/attendance/group_by.html"
+    else:
+        active_page = paginator_qry(queryset, request.GET.get(page_param))
+        active_rows = build_daily_attendance_rows(active_page)
+        active_ids = json.dumps(
+            [instance.id for instance in active_page.object_list]
+        )
+        active_has_results = bool(active_rows)
+        template = "attendance/attendance/tab_content.html"
+
+    context = {
+        "active_tab": config,
+        "active_tab_key": active_tab,
+        "active_page": active_page,
+        "active_rows": active_rows,
+        "active_ids": active_ids,
+        "active_has_results": active_has_results,
+        "is_grouped": is_grouped,
+        "pd": previous_data,
+        "field": field,
+        "filter_dict": data_dict,
+        "month_name": month_name,
+        "minot": minot,
+        "tab_template": template,
+    }
+    context[config["context_name"]] = active_page
+    context[config["rows_context_name"]] = active_rows
+    context[config["ids_context_name"]] = active_ids
+    if include_filter:
+        context["f"] = filter_obj
+        context["gp_fields"] = AttendanceReGroup.fields
+    return context
 
 
 ATTENDANCE_ACTIVITY_DAILY_EXPORT_FIELDS = {
@@ -3539,99 +3780,18 @@ def attendance_view(request):
     """
     This method is used to view attendances.
     """
-    previous_data = request.GET.urlencode()
     form = AttendanceForm()
-    condition = AttendanceValidationCondition.objects.first()
-    minot = strtime_seconds("00:00")
-    if condition is not None and condition.minimum_overtime_to_approve is not None:
-        minot = strtime_seconds(condition.minimum_overtime_to_approve)
-    validate_attendances = Attendance.objects.filter(
-        attendance_validated=False, employee_id__is_active=True
-    )
-    attendances = Attendance.objects.filter(
-        attendance_validated=True, employee_id__is_active=True
-    )
-    # ot_attendances = Attendance.objects.filter(
-    #     overtime_second__gte=minot,
-    #     attendance_validated=True,
-    #     employee_id__is_active=True,
-    # )
-    # for attendance in ot_attendances:
-    #     attendance.min_ot_achieved = True
-    ot_attendances = Attendance.objects.filter(
-        overtime_second__gt=0,
-        attendance_validated=True,
-        employee_id__is_active=True,
-    )
-    filter_obj = AttendanceFilters(request.GET, queryset=attendances)
-    attendances = filtersubordinates(
-        request, filter_obj.qs, "attendance.view_attendance"
-    )
-    validate_attendances = AttendanceFilters(
-        request.GET, queryset=validate_attendances
-    ).qs
-    validate_attendances = filtersubordinates(
-        request, validate_attendances, "attendance.view_attendance"
-    )
-    ot_attendances = AttendanceFilters(request.GET, queryset=ot_attendances).qs
-    ot_attendances = filtersubordinates(
-        request, ot_attendances, "attendance.view_attendance"
-    )
     check_attendance = Attendance.objects.all()
     if check_attendance.exists():
         template = "attendance/attendance/attendance_view.html"
     else:
         template = "attendance/attendance/attendance_empty.html"
-    validate_attendances_ids = json.dumps(
-        [
-            instance.id
-            for instance in paginator_qry(
-                validate_attendances, request.GET.get("vpage")
-            ).object_list
-        ]
-    )
-    ot_attendances_ids = json.dumps(
-        [
-            instance.id
-            for instance in paginator_qry(
-                ot_attendances, request.GET.get("opage")
-            ).object_list
-        ]
-    )
-    attendances_ids = json.dumps(
-        [
-            instance.id
-            for instance in paginator_qry(
-                attendances, request.GET.get("page")
-            ).object_list
-        ]
-    )
-    validate_attendances = paginator_qry(validate_attendances, request.GET.get("vpage"))
-    ot_attendances = paginator_qry(ot_attendances, request.GET.get("opage"))
-    attendances = paginator_qry(attendances, request.GET.get("page"))
-    build_my_attendance_activity_meta(validate_attendances)
-    build_my_attendance_activity_meta(ot_attendances)
-    build_my_attendance_activity_meta(attendances)
+    context = build_attendance_tab_context(request, include_filter=True)
+    context["form"] = form
     return render(
         request,
         template,
-        {
-            "form": form,
-            "validate_attendances": validate_attendances,
-            "attendances": attendances,
-            "overtime_attendances": ot_attendances,
-            "validate_attendance_rows": build_daily_attendance_rows(
-                validate_attendances
-            ),
-            "attendance_rows": build_daily_attendance_rows(attendances),
-            "overtime_attendance_rows": build_daily_attendance_rows(ot_attendances),
-            "validate_attendances_ids": validate_attendances_ids,
-            "ot_attendances_ids": ot_attendances_ids,
-            "attendances_ids": attendances_ids,
-            "f": filter_obj,
-            "pd": previous_data,
-            "gp_fields": AttendanceReGroup.fields,
-        },
+        context,
     )
 
 

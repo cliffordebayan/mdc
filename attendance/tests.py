@@ -63,6 +63,7 @@ from attendance.views.views import (
     _payroll_group_export_selected_columns,
     _write_export_row_formulas,
     _write_export_totals_sheet,
+    build_attendance_tab_context,
     build_daily_activity_rows,
     build_my_attendance_activity_meta,
 )
@@ -3163,6 +3164,114 @@ class AttendanceActivityMetaBuilderTests(SimpleTestCase):
             meta["maps_url"],
             "https://www.google.com/maps?q=14.601,121.001",
         )
+
+
+class FakeAttendanceQuerySet:
+    def __init__(self):
+        self.filters = []
+        self.selected_related = []
+
+    def filter(self, **kwargs):
+        self.filters.append(kwargs)
+        return self
+
+    def select_related(self, *fields):
+        self.selected_related.extend(fields)
+        return self
+
+
+class AttendanceLazyTabContextTests(SimpleTestCase):
+    def _request(self, querystring):
+        request = RequestFactory().get(f"/attendance/attendance-search?{querystring}")
+        request.user = SimpleNamespace(has_perm=lambda perm: True)
+        return request
+
+    @patch("attendance.views.views.get_key_instances")
+    @patch("attendance.views.views.build_daily_attendance_rows")
+    @patch("attendance.views.views.paginator_qry")
+    @patch("attendance.views.views.filtersubordinates")
+    @patch("attendance.views.views.AttendanceFilters")
+    @patch("attendance.views.views.AttendanceValidationCondition")
+    @patch("attendance.views.views.Attendance")
+    def test_overtime_tab_uses_overtime_queryset_and_page_param(
+        self,
+        attendance_model,
+        validation_condition,
+        attendance_filters,
+        filter_subordinates,
+        paginator,
+        build_rows,
+        _get_key_instances,
+    ):
+        queryset = FakeAttendanceQuerySet()
+        attendance_model.objects.filter.return_value = queryset
+        validation_condition.objects.first.return_value = None
+        attendance_filters.side_effect = (
+            lambda data, queryset=None, **kwargs: SimpleNamespace(qs=queryset)
+        )
+        filter_subordinates.side_effect = lambda request, qs, perm: qs
+        page = SimpleNamespace(object_list=[SimpleNamespace(id=7)])
+        paginator.return_value = page
+        build_rows.return_value = [SimpleNamespace(row_key="attendance-7")]
+
+        context = build_attendance_tab_context(
+            self._request("tab=overtime&opage=2")
+        )
+
+        self.assertIn(
+            {"overtime_second__gt": 0, "attendance_validated": True},
+            queryset.filters,
+        )
+        paginator.assert_called_once_with(queryset, "2")
+        self.assertEqual(context["active_tab_key"], "overtime")
+        self.assertEqual(context["overtime_attendances"], page)
+        self.assertEqual(context["ot_attendances_ids"], "[7]")
+
+    @patch("attendance.views.views.get_key_instances")
+    @patch("attendance.views.views.build_daily_attendance_rows")
+    @patch("attendance.views.views.group_by_queryset")
+    @patch("attendance.views.views.filtersubordinates")
+    @patch("attendance.views.views.AttendanceFilters")
+    @patch("attendance.views.views.AttendanceValidationCondition")
+    @patch("attendance.views.views.Attendance")
+    def test_validated_group_by_uses_validated_page_param_only(
+        self,
+        attendance_model,
+        validation_condition,
+        attendance_filters,
+        filter_subordinates,
+        group_by,
+        build_rows,
+        _get_key_instances,
+    ):
+        queryset = FakeAttendanceQuerySet()
+        attendance_model.objects.filter.return_value = queryset
+        validation_condition.objects.first.return_value = None
+        attendance_filters.side_effect = (
+            lambda data, queryset=None, **kwargs: SimpleNamespace(qs=queryset)
+        )
+        filter_subordinates.side_effect = lambda request, qs, perm: qs
+        grouped_page = SimpleNamespace(
+            object_list=[
+                {
+                    "list": SimpleNamespace(
+                        object_list=[SimpleNamespace(id=3)],
+                    )
+                }
+            ]
+        )
+        group_by.return_value = grouped_page
+        build_rows.return_value = [SimpleNamespace(row_key="attendance-3")]
+
+        context = build_attendance_tab_context(
+            self._request("tab=validated&page=4&field=employee_id")
+        )
+
+        self.assertIn({"attendance_validated": True}, queryset.filters)
+        group_by.assert_called_once_with(queryset, "employee_id", "4", "page")
+        self.assertEqual(context["active_tab_key"], "validated")
+        self.assertTrue(context["is_grouped"])
+        self.assertEqual(context["attendances_ids"], "[3]")
 
 
 class FakeActivityQuerySet(list):
