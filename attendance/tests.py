@@ -59,6 +59,7 @@ from attendance.views.views import (
     _attendance_activity_payroll_group_daily_rows,
     _build_export_total_ranges,
     _delete_blocked_message,
+    _insert_export_employee_separator_rows,
     _payroll_group_export_selected_columns,
     _write_export_row_formulas,
     _write_export_totals_sheet,
@@ -4511,6 +4512,107 @@ class AttendanceActivityExportTests(SimpleTestCase):
             self.assertIn(f"MID({expected_range},FIND", formula)
             self.assertNotIn("TIMEVALUE", formula)
             self.assertNotIn("@", formula)
+
+    def test_employee_separator_rows_shift_totals_and_keep_formulas_off_blank_rows(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("employee_id", "Employee"),
+            ("daily_clock_in", "Clock In"),
+            ("daily_clock_out", "Clock Out"),
+            ("daily_shift_start", "Shift Start"),
+            ("daily_shift_end", "Shift End"),
+            ("daily_basic_hours", "Basic Hours"),
+            ("daily_overtime", "Overtime"),
+            ("daily_late_come", "Late Come"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001", "E001", "E002"],
+                "Employee": ["Ada Lovelace", "Ada Lovelace", "Grace Hopper"],
+                "Clock In": ["09:00", "09:00", "08:00"],
+                "Clock Out": ["18:00", "18:30", "17:15"],
+                "Shift Start": ["08:00", "08:00", "08:00"],
+                "Shift End": ["17:00", "17:00", "17:00"],
+                "Basic Hours": ["", "", ""],
+                "Overtime": ["", "", ""],
+                "Late Come": ["", "", ""],
+            }
+        )
+
+        total_ranges = _build_export_total_ranges(df, selected_columns)
+        spaced_df, total_ranges = _insert_export_employee_separator_rows(
+            df, total_ranges
+        )
+        workbook = self._formula_workbook(
+            spaced_df, selected_columns, total_ranges, totals_sheet_name="Totals"
+        )
+        sheet = workbook["Sheet1"]
+        totals_sheet = workbook["Totals"]
+        headers = [cell.value for cell in totals_sheet[1]]
+
+        self.assertEqual(
+            spaced_df["Employee No."].tolist(),
+            ["E001", "E001", "", "E002"],
+        )
+        self.assertEqual(
+            total_ranges,
+            [
+                {
+                    "start_df_row": 0,
+                    "end_df_row": 1,
+                    "employee_number": "E001",
+                    "employee_name": "Ada Lovelace",
+                },
+                {
+                    "start_df_row": 3,
+                    "end_df_row": 3,
+                    "employee_number": "E002",
+                    "employee_name": "Grace Hopper",
+                },
+            ],
+        )
+        self.assertEqual(sheet["A2"].value, "E001")
+        self.assertEqual(sheet["A4"].value, None)
+        self.assertEqual(sheet["A5"].value, "E002")
+        for cell_ref in ("G4", "H4", "I4"):
+            self.assertIn(sheet[cell_ref].value, (None, ""))
+
+        basic_col = headers.index("Total Basic Hours") + 1
+        overtime_col = headers.index("OT Hours") + 1
+        late_col = headers.index("Late") + 1
+        expected_ranges = (
+            (totals_sheet.cell(2, basic_col), "'Sheet1'!G2:G3"),
+            (totals_sheet.cell(3, basic_col), "'Sheet1'!G5:G5"),
+            (totals_sheet.cell(3, overtime_col), "'Sheet1'!H5:H5"),
+            (totals_sheet.cell(3, late_col), "'Sheet1'!I5:I5"),
+        )
+        for cell, expected_range in expected_ranges:
+            formula = self._cell_formula_text(cell)
+            self.assertIn(f"IFERROR(N({expected_range}),0)", formula)
+            self.assertNotIn("'Sheet1'!G4:G4", formula)
+            self.assertNotIn("@", formula)
+
+    def test_employee_separator_rows_do_not_add_trailing_blank_for_one_employee(self):
+        selected_columns = [
+            ("employee_number", "Employee No."),
+            ("employee_id", "Employee"),
+            ("daily_basic_hours", "Basic Hours"),
+        ]
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001", "E001"],
+                "Employee": ["Ada Lovelace", "Ada Lovelace"],
+                "Basic Hours": ["08:00", "08:00"],
+            }
+        )
+
+        total_ranges = _build_export_total_ranges(df, selected_columns)
+        spaced_df, spaced_ranges = _insert_export_employee_separator_rows(
+            df, total_ranges
+        )
+
+        self.assertEqual(spaced_df["Employee No."].tolist(), ["E001", "E001"])
+        self.assertEqual(spaced_ranges, total_ranges)
 
     def test_totals_sheet_leaves_missing_total_sources_blank(self):
         selected_columns = [

@@ -2278,6 +2278,9 @@ def _write_attendance_activity_export_workbook(request, output, progress=None):
         progress(75, _("Writing workbook"))
     data_frame = pd.DataFrame(data=data_export)
     total_ranges = _build_export_total_ranges(data_frame, selected_columns)
+    data_frame, total_ranges = _insert_export_employee_separator_rows(
+        data_frame, total_ranges
+    )
 
     writer = pd.ExcelWriter(output, engine="xlsxwriter")
     writer.book.set_calc_mode("auto")
@@ -2422,6 +2425,38 @@ def _build_export_total_ranges(df, selected_columns):
         prev_emp = emp_val
     total_ranges.append(range_info(group_start, len(df) - 1))
     return total_ranges
+
+
+def _insert_export_employee_separator_rows(df, total_ranges, separator_rows=1):
+    if df.empty or separator_rows <= 0 or len(total_ranges) <= 1:
+        return df, total_ranges
+
+    separator_after_rows = {
+        total_range["end_df_row"]
+        for total_range in total_ranges[:-1]
+        if total_range.get("end_df_row") is not None
+    }
+    if not separator_after_rows:
+        return df, total_ranges
+
+    blank_row = {column: "" for column in df.columns}
+    spaced_rows = []
+    for row_idx in range(len(df)):
+        spaced_rows.append(df.iloc[row_idx].to_dict())
+        if row_idx in separator_after_rows:
+            spaced_rows.extend(blank_row.copy() for _ in range(separator_rows))
+
+    spaced_df = pd.DataFrame(spaced_rows, columns=df.columns)
+    shifted_ranges = []
+    for range_idx, total_range in enumerate(total_ranges):
+        row_shift = range_idx * separator_rows
+        shifted_range = total_range.copy()
+        if shifted_range.get("start_df_row") is not None:
+            shifted_range["start_df_row"] += row_shift
+        if shifted_range.get("end_df_row") is not None:
+            shifted_range["end_df_row"] += row_shift
+        shifted_ranges.append(shifted_range)
+    return spaced_df, shifted_ranges
 
 
 def _formula_range_for_df_rows(col_idx, start_df_row, end_df_row):
@@ -2573,6 +2608,13 @@ def _row_has_leave(df, row_idx, col_indexes):
     return False
 
 
+def _row_is_blank_export_separator(df, row_idx):
+    return all(
+        value is None or str(value).strip() in {"", "nan"}
+        for value in df.iloc[row_idx].tolist()
+    )
+
+
 def _write_formula_cell(worksheet, row, col, formula, cell_format, use_array=False):
     if use_array:
         worksheet.write_array_formula(row, col, row, col, formula, cell_format)
@@ -2703,7 +2745,11 @@ def _write_export_row_formulas(
         return col_indexes.get(field_name)
 
     for df_row in range(len(df)):
-        if df_row in total_df_rows or _row_has_leave(df, df_row, col_indexes):
+        if (
+            df_row in total_df_rows
+            or _row_is_blank_export_separator(df, df_row)
+            or _row_has_leave(df, df_row, col_indexes)
+        ):
             continue
 
         xlsx_row = df_row + 1
@@ -3068,6 +3114,7 @@ def _write_attendance_payroll_group_export_workbook(request, output, progress=No
                 by=sort_cols, ascending=[True for _ in sort_cols]
             ).reset_index(drop=True)
         total_ranges = _build_export_total_ranges(df, selected_columns)
+        df, total_ranges = _insert_export_employee_separator_rows(df, total_ranges)
 
         sheet_name = _payroll_group_export_sheet_name(group.name, used_names)
         worksheet = _write_plain_export_frame(writer, df, sheet_name)
