@@ -55,10 +55,17 @@
         event.preventDefault();
         event.stopPropagation();
 
+        if (form.dataset.exportInProgress === "true") {
+            return false;
+        }
+        form.dataset.exportInProgress = "true";
+
         var startUrl = form.getAttribute("data-export-start-url");
         var progressUrl = form.getAttribute("data-export-progress-url");
         var downloadUrl = form.getAttribute("data-export-download-url");
         var title = form.getAttribute("data-export-title") || "{% trans 'Exporting' %}";
+        var submitButton = form.querySelector('[type="submit"]');
+        if (submitButton) submitButton.disabled = true;
         var modal = progressModal();
         modal.querySelector("#attendance-export-progress-title").textContent = title;
         modal.querySelector("#attendance-export-progress-actions").style.display = "none";
@@ -79,13 +86,18 @@
             var jobId = payload.job_id;
             var pollUrl = progressUrl.replace("JOB_ID", jobId);
             var fileUrl = downloadUrl.replace("JOB_ID", jobId);
+            var downloadStarted = false;
             var timer = setInterval(function () {
                 fetch(pollUrl, {headers: {"X-Requested-With": "XMLHttpRequest"}})
                     .then(function (response) { return response.json(); })
                     .then(function (status) {
                         setProgress(modal, status.percent, status.message, status.status === "failed");
                         if (status.status === "complete") {
+                            if (downloadStarted) return;
+                            downloadStarted = true;
                             clearInterval(timer);
+                            form.dataset.exportInProgress = "false";
+                            if (submitButton) submitButton.disabled = false;
                             setProgress(modal, 100, "{% trans 'Download starting' %}");
                             window.location.href = fileUrl;
                             setTimeout(function () {
@@ -93,16 +105,22 @@
                             }, 1200);
                         } else if (status.status === "failed") {
                             clearInterval(timer);
+                            form.dataset.exportInProgress = "false";
+                            if (submitButton) submitButton.disabled = false;
                             setProgress(modal, 100, status.message || "{% trans 'Export failed' %}", true);
                         }
                     })
                     .catch(function () {
                         clearInterval(timer);
+                        form.dataset.exportInProgress = "false";
+                        if (submitButton) submitButton.disabled = false;
                         setProgress(modal, 100, "{% trans 'Unable to read export progress.' %}", true);
                     });
             }, 1000);
         })
         .catch(function (error) {
+            form.dataset.exportInProgress = "false";
+            if (submitButton) submitButton.disabled = false;
             setProgress(modal, 100, error.message, true);
         });
         return false;
