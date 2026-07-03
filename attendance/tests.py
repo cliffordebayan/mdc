@@ -5201,6 +5201,111 @@ class DailyActivityRowsTests(SimpleTestCase):
         self.assertEqual(row.late_come_duration, "")
         self.assertEqual(row.early_out_duration, "")
 
+    @patch("attendance.views.views.Attendance")
+    def test_open_work_after_lunch_keeps_clock_out_blank(self, attendance_model):
+        employee = SimpleNamespace(id=101)
+        attendance_model.objects.filter.return_value = []
+
+        rows = build_daily_activity_rows(
+            FakeActivityQuerySet(
+                [
+                    self._activity(
+                        1,
+                        employee,
+                        "work",
+                        time(9, 0),
+                        time(12, 0),
+                    ),
+                    self._activity(
+                        2,
+                        employee,
+                        "lunch",
+                        time(12, 0),
+                        time(13, 0),
+                    ),
+                    self._activity(
+                        3,
+                        employee,
+                        "work",
+                        time(13, 0),
+                    ),
+                ]
+            )
+        )
+
+        row = rows[0]
+        self.assertEqual(row.work_in.clock_in, time(9, 0))
+        self.assertIsNone(row.work_out)
+        self.assertEqual(len(row.lunch_segments), 1)
+        self.assertEqual(row.lunch_segments[0].clock_out, time(13, 0))
+
+    @patch("attendance.views.views.Attendance")
+    def test_open_work_after_break_keeps_clock_out_blank(self, attendance_model):
+        employee = SimpleNamespace(id=101)
+        attendance_model.objects.filter.return_value = []
+
+        rows = build_daily_activity_rows(
+            FakeActivityQuerySet(
+                [
+                    self._activity(
+                        1,
+                        employee,
+                        "work",
+                        time(9, 0),
+                        time(10, 0),
+                    ),
+                    self._activity(
+                        2,
+                        employee,
+                        "break",
+                        time(10, 0),
+                        time(10, 15),
+                    ),
+                    self._activity(
+                        3,
+                        employee,
+                        "work",
+                        time(10, 15),
+                    ),
+                ]
+            )
+        )
+
+        row = rows[0]
+        self.assertEqual(row.work_in.clock_in, time(9, 0))
+        self.assertIsNone(row.work_out)
+        self.assertEqual(len(row.break_segments), 1)
+        self.assertEqual(row.break_segments[0].clock_out, time(10, 15))
+
+    @patch("attendance.views.views.Attendance")
+    def test_work_only_open_segment_preserves_effective_clock_out(self, attendance_model):
+        employee = SimpleNamespace(id=101)
+        attendance_model.objects.filter.return_value = []
+
+        rows = build_daily_activity_rows(
+            FakeActivityQuerySet(
+                [
+                    self._activity(
+                        1,
+                        employee,
+                        "work",
+                        time(9, 0),
+                        time(12, 0),
+                    ),
+                    self._activity(
+                        2,
+                        employee,
+                        "work",
+                        time(13, 0),
+                    ),
+                ]
+            )
+        )
+
+        row = rows[0]
+        self.assertEqual(row.work_in.clock_in, time(9, 0))
+        self.assertEqual(row.work_out.clock_out, time(13, 0))
+
     def test_build_daily_rows_treats_blank_shift_schedule_as_rest_day(self):
         saturday = date(2026, 4, 11)
         shift_day = SimpleNamespace(id=6, day="saturday")
@@ -5940,7 +6045,7 @@ class DailyActivityRowsTests(SimpleTestCase):
             )
 
         self.assertEqual(rows[0].work_in.activity.id, 35)
-        self.assertEqual(rows[0].work_out.activity.id, 35)
+        self.assertIsNone(rows[0].work_out)
         self.assertEqual(rows[0].late_come_duration, "00:30")
         self.assertEqual(rows[0].early_out_duration, "")
 

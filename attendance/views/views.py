@@ -512,6 +512,21 @@ def _effective_work_out_segment(work_out, latest_unclosed):
     return seg
 
 
+def _activity_occurs_between(activity, start, end):
+    if not activity or not start or not end:
+        return False
+
+    activity_start = _activity_in_datetime(activity)
+    activity_end = _activity_out_datetime(activity) if activity.clock_out else None
+    if activity_start == datetime.min:
+        return False
+
+    if activity_end and activity_end != datetime.min:
+        return activity_start < end and activity_end > start
+
+    return start < activity_start < end
+
+
 def _activity_duration_seconds(activity):
     if not activity or not activity.clock_out:
         return 0
@@ -1315,11 +1330,24 @@ def build_daily_activity_rows(
             for act in unclosed_work:
                 if act.clock_in_date and act.clock_in:
                     act_in_dt = datetime.combine(act.clock_in_date, act.clock_in)
-                    if act_in_dt > last_out_dt:
+                    has_non_work_between = any(
+                        _activity_occurs_between(
+                            non_work_activity,
+                            last_out_dt,
+                            act_in_dt,
+                        )
+                        for non_work_activity in break_activities + lunch_activities
+                    )
+                    if act_in_dt > last_out_dt and not has_non_work_between:
                         if latest_unclosed is None or act_in_dt > datetime.combine(
                             latest_unclosed.clock_in_date, latest_unclosed.clock_in
                         ):
                             latest_unclosed = act
+        display_work_out = (
+            work_out
+            if latest_work_activity and latest_work_activity.clock_out
+            else (work_out if latest_unclosed else None)
+        )
         attendance = attendance_by_key.get((employee_id, attendance_date))
         hours = _attendance_row_hours(attendance)
         shift = _row_shift(attendance, row_data["employee"])
@@ -1344,7 +1372,7 @@ def build_daily_activity_rows(
                 "break_activities": break_activities,
                 "lunch_activities": lunch_activities,
                 "work_in": work_in,
-                "work_out": work_out,
+                "work_out": display_work_out,
                 "latest_unclosed_work_activity": latest_unclosed,
                 "first_work_clock_in": work_in,
                 "last_work_clock_out": early_out_work_out,
