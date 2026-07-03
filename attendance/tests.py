@@ -57,10 +57,12 @@ from attendance.views.views import (
     _attendance_activity_export_columns,
     _attendance_activity_export_data,
     _attendance_activity_export_data_from_rows,
+    _attendance_activity_export_row_value,
     _attendance_activity_payroll_group_daily_rows,
     _build_export_total_ranges,
     _delete_blocked_message,
     _insert_export_employee_separator_rows,
+    _write_plain_export_frame,
     _payroll_group_export_selected_columns,
     _write_export_row_formulas,
     _write_export_totals_sheet,
@@ -4322,6 +4324,95 @@ class AttendanceActivityExportTests(SimpleTestCase):
             data["Worked on Special Holiday"],
             ["00:00", "", "00:00", "00:00", "00:00", "00:00"],
         )
+
+    @patch("attendance.views.views.format_export_value")
+    @patch("attendance.views.views._attendance_activity_export_daily_rows")
+    def test_payroll_group_export_orders_cross_month_dates_chronologically(
+        self, daily_rows, format_export_value
+    ):
+        format_export_value.side_effect = self._format_export_value
+        employee = SimpleNamespace(
+            id=101,
+            employee_no="E001",
+            get_full_name=lambda: "Employee E001",
+            employee_work_info=SimpleNamespace(
+                branch_id="Main Branch",
+                department_id="HR",
+                payroll_group_id="Semi Monthly",
+                shift_id="Morning",
+                work_type_id="Office",
+            ),
+        )
+        daily_rows.return_value = []
+
+        rows = _attendance_activity_payroll_group_daily_rows(
+            FakeActivityQuerySet([]),
+            [employee],
+            date(2026, 4, 26),
+            date(2026, 5, 8),
+        )
+        data = _attendance_activity_export_data_from_rows(
+            rows,
+            [
+                ("employee_number", "Employee No."),
+                ("attendance_date", "Attendance Date"),
+            ],
+            None,
+        )
+
+        self.assertEqual(
+            data["Attendance Date"],
+            [
+                date(2026, 4, 26),
+                date(2026, 4, 27),
+                date(2026, 4, 28),
+                date(2026, 4, 29),
+                date(2026, 4, 30),
+                date(2026, 5, 1),
+                date(2026, 5, 2),
+                date(2026, 5, 3),
+                date(2026, 5, 4),
+                date(2026, 5, 5),
+                date(2026, 5, 6),
+                date(2026, 5, 7),
+                date(2026, 5, 8),
+            ],
+        )
+
+    def test_attendance_date_export_value_stays_date_before_workbook_write(self):
+        row = self._daily_row()
+        row.attendance_date = date(2026, 5, 1)
+        row.employee.get_full_name = lambda: "Employee E001"
+
+        value = _attendance_activity_export_row_value(
+            row,
+            "attendance_date",
+            None,
+            lambda export_value: export_value.strftime("%m/%d/%Y"),
+        )
+
+        self.assertEqual(value, date(2026, 5, 1))
+
+    def test_plain_export_frame_formats_attendance_date_as_mdy(self):
+        output = io.BytesIO()
+        writer = pd.ExcelWriter(output, engine="xlsxwriter")
+        df = pd.DataFrame(
+            {
+                "Employee No.": ["E001", "E001"],
+                "Attendance Date": [date(2026, 4, 26), date(2026, 5, 1)],
+            }
+        )
+
+        _write_plain_export_frame(writer, df, "Sheet1")
+        writer.close()
+        output.seek(0)
+        workbook = load_workbook(output, data_only=False)
+        sheet = workbook["Sheet1"]
+
+        self.assertEqual(sheet["B2"].value, datetime(2026, 4, 26))
+        self.assertEqual(sheet["B3"].value, datetime(2026, 5, 1))
+        self.assertEqual(sheet["B2"].number_format, "m/d/yyyy")
+        self.assertEqual(sheet["B3"].number_format, "m/d/yyyy")
 
     @patch("attendance.views.views.format_export_value")
     @patch("attendance.views.views._attendance_activity_export_daily_rows")

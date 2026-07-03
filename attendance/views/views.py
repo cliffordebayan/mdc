@@ -1851,6 +1851,8 @@ ATTENDANCE_ACTIVITY_EXPORT_VALUE_MAP = {
     "early_out": _("Early Out"),
 }
 
+ATTENDANCE_EXPORT_DATE_FORMAT = "m/d/yyyy"
+
 
 def _attendance_activity_export_formatter(employee):
     time_format = "HH:mm"
@@ -2176,6 +2178,8 @@ def _attendance_activity_export_row_value(row, field_name, employee, formatter=N
         "attendance_date": row.attendance_date,
     }
     value = row_values.get(field_name)
+    if field_name == "attendance_date":
+        return value or ""
     return _format_attendance_activity_export_value(value, employee, formatter)
 
 
@@ -2503,9 +2507,28 @@ def _write_plain_export_frame(writer, data_frame, sheet_name):
     data_frame.to_excel(writer, index=False, sheet_name=sheet_name)
     worksheet = writer.sheets[sheet_name]
     centered = writer.book.add_format({"align": "center", "valign": "vcenter"})
+    date_format = writer.book.add_format(
+        {
+            "align": "center",
+            "valign": "vcenter",
+            "num_format": ATTENDANCE_EXPORT_DATE_FORMAT,
+        }
+    )
     if len(data_frame.columns):
         worksheet.set_column(0, len(data_frame.columns) - 1, 18, centered)
     for col_idx, column_name in enumerate(data_frame.columns):
+        if str(column_name) == str(_("Attendance Date")):
+            worksheet.set_column(col_idx, col_idx, 18, date_format)
+            for row_idx, value in enumerate(data_frame[column_name], start=1):
+                if isinstance(value, datetime):
+                    worksheet.write_datetime(row_idx, col_idx, value, date_format)
+                elif type(value) == date:
+                    worksheet.write_datetime(
+                        row_idx,
+                        col_idx,
+                        datetime.combine(value, time.min),
+                        date_format,
+                    )
         if column_name in INTERNAL_EXPORT_HEADERS:
             worksheet.set_column(col_idx, col_idx, 18, centered, {"hidden": True})
     return worksheet
