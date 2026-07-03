@@ -461,14 +461,52 @@ def _active_assigned_geofences(employee):
     return employee.assigned_geofences.filter(start=True)
 
 
+def _employee_is_excluded_from_geofence(employee, geofence):
+    excluded_employees = getattr(geofence, "excluded_employees", None)
+    if excluded_employees is None:
+        return False
+
+    employee_pk = getattr(employee, "pk", None) or getattr(employee, "id", None)
+
+    try:
+        if hasattr(excluded_employees, "filter"):
+            return excluded_employees.filter(pk=employee_pk).exists()
+    except Exception:
+        return False
+
+    try:
+        return any(
+            (getattr(excluded_employee, "pk", None) or getattr(excluded_employee, "id", None))
+            == employee_pk
+            for excluded_employee in excluded_employees
+        )
+    except TypeError:
+        return False
+
+
+def _enforced_assigned_geofences(employee):
+    """
+    Return the active assigned geofences that should actually restrict this
+    employee. Empty means the employee has no geofence restriction.
+    """
+    enforced_geofences = []
+    for geofence in _active_assigned_geofences(employee):
+        if not getattr(geofence, "start", True):
+            continue
+        if _employee_is_excluded_from_geofence(employee, geofence):
+            continue
+        enforced_geofences.append(geofence)
+    return enforced_geofences
+
+
 def _geofence_check(employee, work_info, latitude, longitude):
     """
     Return a dict with error details if the employee is outside their assigned
     geofences, or None if the clock action should be allowed.
-    Employees with no active assigned geofences are always allowed.
+    Employees with no enforced assigned geofences are always allowed.
     """
     try:
-        assigned_geos = list(_active_assigned_geofences(employee))
+        assigned_geos = _enforced_assigned_geofences(employee)
         if not assigned_geos:
             return None
 
@@ -1651,8 +1689,8 @@ def employee_lookup(request):
                 if branch:
                     branch_name = branch.branch or ""
                 
-                # Fetch active assigned geofences for this employee
-                assigned_geos = _active_assigned_geofences(emp)
+                # Fetch geofences that actively restrict this employee.
+                assigned_geos = _enforced_assigned_geofences(emp)
                 for geo in assigned_geos:
                     geo_data.append({
                         "name": geo.name or "",

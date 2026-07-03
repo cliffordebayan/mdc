@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from base.models import Branch
+from attendance.views.portal import _enforced_assigned_geofences
 from employee.models import Employee
 
 from .forms import GeoFencingSetupForm, EmployeeGeofenceForm, QuickGeoFenceForm
@@ -124,8 +125,11 @@ def _geo_config_context():
     add_form = GeoFencingSetupForm()
     employees = Employee.objects.filter(is_active=True).prefetch_related(
         "assigned_geofences",
+        "assigned_geofences__excluded_employees",
         "employee_work_info__department_id"
     )
+    for employee in employees:
+        employee.enforced_geofences = _enforced_assigned_geofences(employee)
 
     return {
         "geofences": geofences,

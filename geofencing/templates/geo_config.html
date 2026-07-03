@@ -69,7 +69,7 @@
               {{ employee.employee_work_info.department_id.department|default:"—" }}
             </div>
             <div class="oh-sticky-table__td">
-              {% for geo in employee.assigned_geofences.all %}
+              {% for geo in employee.enforced_geofences %}
                 <span class="oh-badge oh-badge--info me-1">{{ geo }}</span>
               {% empty %}
                 <span class="oh-badge oh-badge--success-light" style="color: #2e7d32; background-color: #e8f5e9;">No Restrictions</span>
