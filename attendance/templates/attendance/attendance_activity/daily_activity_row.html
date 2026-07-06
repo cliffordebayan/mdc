@@ -160,6 +160,7 @@
     <div data-cell-index="19" class="oh-sticky-table__td">{{ row.leave_type|default:row.leave|default:"&mdash;" }}</div>
     <div data-cell-index="20" class="oh-sticky-table__td">{{ row.leave_days|default:"&mdash;" }}</div>
     <div data-cell-index="21" class="oh-sticky-table__td">{{ row.holiday|default:"&mdash;" }}</div>
+    <div data-cell-index="22" class="oh-sticky-table__td">{{ row.source|default:"&mdash;" }}</div>
     {% if perms.attendance.change_attendanceactivity or perms.attendance.delete_attendanceactivity %}
     {% if not row.is_leave_only %}
         <div class="oh-sticky-table__td oh-sticky-table__right">

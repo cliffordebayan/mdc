@@ -7,7 +7,8 @@
       "Read(//c/Users/CLIFFORD/Music/HRIS/**)",
       "Bash(python manage.py makemigrations employee)",
       "Bash(grep -E \"\\\\.py$\")",
-      "Read(//c/Users/CLIFFORD/Music/**)"
+      "Read(//c/Users/CLIFFORD/Music/**)",
+      "Bash(\"./horillavenv/Scripts/python.exe\" manage.py test attendance --keepdb)"
     ]
   }
 }

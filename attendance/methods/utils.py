@@ -1010,13 +1010,11 @@ def get_date(date):
 def sort_activity_dicts(activity_dicts):
 
     for activity in activity_dicts:
-        activity["Attendance Date"] = get_date(activity["Attendance Date"])
+        activity["Date In"] = get_date(activity["Date In"])
 
     # Filter out any entries where the date could not be parsed
     activity_dicts = [
-        activity
-        for activity in activity_dicts
-        if activity["Attendance Date"] is not None
+        activity for activity in activity_dicts if activity["Date In"] is not None
     ]
-    sorted_activity_dicts = sorted(activity_dicts, key=lambda x: x["Attendance Date"])
+    sorted_activity_dicts = sorted(activity_dicts, key=lambda x: x["Date In"])
     return sorted_activity_dicts

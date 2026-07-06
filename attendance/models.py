@@ -77,6 +77,12 @@ class AttendanceActivity(HorillaModel):
         default="work",
         verbose_name=_("Activity Type"),
     )
+    source = models.CharField(
+        max_length=10,
+        choices=[("website", _("Website")), ("import", _("Import"))],
+        default="website",
+        verbose_name=_("Source"),
+    )
     # Self-service clock in/out fields
     clock_in_selfie = models.ImageField(
         upload_to=upload_path,

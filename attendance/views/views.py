@@ -162,50 +162,26 @@ from notifications.signals import notify
 
 ACTIVITY_IMPORT_HEADERS = [
     "Employee No",
-    "Employee",
-    "Branch",
-    "Department",
-    "Attendance Date",
-    "Day",
-    "In Date",
-    "Check In",
-    "Check In Image",
-    "Out Date",
-    "Check Out",
-    "Check Out Image",
-    "Shift",
-    "Work Type",
-    "Min Hour",
-    "Work Hours",
-    "Pending Hour",
-    "Overtime",
-    "Approved By",
-    "Location",
-    "Maps",
+    "Date In",
+    "Date Out",
+    "Clock In",
+    "Clock Out",
+    "Break In",
+    "Break Out",
+    "Lunch In",
+    "Lunch Out",
 ]
 
 ACTIVITY_IMPORT_SAMPLE_ROW = {
     "Employee No": "EMP-001",
-    "Employee": "John Doe",
-    "Branch": "Main Branch",
-    "Department": "Operations",
-    "Attendance Date": "2026-04-01",
-    "Day": "Tuesday",
-    "In Date": "2026-04-01",
-    "Check In": "08:00",
-    "Check In Image": "checkin.jpg",
-    "Out Date": "2026-04-01",
-    "Check Out": "17:00",
-    "Check Out Image": "checkout.jpg",
-    "Shift": "Day Shift",
-    "Work Type": "Office",
-    "Min Hour": "08:00",
-    "Work Hours": "09:00",
-    "Pending Hour": "00:00",
-    "Overtime": "01:00",
-    "Approved By": "EMP-002",
-    "Location": "Main Office",
-    "Maps": "https://www.google.com/maps?q=14.5995,120.9842",
+    "Date In": "2026-04-01",
+    "Date Out": "2026-04-01",
+    "Clock In": "08:00",
+    "Clock Out": "17:00",
+    "Break In": "10:00",
+    "Break Out": "10:15",
+    "Lunch In": "12:00",
+    "Lunch Out": "13:00",
 }
 
 
@@ -419,6 +395,15 @@ def build_my_attendance_activity_meta(paginated_attendances):
 def _activity_type(activity):
     activity_type = getattr(activity, "activity_type", "work") or "work"
     return activity_type if activity_type in {"work", "break", "lunch"} else "work"
+
+
+def _row_source(activities):
+    sources = {getattr(activity, "source", "website") or "website" for activity in activities}
+    if not sources:
+        return None
+    if len(sources) > 1:
+        return _("Mixed")
+    return _("Website") if sources.pop() == "website" else _("Import")
 
 
 def _activity_in_datetime(activity):
@@ -1490,6 +1475,7 @@ def build_daily_activity_rows(
                 holiday=holiday_by_date.get(attendance_date),
                 holiday_type=holiday_type_by_date.get(attendance_date),
                 is_rest_day=is_rest_day,
+                source=_row_source(row_data["activities"]),
             )
         )
 
@@ -1555,6 +1541,7 @@ def build_daily_activity_rows(
                     holiday=holiday_by_date.get(date_val),
                     holiday_type=holiday_type_by_date.get(date_val),
                     is_rest_day=False,
+                    source=None,
                 )
             )
 
@@ -4567,6 +4554,23 @@ def attendance_activity_bulk_delete(request):
     return HttpResponse("<script>$('.filterButton')[0].click()</script>")
 
 
+def _import_open_activity(employee):
+    """
+    Find the currently open (not clocked out) activity for an employee, the
+    same lookup clock_out_attendance_and_activity uses to find what to close.
+    """
+    return (
+        AttendanceActivity.objects.filter(employee_id=employee, clock_out__isnull=True)
+        .order_by("attendance_date", "id")
+        .last()
+    )
+
+
+def _import_activity_value(activity, column):
+    value = activity.get(column)
+    return None if pd.isna(value) else value
+
+
 def process_activity_dicts(activity_dicts):
     from attendance.views.clock_in_out import clock_in, clock_out
 
@@ -4589,38 +4593,132 @@ def process_activity_dicts(activity_dicts):
             error_dicts.append(activity)
             continue
 
-        check_in_date = parse_date(activity["In Date"], "Error 4", activity)
-        check_out_date = parse_date(activity["Out Date"], "Error 5", activity)
+        if not _import_activity_value(activity, "Date In"):
+            activity["Error 3"] = "Please add the Date In."
+            error_dicts.append(activity)
+            continue
+        check_in_date = parse_date(activity["Date In"], "Error 3", activity)
         check_in_time = (
-            parse_time(activity["Check In"])
-            if not pd.isna(activity["Check In"])
+            parse_time(activity["Clock In"])
+            if _import_activity_value(activity, "Clock In")
+            else None
+        )
+        if check_in_date and not check_in_time:
+            activity["Error 4"] = "Please add the Clock In time."
+
+        date_out_value = _import_activity_value(activity, "Date Out")
+        check_out_date = (
+            parse_date(activity["Date Out"], "Error 5", activity)
+            if date_out_value
             else None
         )
         check_out_time = (
-            parse_time(activity["Check Out"])
-            if not pd.isna(activity["Check Out"])
+            parse_time(activity["Clock Out"])
+            if _import_activity_value(activity, "Clock Out")
             else None
         )
+
+        break_in_time = (
+            parse_time(activity["Break In"])
+            if _import_activity_value(activity, "Break In")
+            else None
+        )
+        break_out_time = (
+            parse_time(activity["Break Out"])
+            if _import_activity_value(activity, "Break Out")
+            else None
+        )
+        if bool(break_in_time) != bool(_import_activity_value(activity, "Break Out")):
+            activity["Error 6"] = "Break In and Break Out must be provided together."
+
+        lunch_in_time = (
+            parse_time(activity["Lunch In"])
+            if _import_activity_value(activity, "Lunch In")
+            else None
+        )
+        lunch_out_time = (
+            parse_time(activity["Lunch Out"])
+            if _import_activity_value(activity, "Lunch Out")
+            else None
+        )
+        if bool(lunch_in_time) != bool(_import_activity_value(activity, "Lunch Out")):
+            activity["Error 7"] = "Lunch In and Lunch Out must be provided together."
 
         if any(key.startswith("Error") for key in activity.keys()):
             error_dicts.append(activity)
             continue
 
-        if check_in_time:
+        try:
+            clock_in(
+                Request(
+                    user=employee.employee_user_id,
+                    date=check_in_date,
+                    time=check_in_time,
+                    datetime=django_timezone.make_aware(
+                        datetime.combine(check_in_date, check_in_time)
+                    ),
+                )
+            )
+        except Exception as e:
+            activity["Error 8"] = f"Got an error in import clock in {e}"
+            error_dicts.append(activity)
+            continue
+
+        open_activity = _import_open_activity(employee)
+        if open_activity:
+            open_activity.source = "import"
+            open_activity.save()
+
+        row_has_error = False
+        for start_time, end_time, activity_type, label in (
+            (break_in_time, break_out_time, "break", "break"),
+            (lunch_in_time, lunch_out_time, "lunch", "lunch"),
+        ):
+            if not start_time:
+                continue
             try:
-                clock_in(
-                    Request(
-                        user=employee.employee_user_id,
-                        date=check_in_date,
-                        time=check_in_time,
-                        datetime=django_timezone.make_aware(
-                            datetime.combine(check_in_date, check_in_time)
-                        ),
-                    )
+                open_activity = _import_open_activity(employee)
+                segment_date = open_activity.clock_in_date or check_in_date
+                start_dt = django_timezone.make_aware(
+                    datetime.combine(segment_date, start_time)
+                )
+                end_dt = django_timezone.make_aware(
+                    datetime.combine(segment_date, end_time)
+                )
+                open_activity.clock_out = start_time
+                open_activity.clock_out_date = segment_date
+                open_activity.out_datetime = start_dt
+                open_activity.save()
+
+                AttendanceActivity.objects.create(
+                    employee_id=employee,
+                    attendance_date=open_activity.attendance_date,
+                    clock_in_date=segment_date,
+                    shift_day=open_activity.shift_day,
+                    clock_in=start_time,
+                    in_datetime=start_dt,
+                    clock_out=end_time,
+                    clock_out_date=segment_date,
+                    out_datetime=end_dt,
+                    activity_type=activity_type,
+                    source="import",
+                )
+
+                AttendanceActivity.objects.create(
+                    employee_id=employee,
+                    attendance_date=open_activity.attendance_date,
+                    clock_in_date=segment_date,
+                    shift_day=open_activity.shift_day,
+                    clock_in=end_time,
+                    in_datetime=end_dt,
+                    activity_type="work",
+                    source="import",
                 )
             except Exception as e:
-                activity["Error 6"] = f"Got an error in import clock in {e}"
-                error_dicts.append(activity)
+                activity[f"Error {label}"] = f"Got an error in import {label} {e}"
+                if not row_has_error:
+                    error_dicts.append(activity)
+                    row_has_error = True
 
         if check_out_time and check_out_date:
             try:
@@ -4635,8 +4733,10 @@ def process_activity_dicts(activity_dicts):
                     )
                 )
             except Exception as e:
-                activity["Error 7"] = f"Got an error in import clock out {e}"
-                error_dicts.append(activity)
+                activity["Error 9"] = f"Got an error in import clock out {e}"
+                if not row_has_error:
+                    error_dicts.append(activity)
+                    row_has_error = True
 
     return error_dicts
 

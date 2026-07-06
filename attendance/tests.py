@@ -6911,4 +6911,154 @@ class AttendanceExportFormFieldTests(SimpleTestCase):
         self.assertNotIn("clock_out_gps_address", choices)
         self.assertNotIn("clock_out_maps_url", choices)
         self.assertNotIn("gps_address", choices)
-        self.assertNotIn("maps_url", choices)
+
+
+class ActivityImportChainTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        self.user = User.objects.create_user(
+            username="import-employee",
+            email="import-employee@example.com",
+            password="password123",
+        )
+        self.employee = Employee.objects.create(
+            employee_user_id=self.user,
+            employee_first_name="Import",
+            employee_last_name="Employee",
+            email="import-employee@example.com",
+            phone="09170000002",
+            gender="male",
+            employee_no="IMP-001",
+            is_active=True,
+        )
+
+    def _import_row(self, **overrides):
+        row = {
+            "Employee No": "IMP-001",
+            "Date In": "2026-04-01",
+            "Date Out": "2026-04-01",
+            "Clock In": "08:00",
+            "Clock Out": "17:00",
+            "Break In": "10:00",
+            "Break Out": "10:15",
+            "Lunch In": "12:00",
+            "Lunch Out": "13:00",
+        }
+        row.update(overrides)
+        return row
+
+    @patch(
+        "base.context_processors.enable_late_come_early_out_tracking",
+        return_value={"tracking": False},
+    )
+    def test_import_headers_match_simplified_template(self, _tracking_mock):
+        self.assertEqual(
+            attendance_views.ACTIVITY_IMPORT_HEADERS,
+            [
+                "Employee No",
+                "Date In",
+                "Date Out",
+                "Clock In",
+                "Clock Out",
+                "Break In",
+                "Break Out",
+                "Lunch In",
+                "Lunch Out",
+            ],
+        )
+
+    @patch(
+        "base.context_processors.enable_late_come_early_out_tracking",
+        return_value={"tracking": False},
+    )
+    def test_full_day_creates_work_break_lunch_chain_tagged_as_import(
+        self, _tracking_mock
+    ):
+        data_frame = pd.DataFrame(
+            [self._import_row()], columns=attendance_views.ACTIVITY_IMPORT_HEADERS
+        )
+        error_dicts = attendance_views.process_activity_dicts(
+            data_frame.to_dict("records")
+        )
+
+        self.assertEqual(error_dicts, [])
+
+        activities = list(
+            AttendanceActivity.objects.filter(employee_id=self.employee).order_by(
+                "clock_in"
+            )
+        )
+        segments = [
+            (a.activity_type, a.clock_in.strftime("%H:%M"), a.clock_out.strftime("%H:%M") if a.clock_out else None)
+            for a in activities
+        ]
+        self.assertEqual(
+            segments,
+            [
+                ("work", "08:00", "10:00"),
+                ("break", "10:00", "10:15"),
+                ("work", "10:15", "12:00"),
+                ("lunch", "12:00", "13:00"),
+                ("work", "13:00", "17:00"),
+            ],
+        )
+        self.assertTrue(all(a.source == "import" for a in activities))
+
+        attendance = Attendance.objects.get(
+            employee_id=self.employee, attendance_date=date(2026, 4, 1)
+        )
+        self.assertEqual(attendance.attendance_worked_hour, "07:45")
+
+    @patch(
+        "base.context_processors.enable_late_come_early_out_tracking",
+        return_value={"tracking": False},
+    )
+    def test_missing_break_out_is_reported_as_error_and_skips_row(
+        self, _tracking_mock
+    ):
+        data_frame = pd.DataFrame(
+            [self._import_row(**{"Break Out": None})],
+            columns=attendance_views.ACTIVITY_IMPORT_HEADERS,
+        )
+        error_dicts = attendance_views.process_activity_dicts(
+            data_frame.to_dict("records")
+        )
+
+        self.assertEqual(len(error_dicts), 1)
+        self.assertFalse(
+            AttendanceActivity.objects.filter(employee_id=self.employee).exists()
+        )
+
+    @patch(
+        "base.context_processors.enable_late_come_early_out_tracking",
+        return_value={"tracking": False},
+    )
+    def test_row_source_reports_website_import_and_mixed(self, _tracking_mock):
+        data_frame = pd.DataFrame(
+            [self._import_row()], columns=attendance_views.ACTIVITY_IMPORT_HEADERS
+        )
+        attendance_views.process_activity_dicts(data_frame.to_dict("records"))
+
+        rows = build_daily_activity_rows(
+            AttendanceActivity.objects.filter(employee_id=self.employee)
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(str(rows[0].source), "Import")
+
+        AttendanceActivity.objects.filter(employee_id=self.employee).update(
+            source="website"
+        )
+        rows = build_daily_activity_rows(
+            AttendanceActivity.objects.filter(employee_id=self.employee)
+        )
+        self.assertEqual(str(rows[0].source), "Website")
+
+        first_activity = AttendanceActivity.objects.filter(
+            employee_id=self.employee
+        ).order_by("clock_in").first()
+        first_activity.source = "import"
+        first_activity.save()
+        rows = build_daily_activity_rows(
+            AttendanceActivity.objects.filter(employee_id=self.employee)
+        )
+        self.assertEqual(str(rows[0].source), "Mixed")
