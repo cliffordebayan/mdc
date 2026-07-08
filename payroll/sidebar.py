@@ -43,11 +43,6 @@ SUBMENUS = [
         "menu": trans("Encashments & Reimbursements"),
         "redirect": reverse("view-reimbursement"),
     },
-    {
-        "menu": trans("Federal Tax"),
-        "redirect": reverse("filing-status-view"),
-        "accessibility": "payroll.sidebar.federal_tax_accessibility",
-    },
 ]
 
 
@@ -65,7 +60,3 @@ def deduction_accessibility(request, submenu, user_perms, *args, **kwargs):
 
 def loan_accessibility(request, submenu, user_perms, *args, **kwargs):
     return request.user.has_perm("payroll.view_loanaccount")
-
-
-def federal_tax_accessibility(request, submenu, user_perms, *args, **kwargs):
-    return request.user.has_perm("payroll.view_filingstatus")

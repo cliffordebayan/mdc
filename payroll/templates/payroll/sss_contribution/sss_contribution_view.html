@@ -1,0 +1,49 @@
+{% extends 'index.html' %} {% block content %} {% load i18n %}
+{% load static %}
+{% load horillafilters %}
+<style>
+    .oh-sticky-table__right {
+        position: sticky;
+        right: 0;
+        background-color: #fff;
+    }
+    .oh-sticky-table__th--range {
+        width: 260px !important;
+        min-width: 260px !important;
+        white-space: nowrap;
+    }
+    /* The base table styles pin the first header cell to the left
+       (left: 0) while the data cells beneath it stay unpinned, which
+       desyncs the header from its column once the table is wide enough
+       to scroll horizontally. Un-pin horizontally but keep the normal
+       sticky-to-top-on-vertical-scroll behavior shared by every header
+       cell. */
+    #sssContributionListContainer .oh-sticky-table__thead div.oh-sticky-table__th:first-child {
+        left: auto !important;
+    }
+</style>
+
+<section class="oh-wrapper oh-main__topbar">
+    <div class="oh-main__titlebar oh-main__titlebar--left">
+        <h1 class="oh-main__titlebar-title fw-bold">{% trans "SSS Contribution Table" %}</h1>
+    </div>
+    <div class="oh-main__titlebar oh-main__titlebar--right">
+        <div class="oh-main__titlebar-button-container">
+            {% if perms.payroll.add_ssscontribution %}
+                <div class="oh-btn-group ml-2">
+                    <a class="oh-btn oh-btn--secondary oh-btn--shadow" data-toggle="oh-modal-toggle"
+                        data-target="#objectCreateModal" hx-get="{% url 'sss-contribution-create' %}"
+                        hx-target="#objectCreateModalTarget">
+                        <ion-icon class="md hydrated" name="add-outline" role="img"
+                            aria-label="add outline"></ion-icon>{% trans "Create" %}</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+<div class="oh-wrapper">
+    <div id="sssContributionListContainer">
+        {% include 'payroll/sss_contribution/sss_contribution_list.html' %}
+    </div>
+</div>
+{% endblock content %}

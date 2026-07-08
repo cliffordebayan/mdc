@@ -16,7 +16,6 @@
                 <div class="oh-sticky-table__th">{% trans "End Date" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Wage Type" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Basic Salary" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Filing Status" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Status" %}</div>
 				{% if perms.payroll.change_contract %}
                     <div class="oh-sticky-table__th  oh-sticky-table__right"></div>
@@ -36,7 +35,6 @@
                         {{ contract.get_wage_type_display}}
                     </div>
                     <div class="oh-sticky-table__td">{{ contract.wage}}</div>
-                    <div class="oh-sticky-table__td">{{ contract.filing_status}}</div>
                     <div class="oh-sticky-table__td">
                         {{ contract.get_contract_status_display}}
                     </div>

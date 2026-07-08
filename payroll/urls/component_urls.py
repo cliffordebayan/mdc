@@ -69,6 +69,11 @@ urlpatterns = [
         component_views.check_contract_start_date,
         name="check-contract-start-date",
     ),
+    path(
+        "payslip-period-options",
+        component_views.payslip_period_options,
+        name="payslip-period-options",
+    ),
     path("generate-payslip", component_views.generate_payslip, name="generate-payslip"),
     path(
         "validate-start-date",

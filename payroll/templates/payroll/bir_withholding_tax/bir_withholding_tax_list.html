@@ -1,0 +1,76 @@
+{% load i18n %}
+{% load static %}
+{% load horillafilters %}
+{% if messages %}
+    <div class="oh-alert-container">
+        {% for message in messages %}
+            <div class="oh-alert oh-alert--animated {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+{% endif %}
+{% if bir_brackets %}
+    <div class="oh-sticky-table">
+        <div class="oh-sticky-table__table oh-table--sortable">
+            <div class="oh-sticky-table__thead">
+                <div class="oh-sticky-table__tr">
+                    <div class="oh-sticky-table__th">{% trans "Frequency" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Range of Income" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Base Tax" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Excess Rate" %}</div>
+                    {% if perms.payroll.change_birwithholdingtax or perms.payroll.delete_birwithholdingtax %}
+                        <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Actions" %}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="oh-sticky-table__tbody">
+                {% for bracket in bir_brackets %}
+                    <div class="oh-sticky-table__tr">
+                        <div class="oh-sticky-table__td">{{ bracket.get_frequency_display }}</div>
+                        <div class="oh-sticky-table__td">
+                            {{ bracket.min_income|stringformat:".2f"|currency_symbol_position }}
+                            -
+                            {% if bracket.get_display_max_income %}
+                                {{ bracket.get_display_max_income|stringformat:".2f"|currency_symbol_position }}
+                            {% else %}
+                                {% trans "Over" %}
+                            {% endif %}
+                        </div>
+                        <div class="oh-sticky-table__td">{{ bracket.base_tax|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ bracket.excess_rate }}%</div>
+                        {% if perms.payroll.change_birwithholdingtax or perms.payroll.delete_birwithholdingtax %}
+                            <div class="oh-sticky-table__td oh-sticky-table__right">
+                                <div class="oh-btn-group">
+                                    {% if perms.payroll.change_birwithholdingtax %}
+                                        <a class="oh-btn oh-btn--light-bkg w-100" data-toggle="oh-modal-toggle"
+                                            data-target="#objectUpdateModal"
+                                            hx-get="{% url 'bir-withholding-tax-update' pk=bracket.id %}"
+                                            hx-target="#objectUpdateModalTarget" title="{% trans 'Update' %}">
+                                            <ion-icon name="create-outline" role="img" class="md hydrated"
+                                                aria-label="create outline"></ion-icon>
+                                        </a>
+                                    {% endif %}
+                                    {% if perms.payroll.delete_birwithholdingtax %}
+                                        <button class="oh-btn oh-btn--danger-outline w-100" title="{% trans 'Delete' %}"
+                                            hx-confirm="{% trans 'Are you sure to delete this BIR withholding tax bracket ?' %}"
+                                            hx-post="{% url 'bir-withholding-tax-delete' pk=bracket.id %}"
+                                            hx-select="#birWithholdingTaxListContainer" hx-swap="outerHTML"
+                                            hx-target="#birWithholdingTaxListContainer">
+                                            <ion-icon name="trash-outline" role="img" class="md hydrated"
+                                                aria-label="trash outline"></ion-icon>
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="oh-empty">
+        <img src="{% static 'images/ui/search.svg' %}" class="oh-404__image" alt="Page not found. 404." />
+        <h1 class="oh-empty__title">{% trans "No Records found." %}</h1>
+        <p class="oh-empty__subtitle">{% trans "There are currently no BIR withholding tax brackets." %}</p>
+    </div>
+{% endif %}

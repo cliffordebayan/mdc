@@ -11,6 +11,37 @@
         z-index: 12 !important;
         top: 0;
     }
+
+    .oh-btn--statutory-table {
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+        line-height: 1.2 !important;
+    }
+    .oh-btn--statutory-table ion-icon {
+        font-size: 14px !important;
+        margin-right: 3px !important;
+    }
+
+    .oh-btn--sss-table {
+        background-color: #083F98 !important;
+        border-color: #083F98 !important;
+        color: #fff !important;
+    }
+    .oh-btn--philhealth-table {
+        background-color: #28a745 !important;
+        border-color: #28a745 !important;
+        color: #fff !important;
+    }
+    .oh-btn--pagibig-table {
+        background-color: #38bdf8 !important;
+        border-color: #38bdf8 !important;
+        color: #fff !important;
+    }
+    .oh-btn--bir-table {
+        background-color: #fd7e14 !important;
+        border-color: #fd7e14 !important;
+        color: #fff !important;
+    }
 </style>
 
 <section class="oh-wrapper oh-main__topbar" x-data="{searchShow: false}">
@@ -61,6 +92,46 @@
                         <div class="oh-dropdown__menu oh-dropdown__menu--right oh-dropdown__filter p-4" x-show="open"
                             @click.outside="open = false" style="display: none">
                             {% include 'payroll/deduction/filter_deduction.html' %}
+                        </div>
+                    </div>
+                {% endif %}
+                {% if perms.payroll.view_ssscontribution %}
+                    <div class="oh-btn-group ml-2">
+                        <div>
+                            <a class="oh-btn oh-btn--shadow oh-btn--statutory-table oh-btn--sss-table"
+                                href="{% url 'sss-contribution-view' %}">
+                                <ion-icon class="md hydrated" name="list-outline" role="img"
+                                    aria-label="list outline"></ion-icon>{% trans "SSS" %}</a>
+                        </div>
+                    </div>
+                {% endif %}
+                {% if perms.payroll.view_philhealthsettings %}
+                    <div class="oh-btn-group ml-2">
+                        <div>
+                            <a class="oh-btn oh-btn--shadow oh-btn--statutory-table oh-btn--philhealth-table"
+                                href="{% url 'philhealth-settings-view' %}">
+                                <ion-icon class="md hydrated" name="list-outline" role="img"
+                                    aria-label="list outline"></ion-icon>{% trans "PhilHealth" %}</a>
+                        </div>
+                    </div>
+                {% endif %}
+                {% if perms.payroll.view_pagibigsettings %}
+                    <div class="oh-btn-group ml-2">
+                        <div>
+                            <a class="oh-btn oh-btn--shadow oh-btn--statutory-table oh-btn--pagibig-table"
+                                href="{% url 'pagibig-settings-view' %}">
+                                <ion-icon class="md hydrated" name="list-outline" role="img"
+                                    aria-label="list outline"></ion-icon>{% trans "PAG IBIG" %}</a>
+                        </div>
+                    </div>
+                {% endif %}
+                {% if perms.payroll.view_birwithholdingtax %}
+                    <div class="oh-btn-group ml-2">
+                        <div>
+                            <a class="oh-btn oh-btn--shadow oh-btn--statutory-table oh-btn--bir-table"
+                                href="{% url 'bir-withholding-tax-view' %}">
+                                <ion-icon class="md hydrated" name="list-outline" role="img"
+                                    aria-label="list outline"></ion-icon>{% trans "BIR" %}</a>
                         </div>
                     </div>
                 {% endif %}

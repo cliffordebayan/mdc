@@ -25,16 +25,35 @@
             </div>
         </div>
         <div class="row">
-            <div class="col-12 col-sm-12 col-md-6 col-lg-6">
+            <div class="col-12">
                 <div class="oh-input__group">
-                    <label class="oh-input__label" for="{{individual_form.start_date.id_for_label}}">{% trans "Start Date" %}</label>
-                    {{individual_form.start_date}} {{individual_form.start_date.errors}}
+                    <label class="oh-input__label" for="{{individual_form.payroll_group_id.id_for_label}}">{% trans "Payroll Group" %}</label>
+                    {{individual_form.payroll_group_id}} {{individual_form.payroll_group_id.errors}}
+                    <small class="text-muted">{{individual_form.payroll_group_id.help_text}}</small>
                 </div>
             </div>
-            <div class="col-12 col-sm-12 col-md-6 col-lg-6">
+        </div>
+        <div class="row">
+            <div class="col-12">
                 <div class="oh-input__group">
-                    <label class="oh-input__label" for="{{individual_form.end_date.id_for_label}}">{% trans "End Date" %}</label>
-                    {{individual_form.end_date}} {{individual_form.end_date.errors }}
+                    <label class="oh-input__label" for="{{individual_form.year_month.id_for_label}}">{% trans "Month" %}</label>
+                    {{individual_form.year_month}} {{individual_form.year_month.errors}}
+                </div>
+            </div>
+        </div>
+        <div id="periodOptionsTrigger"
+            hx-get="{% url 'payslip-period-options' %}"
+            hx-trigger="change from:#id_payroll_group_id, change from:#id_year_month"
+            hx-target="#periodSelectWrapper"
+            hx-swap="innerHTML"
+            hx-include="#id_payroll_group_id, #id_year_month"></div>
+        <div class="row">
+            <div class="col-12">
+                <div class="oh-input__group">
+                    <label class="oh-input__label" for="{{individual_form.period.id_for_label}}">{% trans "Pay Period" %}</label>
+                    <div id="periodSelectWrapper">
+                        {{individual_form.period}} {{individual_form.period.errors}}
+                    </div>
                 </div>
             </div>
         </div>
@@ -43,3 +62,19 @@
         </div>
     </form>
 </div>
+<script>
+    (function () {
+        var EMP_GROUP_MAP = {{ employee_group_map_json|safe }};
+        var employeeEl = document.getElementById("id_employee_id");
+        if (employeeEl) {
+            employeeEl.addEventListener("change", function () {
+                var groupId = EMP_GROUP_MAP[this.value];
+                if (groupId) {
+                    var groupEl = document.getElementById("id_payroll_group_id");
+                    groupEl.value = groupId;
+                    groupEl.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+            });
+        }
+    })();
+</script>

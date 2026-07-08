@@ -82,9 +82,9 @@
                 </div>
                 {% for deduction in deductions %}
                     <div class="oh-sticky-table__tbody ui-sortable" draggable="true" data-toggle="oh-modal-toggle"
-                        data-target="#objectDetailsModal"
+                        data-target="{% if deduction.is_sss %}#sssDeductionModal{% elif deduction.is_philhealth %}#philhealthDeductionModal{% elif deduction.is_pagibig %}#pagibigDeductionModal{% else %}#objectDetailsModal{% endif %}"
                         hx-get="{% url 'single-deduction-view' deduction.id %}?{{pd}}&instances_ids={{deduction_ids}}"
-                        hx-target="#objectDetailsModalTarget">
+                        hx-target="{% if deduction.is_sss %}#sssDeductionModalTarget{% elif deduction.is_philhealth %}#philhealthDeductionModalTarget{% elif deduction.is_pagibig %}#pagibigDeductionModalTarget{% else %}#objectDetailsModalTarget{% endif %}">
                         <div class="oh-sticky-table__tr ui-sortable-handle">
                             <div class="oh-sticky-table__sd">{{deduction.title}}</div>
                             <div data-cell-index="1" class="oh-sticky-table__td">

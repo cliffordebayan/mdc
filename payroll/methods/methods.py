@@ -160,6 +160,31 @@ if apps.is_installed("attendance"):
         }
 
 
+def get_total_considered_hours(employee, start_date, end_date):
+    """
+    This method is used to find the total worked hours (including overtime)
+    recorded via validated attendance within the period. This is an
+    informational payslip figure -- it does not feed into the basic pay
+    computation for salaried (monthly/daily) wage types.
+
+    Args:
+        employee (obj): Employee instance
+        start_date (obj): start date of the period
+        end_date (obj): end date of the period
+    """
+    if not apps.is_installed("attendance"):
+        return 0
+    attendance_data = get_attendance(employee, start_date, end_date)
+    attendances_on_period = attendance_data["attendances_on_period"]
+    # Guard against corrupt individual records (e.g. clock-out date/time
+    # stored earlier than clock-in) producing a negative at_work_second --
+    # one bad record shouldn't drag the whole period's total negative.
+    total_seconds = sum(
+        max(attendance.at_work_second, 0) for attendance in attendances_on_period
+    )
+    return round(total_seconds / 3600, 2)
+
+
 def hourly_computation(employee, wage, start_date, end_date):
     """
     Hourly salary computation for period.
@@ -364,35 +389,6 @@ def months_between_range(wage, start_date, end_date):
     return months_data
 
 
-def compute_yearly_taxable_amount(
-    monthly_taxable_amount=None,
-    default_yearly_taxable_amount=None,
-    *args,
-    **kwargs,
-):
-    """
-    Compute yearly taxable amount custom logic
-    eg:
-        default_yearly_taxable_amount = monthly_taxable_amount * 12
-    """
-    return default_yearly_taxable_amount
-
-
-def convert_year_tax_to_period(
-    federal_tax_for_period=None,
-    yearly_tax=None,
-    total_days=None,
-    start_date=None,
-    end_date=None,
-    *args,
-    **kwargs,
-):
-    """
-    Method to convert yearly taxable to monthly
-    """
-    return federal_tax_for_period
-
-
 def compute_net_pay(
     net_pay=None,
     gross_pay=None,
@@ -525,6 +521,129 @@ def compute_salary_on_period(employee, start_date, end_date, wage=None):
     data["contract_wage"] = wage
     data["contract"] = contract
     return data
+
+
+def _resolve_cutoff_day(day, year, month):
+    """Resolve a payroll group cut-off day (1-31, or 0 for end of month)."""
+    last_day = calendar.monthrange(year, month)[1]
+    return last_day if not day else min(day, last_day)
+
+
+def _resolve_cutoff_period_for_anchor(start_day, end_day, anchor_year, anchor_month):
+    """
+    Resolve a recurring cut-off rule (day-of-month start/end, 0 meaning end
+    of month) into a concrete (start_date, end_date) period anchored on the
+    given year/month. Handles periods that wrap across a month boundary
+    (e.g. start_day=26, end_day=10).
+    """
+    if not start_day:
+        return None
+    end_day = end_day or 0
+
+    start = date(
+        anchor_year, anchor_month, _resolve_cutoff_day(start_day, anchor_year, anchor_month)
+    )
+    if end_day == 0:
+        end = date(anchor_year, anchor_month, calendar.monthrange(anchor_year, anchor_month)[1])
+    elif end_day < start_day:
+        end_anchor = date(anchor_year, anchor_month, 1) + relativedelta(months=1)
+        end = date(
+            end_anchor.year,
+            end_anchor.month,
+            _resolve_cutoff_day(end_day, end_anchor.year, end_anchor.month),
+        )
+    else:
+        end = date(
+            anchor_year, anchor_month, _resolve_cutoff_day(end_day, anchor_year, anchor_month)
+        )
+    return start, end
+
+
+def _cutoff_period_containing_date(start_day, end_day, reference_date):
+    """
+    Given a recurring cut-off rule, resolve the concrete (start_date, end_date)
+    period that contains reference_date, searching the month before, of, and
+    after reference_date as anchors.
+    """
+    for month_offset in (-1, 0, 1):
+        anchor = reference_date + relativedelta(months=month_offset)
+        period = _resolve_cutoff_period_for_anchor(
+            start_day, end_day, anchor.year, anchor.month
+        )
+        if period and period[0] <= reference_date <= period[1]:
+            return period
+    return None
+
+
+def _frequency_gated_cutoffs(payroll_group):
+    """
+    Return the ordered list of (start_day, end_day) cut-off slots that apply
+    to a payroll group given its frequency: slot 1 always, slot 2 for
+    semi_monthly/weekly, slots 3-4 for weekly only.
+    """
+    cutoffs = [(payroll_group.start_day, payroll_group.end_day)]
+    if payroll_group.frequency in ("semi_monthly", "weekly"):
+        cutoffs.append(
+            (payroll_group.second_cut_off_start, payroll_group.second_cut_off_end)
+        )
+    if payroll_group.frequency == "weekly":
+        cutoffs.append(
+            (payroll_group.third_cut_off_start, payroll_group.third_cut_off_end)
+        )
+        cutoffs.append(
+            (payroll_group.fourth_cut_off_start, payroll_group.fourth_cut_off_end)
+        )
+    return cutoffs
+
+
+def get_current_payroll_group_period(payroll_group, reference_date=None):
+    """
+    Resolve the pay-period (start_date, end_date) that currently applies
+    for an employee's payroll group, based on the group's configured
+    cut-off days and the given reference date (defaults to today).
+
+    Returns (None, None) when the group/frequency isn't set or no
+    configured cut-off contains the reference date.
+    """
+    if payroll_group is None or not payroll_group.frequency:
+        return None, None
+
+    reference_date = reference_date or date.today()
+    for start_day, end_day in _frequency_gated_cutoffs(payroll_group):
+        period = _cutoff_period_containing_date(start_day, end_day, reference_date)
+        if period:
+            return period
+    return None, None
+
+
+def list_payroll_group_periods(payroll_group, year, month):
+    """
+    Enumerate the payroll group's configured cut-off periods (as implied by
+    its frequency) resolved to concrete dates for the given year/month.
+
+    Returns a list of dicts: {"slot": int, "label": str, "start_date": date,
+    "end_date": date}, one per configured slot that resolves for that month.
+    """
+    if payroll_group is None or not payroll_group.frequency:
+        return []
+
+    periods = []
+    for slot, (start_day, end_day) in enumerate(
+        _frequency_gated_cutoffs(payroll_group), start=1
+    ):
+        if not start_day:
+            continue
+        period = _resolve_cutoff_period_for_anchor(start_day, end_day, year, month)
+        if period:
+            periods.append(
+                {
+                    "slot": slot,
+                    "label": f"Period {slot}",
+                    "start_date": period[0],
+                    "end_date": period[1],
+                }
+            )
+    return periods
 
 
 def paginator_qry(qryset, page_number):

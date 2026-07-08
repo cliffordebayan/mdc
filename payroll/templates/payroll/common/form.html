@@ -65,14 +65,59 @@
             });
         }
 
+        var statutoryDeductionFlags = [
+            { field: 'is_sss', note: 'sssBracketNote', label: 'SSS Contribution Table' },
+            { field: 'is_philhealth', note: 'philhealthBracketNote', label: 'PhilHealth Settings' },
+            { field: 'is_pagibig', note: 'pagibigBracketNote', label: 'Pag-IBIG Settings' },
+        ];
+
+        function statutoryToggle() {
+            var hiddenFields = [
+                'one_time_date', 'is_tax', 'is_pretax', 'is_condition_based',
+                'field', 'condition', 'value', 'update_compensation', 'is_fixed',
+                'amount', 'based_on', 'rate', 'employer_rate', 'has_max_limit',
+                'maximum_amount', 'maximum_unit', 'if_condition',
+                'if_amount', 'start_range', 'end_range'
+            ];
+            var anyChecked = false;
+            statutoryDeductionFlags.forEach(function (flag) {
+                if ($("#id_" + flag.field).is(":checked")) {
+                    anyChecked = true;
+                }
+            });
+            hiddenFields.forEach(function (name) {
+                $("[name='" + name + "']").closest('p').toggle(!anyChecked);
+            });
+            // "if_choice" stays visible in all modes — it doubles as the
+            // bracket/settings pay basis (Basic Pay / Gross Pay) when one of
+            // these flags is checked.
+            statutoryDeductionFlags.forEach(function (flag) {
+                if ($("#id_" + flag.field).length === 0) {
+                    return;
+                }
+                var isChecked = $("#id_" + flag.field).is(":checked");
+                if (isChecked) {
+                    $("[name='amount']").val('0');
+                    if ($("#" + flag.note).length === 0) {
+                        $("<p id='" + flag.note + "'><em>This deduction is computed automatically — the amount is looked up from the " + flag.label + " using the pay basis selected below.</em></p>")
+                            .insertAfter($("[name='title']").closest('p'));
+                    }
+                } else {
+                    $("#" + flag.note).remove();
+                }
+            });
+        }
+
         $(document).ready(function () {
             $("[type=checkbox]").change(function (e) {
                 e.preventDefault();
                 toggleFunction();
                 rangeToggle()
+                statutoryToggle()
             });
 
             $("#id_is_condition_based").change()
+            statutoryToggle();
 
         });
         toggleFunction();

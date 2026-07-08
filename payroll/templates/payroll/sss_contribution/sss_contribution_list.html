@@ -1,0 +1,92 @@
+{% load i18n %}
+{% load static %}
+{% load horillafilters %}
+{% if messages %}
+    <div class="oh-alert-container">
+        {% for message in messages %}
+            <div class="oh-alert oh-alert--animated {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+{% endif %}
+{% if sss_contributions %}
+    <div class="oh-sticky-table">
+        <div class="oh-sticky-table__table oh-table--sortable">
+            <div class="oh-sticky-table__thead">
+                <div class="oh-sticky-table__tr">
+                    <div class="oh-sticky-table__th oh-sticky-table__th--range">{% trans "Range of Compensation" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "MSC: Regular SS" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "MSC: MPF" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "MSC: Total" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Employer: Regular SS" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Employer: MPF" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Employer: EC" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Employer: Total" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Employee: Regular SS" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Employee: MPF" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Employee: Total" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Grand Total" %}</div>
+                    {% if perms.payroll.change_ssscontribution or perms.payroll.delete_ssscontribution %}
+                        <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Actions" %}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="oh-sticky-table__tbody">
+                {% for sss in sss_contributions %}
+                    <div class="oh-sticky-table__tr">
+                        <div class="oh-sticky-table__td oh-sticky-table__th--range">
+                            {{ sss.range_from|stringformat:".2f"|currency_symbol_position }}
+                            -
+                            {% if sss.get_display_range_to %}
+                                {{ sss.get_display_range_to|stringformat:".2f"|currency_symbol_position }}
+                            {% else %}
+                                {% trans "Over" %}
+                            {% endif %}
+                        </div>
+                        <div class="oh-sticky-table__td">{{ sss.msc_regular_ss|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.msc_mpf|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.msc_total|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.employer_regular_ss|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.employer_mpf|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.employer_ec|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.employer_total|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.employee_regular_ss|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.employee_mpf|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.employee_total|stringformat:".2f"|currency_symbol_position }}</div>
+                        <div class="oh-sticky-table__td">{{ sss.grand_total|stringformat:".2f"|currency_symbol_position }}</div>
+                        {% if perms.payroll.change_ssscontribution or perms.payroll.delete_ssscontribution %}
+                            <div class="oh-sticky-table__td oh-sticky-table__right">
+                                <div class="oh-btn-group">
+                                    {% if perms.payroll.change_ssscontribution %}
+                                        <a class="oh-btn oh-btn--light-bkg w-100" data-toggle="oh-modal-toggle"
+                                            data-target="#objectUpdateModal"
+                                            hx-get="{% url 'sss-contribution-update' pk=sss.id %}"
+                                            hx-target="#objectUpdateModalTarget" title="{% trans 'Update' %}">
+                                            <ion-icon name="create-outline" role="img" class="md hydrated"
+                                                aria-label="create outline"></ion-icon>
+                                        </a>
+                                    {% endif %}
+                                    {% if perms.payroll.delete_ssscontribution %}
+                                        <button class="oh-btn oh-btn--danger-outline w-100" title="{% trans 'Delete' %}"
+                                            hx-confirm="{% trans 'Are you sure to delete this SSS contribution bracket ?' %}"
+                                            hx-post="{% url 'sss-contribution-delete' pk=sss.id %}"
+                                            hx-select="#sssContributionListContainer" hx-swap="outerHTML"
+                                            hx-target="#sssContributionListContainer">
+                                            <ion-icon name="trash-outline" role="img" class="md hydrated"
+                                                aria-label="trash outline"></ion-icon>
+                                        </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="oh-empty">
+        <img src="{% static 'images/ui/search.svg' %}" class="oh-404__image" alt="Page not found. 404." />
+        <h1 class="oh-empty__title">{% trans "No Records found." %}</h1>
+        <p class="oh-empty__subtitle">{% trans "There are currently no SSS contribution brackets." %}</p>
+    </div>
+{% endif %}

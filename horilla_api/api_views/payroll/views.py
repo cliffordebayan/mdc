@@ -25,7 +25,6 @@ from payroll.models.models import (
     Payslip,
     Reimbursement,
 )
-from payroll.models.tax_models import TaxBracket
 from payroll.threadings.mail import MailSendThread
 from payroll.views.views import payslip_pdf
 
@@ -37,7 +36,6 @@ from ...api_serializers.payroll.serializers import (
     LoanAccountSerializer,
     PayslipSerializer,
     ReimbursementSerializer,
-    TaxBracketSerializer,
 )
 
 
@@ -350,41 +348,6 @@ class ReimbusementApproveRejectView(APIView):
             reimbursement.update(amount=amount)
         reimbursement.update(status=status)
         return Response({"status": reimbursement.first().status}, status=200)
-
-
-class TaxBracketView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, pk=None):
-        if pk:
-            tax_bracket = TaxBracket.objects.get(id=pk)
-            serializer = TaxBracketSerializer(tax_bracket)
-            return Response(serializer.data, status=200)
-        tax_brackets = TaxBracket.objects.all()
-        serializer = TaxBracketSerializer(instance=tax_brackets, many=True)
-        return Response(serializer.data, status=200)
-
-    def post(self, request):
-        serializer = TaxBracketSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=200)
-        return Response(serializer.errors, status=400)
-
-    def put(self, request, pk):
-        tax_bracket = TaxBracket.objects.get(id=pk)
-        serializer = TaxBracketSerializer(
-            instance=tax_bracket, data=request.data, partial=True
-        )
-        if serializer.save():
-            serializer.save()
-            return Response(serializer.data, status=200)
-        return Response(serializer.errors, status=400)
-
-    def delete(self, request, pk):
-        tax_bracket = TaxBracket.objects.get(id=pk)
-        tax_bracket.delete()
-        return Response(status=200)
 
 
 from datetime import datetime

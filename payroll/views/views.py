@@ -52,7 +52,6 @@ from payroll.forms.component_forms import (
 from payroll.methods.methods import paginator_qry, save_payslip
 from payroll.models.models import (
     Contract,
-    FilingStatus,
     PayrollGeneralSetting,
     Payslip,
     PayslipAutoGenerate,
@@ -222,30 +221,6 @@ def bulk_contract_status_update(request):
                 request, _("The contract status has been updated successfully.")
             )
     return HttpResponse("success")
-
-
-@login_required
-@permission_required("payroll.change_contract")
-def update_contract_filing_status(request, contract_id):
-    if request.method == "POST":
-        contract = get_object_or_404(Contract, id=contract_id)
-        filing_status_id = request.POST.get("filing_status")
-        try:
-            filing_status = (
-                FilingStatus.objects.get(id=int(filing_status_id))
-                if filing_status_id
-                else None
-            )
-            contract.filing_status = filing_status
-            messages.success(
-                request, _("The employee filing status has been updated successfully.")
-            )
-        except (ValueError, OverflowError, FilingStatus.DoesNotExist):
-            messages.warning(
-                request, _("You selected the wrong option for filing status.")
-            )
-        contract.save()
-        return redirect(contract_filter)
 
 
 @login_required

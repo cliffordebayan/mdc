@@ -1,7 +1,8 @@
 """
 tax_urls.py
 
-This module is used to bind url patterns with django views that related to federal taxes
+This module is used to bind url patterns with django views related to
+payroll statutory deductions/withholding tax.
 """
 
 from django.urls import path
@@ -10,47 +11,58 @@ from payroll.views import tax_views
 
 urlpatterns = [
     path(
-        "filing-status-view/", tax_views.filing_status_view, name="filing-status-view"
+        "sss-contribution-view/",
+        tax_views.view_sss_contribution,
+        name="sss-contribution-view",
     ),
     path(
-        "create-filing-status",
-        tax_views.create_filing_status,
-        name="create-filing-status",
+        "sss-contribution-create/",
+        tax_views.create_sss_contribution,
+        name="sss-contribution-create",
     ),
     path(
-        "filing-status-update/<int:filing_status_id>",
-        tax_views.update_filing_status,
-        name="filing-status-update",
+        "sss-contribution-update/<int:pk>/",
+        tax_views.update_sss_contribution,
+        name="sss-contribution-update",
     ),
     path(
-        "filing-status-delete/<int:filing_status_id>",
-        tax_views.filing_status_delete,
-        name="filing-status-delete",
+        "sss-contribution-delete/<int:pk>/",
+        tax_views.delete_sss_contribution,
+        name="sss-contribution-delete",
     ),
     path(
-        "filing-status-search/",
-        tax_views.filing_status_search,
-        name="filing-status-search",
+        "philhealth-settings-view/",
+        tax_views.view_philhealth_settings,
+        name="philhealth-settings-view",
     ),
     path(
-        "tax-bracket-list/<int:filing_status_id>",
-        tax_views.tax_bracket_list,
-        name="tax-bracket-list",
+        "pagibig-settings-view/",
+        tax_views.view_pagibig_settings,
+        name="pagibig-settings-view",
     ),
     path(
-        "tax-bracket-create/<int:filing_status_id>",
-        tax_views.create_tax_bracket,
-        name="tax-bracket-create",
+        "perfect-attendance-bonus-settings-view/",
+        tax_views.view_perfect_attendance_bonus_settings,
+        name="perfect-attendance-bonus-settings-view",
     ),
     path(
-        "tax-bracket-update/<int:tax_bracket_id>/",
-        tax_views.update_tax_bracket,
-        name="tax-bracket-update",
+        "bir-withholding-tax-view/",
+        tax_views.view_bir_withholding_tax,
+        name="bir-withholding-tax-view",
     ),
     path(
-        "tax-bracket-delete/<int:tax_bracket_id>/",
-        tax_views.delete_tax_bracket,
-        name="tax-bracket-delete",
+        "bir-withholding-tax-create/",
+        tax_views.create_bir_withholding_tax,
+        name="bir-withholding-tax-create",
     ),
-    path("update-py-code/<int:pk>/", tax_views.update_py_code, name="update-py-code"),
+    path(
+        "bir-withholding-tax-update/<int:pk>/",
+        tax_views.update_bir_withholding_tax,
+        name="bir-withholding-tax-update",
+    ),
+    path(
+        "bir-withholding-tax-delete/<int:pk>/",
+        tax_views.delete_bir_withholding_tax,
+        name="bir-withholding-tax-delete",
+    ),
 ]

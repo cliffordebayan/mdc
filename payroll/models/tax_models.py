@@ -14,7 +14,6 @@ from django.utils.translation import gettext_lazy as _
 from base.horilla_company_manager import HorillaCompanyManager
 from base.models import Company
 from horilla.models import HorillaModel
-from payroll.models.models import FilingStatus
 
 
 class PayrollSettings(HorillaModel):
@@ -43,35 +42,323 @@ class PayrollSettings(HorillaModel):
         return f"Payroll Settings {self.currency_symbol}"
 
 
-class TaxBracket(HorillaModel):
+class SSSContribution(HorillaModel):
     """
-    TaxBracket model
+    SSSContribution model
+
+    Stores the Philippine SSS contribution schedule for Business Employers
+    and Employees (SSS Circular 2024-006, effective January 2025), keyed by
+    range of monthly compensation.
     """
 
-    filing_status_id = models.ForeignKey(
-        FilingStatus,
-        on_delete=models.CASCADE,
-        verbose_name=_("Filing status"),
+    range_from = models.FloatField(null=False, blank=False, verbose_name=_("Range From"))
+    range_to = models.FloatField(null=True, blank=True, verbose_name=_("Range To"))
+
+    msc_regular_ss = models.FloatField(
+        default=0.0, verbose_name=_("MSC Regular SS")
     )
-    min_income = models.FloatField(
-        null=False, blank=False, verbose_name=_("Min. Income")
+    msc_mpf = models.FloatField(default=0.0, verbose_name=_("MSC MPF"))
+
+    employer_regular_ss = models.FloatField(
+        default=0.0, verbose_name=_("Employer Regular SS")
     )
-    max_income = models.FloatField(null=True, blank=True, verbose_name=_("Max. Income"))
-    tax_rate = models.FloatField(
-        null=False, blank=False, default=0.0, verbose_name=_("Tax Rate")
+    employer_mpf = models.FloatField(default=0.0, verbose_name=_("Employer MPF"))
+    employer_ec = models.FloatField(default=0.0, verbose_name=_("Employer EC"))
+
+    employee_regular_ss = models.FloatField(
+        default=0.0, verbose_name=_("Employee Regular SS")
     )
+    employee_mpf = models.FloatField(default=0.0, verbose_name=_("Employee MPF"))
+
     objects = models.Manager()
 
     def __str__(self):
-        if self.max_income != math.inf:
-            return (
-                f"{self.filing_status_id}"
-                f"{self.tax_rate}% tax rate on "
-                f"{self.min_income} and {self.max_income}"
+        return f"SSS Contribution {self.range_from} - {self.get_display_range_to()}"
+
+    def get_display_range_to(self):
+        """
+        Retrieves the maximum range.
+        Returns:
+            float or None: The maximum range if it is a finite value, otherwise None.
+        """
+        if self.range_to != math.inf:
+            return self.range_to
+        return None
+
+    @property
+    def msc_total(self):
+        return self.msc_regular_ss + self.msc_mpf
+
+    @property
+    def employer_total(self):
+        return self.employer_regular_ss + self.employer_mpf + self.employer_ec
+
+    @property
+    def employee_total(self):
+        return self.employee_regular_ss + self.employee_mpf
+
+    @property
+    def grand_total(self):
+        return self.employer_total + self.employee_total
+
+    def clean(self):
+        super().clean()
+
+        existing_bracket = SSSContribution.objects.filter(
+            range_from=self.range_from,
+            range_to=self.range_to,
+        ).exclude(pk=self.pk)
+        if existing_bracket.exists():
+            raise ValidationError(_("This SSS contribution bracket already exists"))
+
+        if self.range_to is None:
+            self.range_to = math.inf
+
+        if self.range_from >= self.range_to:
+            raise ValidationError(
+                {"range_to": _("Range To must be greater than Range From.")}
             )
+
+        existing_brackets = SSSContribution.objects.exclude(pk=self.pk)
+        if existing_brackets.filter(range_to__gte=self.range_from).exists():
+            overlapping_bracket = existing_brackets.filter(
+                range_to__gte=self.range_from
+            ).first()
+            if overlapping_bracket.range_from <= self.range_to:
+                raise ValidationError(
+                    {
+                        "range_from": format_lazy(
+                            "The Range From of this bracket must be \
+                                greater than the Range To of {}.",
+                            overlapping_bracket,
+                        )
+                    }
+                )
+
+
+class PhilHealthSettings(HorillaModel):
+    """
+    PhilHealthSettings model
+
+    Stores the single Philippine PhilHealth premium rate configuration
+    (rate frozen at 5% since 2024, split equally between employee and
+    employer, with a salary floor of 10,000 and ceiling of 100,000).
+    Verify these figures against the current PhilHealth Circular before
+    relying on them in production.
+    """
+
+    floor_amount = models.FloatField(
+        default=10000.0,
+        verbose_name=_("Floor Amount"),
+        help_text=_(
+            "Minimum monthly basic salary used as the contribution base."
+        ),
+    )
+    ceiling_amount = models.FloatField(
+        default=100000.0,
+        verbose_name=_("Ceiling Amount"),
+        help_text=_(
+            "Maximum monthly basic salary used as the contribution base."
+        ),
+    )
+    total_rate = models.FloatField(
+        default=5.0,
+        verbose_name=_("Total Rate (%)"),
+        help_text=_("Total premium rate as a percentage of the contribution base."),
+    )
+    employee_share_rate = models.FloatField(
+        default=2.5,
+        verbose_name=_("Employee Share Rate (%)"),
+    )
+    employer_share_rate = models.FloatField(
+        default=2.5,
+        verbose_name=_("Employer Share Rate (%)"),
+    )
+
+    objects = models.Manager()
+
+    def __str__(self):
+        return f"PhilHealth Settings ({self.total_rate}%)"
+
+    def clean(self):
+        super().clean()
+
+        existing = PhilHealthSettings.objects.exclude(pk=self.pk)
+        if existing.exists():
+            raise ValidationError(
+                _("PhilHealth settings already exist. Only one is allowed.")
+            )
+
+        if self.floor_amount >= self.ceiling_amount:
+            raise ValidationError(
+                {
+                    "ceiling_amount": _(
+                        "Ceiling amount must be greater than floor amount."
+                    )
+                }
+            )
+
+        if abs(
+            (self.employee_share_rate + self.employer_share_rate) - self.total_rate
+        ) > 0.001:
+            raise ValidationError(
+                {
+                    "total_rate": _(
+                        "Total rate must equal the sum of employee and employer "
+                        "share rates."
+                    )
+                }
+            )
+
+
+class PagibigSettings(HorillaModel):
+    """
+    PagibigSettings model
+
+    Stores the single Philippine Pag-IBIG (HDMF) contribution rate
+    configuration per Pag-IBIG Fund Circular No. 460-2024: employee rate
+    is 1% of monthly compensation at or below the threshold, else 2%;
+    employer rate is always 2%; contributions are computed against a
+    capped monthly fund credit compensation base. Verify these figures
+    against the current Pag-IBIG circular before relying on them in
+    production.
+    """
+
+    threshold_amount = models.FloatField(
+        default=1500.0,
+        verbose_name=_("Threshold Amount"),
+        help_text=_(
+            "Monthly compensation at or below which the lower employee "
+            "rate applies."
+        ),
+    )
+    employee_rate_below_threshold = models.FloatField(
+        default=1.0,
+        verbose_name=_("Employee Rate At/Below Threshold (%)"),
+    )
+    employee_rate_above_threshold = models.FloatField(
+        default=2.0,
+        verbose_name=_("Employee Rate Above Threshold (%)"),
+    )
+    employer_rate = models.FloatField(
+        default=2.0,
+        verbose_name=_("Employer Rate (%)"),
+    )
+    contribution_cap = models.FloatField(
+        default=10000.0,
+        verbose_name=_("Contribution Cap"),
+        help_text=_(
+            "Maximum monthly fund credit compensation used as the "
+            "contribution base."
+        ),
+    )
+
+    objects = models.Manager()
+
+    def __str__(self):
+        return f"Pag-IBIG Settings (cap {self.contribution_cap})"
+
+    def clean(self):
+        super().clean()
+
+        existing = PagibigSettings.objects.exclude(pk=self.pk)
+        if existing.exists():
+            raise ValidationError(
+                _("Pag-IBIG settings already exist. Only one is allowed.")
+            )
+
+        if self.threshold_amount >= self.contribution_cap:
+            raise ValidationError(
+                {
+                    "threshold_amount": _(
+                        "Threshold amount must be less than the contribution cap."
+                    )
+                }
+            )
+
+
+class PerfectAttendanceBonusSettings(HorillaModel):
+    """
+    PerfectAttendanceBonusSettings model
+
+    Stores the single flat bonus amount awarded to an employee for a
+    payroll period in which they have zero late-come/undertime occurrences
+    and zero unpaid absence days.
+    """
+
+    bonus_amount = models.FloatField(
+        default=0.0,
+        verbose_name=_("Bonus Amount"),
+        help_text=_(
+            "Flat amount awarded when an employee has no late, undertime, "
+            "or unpaid absence occurrences within the payroll period."
+        ),
+    )
+    is_enabled = models.BooleanField(
+        default=False,
+        verbose_name=_("Enabled"),
+        help_text=_(
+            "Enable automatic Perfect Attendance Bonus eligibility checking "
+            "during payslip generation."
+        ),
+    )
+
+    objects = models.Manager()
+
+    def __str__(self):
+        return f"Perfect Attendance Bonus Settings ({self.bonus_amount})"
+
+    def clean(self):
+        super().clean()
+
+        existing = PerfectAttendanceBonusSettings.objects.exclude(pk=self.pk)
+        if existing.exists():
+            raise ValidationError(
+                _(
+                    "Perfect Attendance Bonus settings already exist. "
+                    "Only one is allowed."
+                )
+            )
+
+
+class BIRWithholdingTax(HorillaModel):
+    """
+    BIRWithholdingTax model
+
+    Stores the Philippine BIR withholding tax table (per the TRAIN law
+    revised schedule effective since January 1, 2023, RA 10963/RR 8-2018 as
+    amended), keyed by payroll frequency (weekly/semi_monthly/monthly) since
+    the bracket boundaries differ per frequency. Verify these bracket
+    cutoffs against the current official BIR withholding tax table before
+    trusting this in production.
+    """
+
+    FREQUENCY_CHOICES = [
+        ("daily", _("Daily")),
+        ("weekly", _("Weekly")),
+        ("semi_monthly", _("Semi-Monthly")),
+        ("monthly", _("Monthly")),
+    ]
+
+    frequency = models.CharField(
+        max_length=20,
+        choices=FREQUENCY_CHOICES,
+        verbose_name=_("Frequency"),
+    )
+    min_income = models.FloatField(null=False, blank=False, verbose_name=_("Min. Income"))
+    max_income = models.FloatField(null=True, blank=True, verbose_name=_("Max. Income"))
+    base_tax = models.FloatField(default=0.0, verbose_name=_("Base Tax"))
+    excess_rate = models.FloatField(
+        default=0.0, verbose_name=_("Excess Rate (%)"),
+        help_text=_("Percentage applied to the amount over Min. Income."),
+    )
+
+    objects = models.Manager()
+
+    def __str__(self):
         return (
-            f"{self.tax_rate}% tax rate on taxable income equal or above "
-            f"{self.min_income} for {self.filing_status_id}"
+            f"{self.get_frequency_display()}: {self.min_income} - "
+            f"{self.get_display_max_income()}"
         )
 
     def get_display_max_income(self):
@@ -87,14 +374,13 @@ class TaxBracket(HorillaModel):
     def clean(self):
         super().clean()
 
-        existing_bracket = TaxBracket.objects.filter(
-            filing_status_id=self.filing_status_id,
+        existing_bracket = BIRWithholdingTax.objects.filter(
+            frequency=self.frequency,
             min_income=self.min_income,
             max_income=self.max_income,
-            tax_rate=self.tax_rate,
         ).exclude(pk=self.pk)
         if existing_bracket.exists():
-            raise ValidationError(_("This tax bracket already exists"))
+            raise ValidationError(_("This BIR withholding tax bracket already exists"))
 
         if self.max_income is None:
             self.max_income = math.inf
@@ -104,20 +390,20 @@ class TaxBracket(HorillaModel):
                 {"max_income": _("Maximum income must be greater than minimum income.")}
             )
 
-        existing_brackets = TaxBracket.objects.filter(
-            filing_status_id=self.filing_status_id
+        existing_brackets = BIRWithholdingTax.objects.filter(
+            frequency=self.frequency
         ).exclude(pk=self.pk)
         if existing_brackets.filter(max_income__gte=self.min_income).exists():
-            tax_bracket = existing_brackets.filter(
+            overlapping_bracket = existing_brackets.filter(
                 max_income__gte=self.min_income
             ).first()
-            if tax_bracket.min_income <= self.max_income:
+            if overlapping_bracket.min_income <= self.max_income:
                 raise ValidationError(
                     {
                         "min_income": format_lazy(
-                            "The minimum income of this tax bracket must be \
-                                greater than the maximum income of {}.",
-                            tax_bracket,
+                            "The Min. Income of this bracket must be \
+                                greater than the Max. Income of {}.",
+                            overlapping_bracket,
                         )
                     }
                 )

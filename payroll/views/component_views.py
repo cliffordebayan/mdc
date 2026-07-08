@@ -15,8 +15,8 @@ from urllib.parse import parse_qs
 import pandas as pd
 from django.apps import apps
 from django.contrib import messages
-from django.db.models import Sum
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, QueryDict
+from django.db.models import Q, Sum
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.html import format_html
@@ -35,7 +35,7 @@ from base.methods import (
     get_next_month_same_date,
     sortby,
 )
-from base.models import Company
+from base.models import Company, PayrollGroup
 from employee.models import Employee, EmployeeWorkInformation
 from horilla.decorators import (
     hx_request_required,
@@ -59,23 +59,32 @@ from payroll.filters import (
     ReimbursementFilter,
 )
 from payroll.forms import component_forms as forms
+from payroll.methods.attendance_bonus_calc import calculate_perfect_attendance_bonus
 from payroll.methods.deductions import create_deductions, update_compensation_deduction
+from payroll.methods.late_undertime_calc import calculate_late_undertime
 from payroll.methods.methods import (
     calculate_employer_contribution,
     compute_net_pay,
     compute_salary_on_period,
+    get_current_payroll_group_period,
+    get_total_considered_hours,
+    list_payroll_group_periods,
     paginator_qry,
     save_payslip,
 )
 from payroll.methods.payslip_calc import (
     calculate_allowance,
     calculate_gross_pay,
+    calculate_holiday_and_night_pay,
     calculate_net_pay_deduction,
     calculate_post_tax_deduction,
     calculate_pre_tax_deduction,
     calculate_tax_deduction,
     calculate_taxable_gross_pay,
 )
+from payroll.methods.pagibig_calc import calculate_pagibig_contribution
+from payroll.methods.philhealth_calc import calculate_philhealth_contribution
+from payroll.methods.sss_calc import calculate_sss_contribution
 from payroll.methods.tax_calc import calculate_taxable_amount
 from payroll.models.models import (
     Allowance,
@@ -155,6 +164,19 @@ def payroll_calculation(employee, start_date, end_date):
     # finding the total allowance
     total_allowance = sum(allowance["amount"] for allowance in allowances["allowances"])
 
+    holiday_night_pay = calculate_holiday_and_night_pay(**kwargs)
+    total_allowance += holiday_night_pay["total"]
+
+    total_considered_hours = get_total_considered_hours(employee, start_date, end_date)
+
+    late_undertime_pay = calculate_late_undertime(**kwargs)
+    total_allowance += late_undertime_pay["total"]
+
+    attendance_bonus = calculate_perfect_attendance_bonus(
+        **kwargs, unpaid_days=unpaid_days
+    )
+    total_allowance += attendance_bonus["amount"]
+
     kwargs["allowances"] = allowances
     kwargs["total_allowance"] = total_allowance
     updated_gross_pay_data = calculate_gross_pay(**kwargs)
@@ -221,6 +243,127 @@ def payroll_calculation(employee, start_date, end_date):
     for deduction in update_net_pay_deductions:
         net_pay_deduction_list.append(deduction)
     net_pay = net_pay - net_pay_deductions["net_deduction"]
+
+    all_deductions_flat = (
+        basic_pay_deductions
+        + gross_pay_deductions
+        + pretax_deductions["pretax_deductions"]
+        + post_tax_deductions["post_tax_deductions"]
+        + tax_deductions["tax_deductions"]
+        + net_pay_deduction_list
+    )
+
+    def _sum_by_category(items, category):
+        return sum(
+            item["amount"]
+            for item in items
+            if item.get("payslip_category") == category
+        )
+
+    def _sum_loan_amounts(loan_type):
+        deduction_ids = [
+            item["deduction_id"]
+            for item in all_deductions_flat
+            if item.get("deduction_id")
+        ]
+        loan_deduction_ids = set(
+            LoanAccount.objects.filter(
+                type=loan_type, deduction_ids__in=deduction_ids
+            ).values_list("deduction_ids", flat=True)
+        )
+        return sum(
+            item["amount"]
+            for item in all_deductions_flat
+            if item.get("deduction_id") in loan_deduction_ids
+        )
+
+    sss_deduction = next(
+        (d for d in post_tax_deductions["post_tax_deductions"] if d.get("is_sss")),
+        None,
+    )
+    philhealth_deduction = next(
+        (
+            d
+            for d in post_tax_deductions["post_tax_deductions"]
+            if d.get("is_philhealth")
+        ),
+        None,
+    )
+    pagibig_deduction = next(
+        (d for d in post_tax_deductions["post_tax_deductions"] if d.get("is_pagibig")),
+        None,
+    )
+
+    overtime_pay = sum(
+        item["amount"]
+        for item in allowances["allowances"]
+        if item.get("based_on") == "overtime"
+    )
+
+    named_allowance_categories = {
+        "de_minimis",
+        "wfh_utility_allowance",
+        "non_taxable_allowance",
+        "adjustment_basic",
+        "adjustment_nd_ot",
+    }
+    other_allowances = [
+        item
+        for item in allowances["allowances"]
+        if item.get("payslip_category") not in named_allowance_categories
+        and item.get("based_on") != "overtime"
+    ]
+
+    named_deduction_categories = {"insurance", "accountability", "adjustment_basic", "adjustment_nd_ot"}
+    loan_backed_deduction_ids = set()
+    for loan_type in ("sss_loan", "pagibig_loan", "advanced_salary"):
+        deduction_ids = [
+            item["deduction_id"]
+            for item in all_deductions_flat
+            if item.get("deduction_id")
+        ]
+        loan_backed_deduction_ids |= set(
+            LoanAccount.objects.filter(
+                type=loan_type, deduction_ids__in=deduction_ids
+            ).values_list("deduction_ids", flat=True)
+        )
+    other_deductions = [
+        item
+        for item in all_deductions_flat
+        if item.get("payslip_category") not in named_deduction_categories
+        and not item.get("is_sss")
+        and not item.get("is_philhealth")
+        and not item.get("is_pagibig")
+        and item.get("deduction_id") not in loan_backed_deduction_ids
+    ]
+
+    payslip_categories = {
+        "de_minimis": _sum_by_category(allowances["allowances"], "de_minimis"),
+        "wfh_utility_allowance": _sum_by_category(
+            allowances["allowances"], "wfh_utility_allowance"
+        ),
+        "non_taxable_allowance": _sum_by_category(
+            allowances["allowances"], "non_taxable_allowance"
+        ),
+        "adjustment_basic": (
+            _sum_by_category(allowances["allowances"], "adjustment_basic")
+            - _sum_by_category(all_deductions_flat, "adjustment_basic")
+        ),
+        "adjustment_nd_ot": (
+            _sum_by_category(allowances["allowances"], "adjustment_nd_ot")
+            - _sum_by_category(all_deductions_flat, "adjustment_nd_ot")
+        ),
+        "insurance": _sum_by_category(all_deductions_flat, "insurance"),
+        "accountability": _sum_by_category(all_deductions_flat, "accountability"),
+        "overtime_pay": overtime_pay,
+        "sss_amount": sss_deduction["amount"] if sss_deduction else 0,
+        "philhealth_amount": philhealth_deduction["amount"] if philhealth_deduction else 0,
+        "pagibig_amount": pagibig_deduction["amount"] if pagibig_deduction else 0,
+        "sss_loan": _sum_loan_amounts("sss_loan"),
+        "pagibig_loan": _sum_loan_amounts("pagibig_loan"),
+        "cash_advance": _sum_loan_amounts("advanced_salary"),
+    }
+
     payslip_data = {
         "employee": employee,
         "contract_wage": contract_wage,
@@ -229,6 +372,13 @@ def payroll_calculation(employee, start_date, end_date):
         "taxable_gross_pay": taxable_gross_pay["taxable_gross_pay"],
         "net_pay": net_pay,
         "allowances": allowances["allowances"],
+        "holiday_night_pay": holiday_night_pay,
+        "total_considered_hours": total_considered_hours,
+        "late_undertime_pay": late_undertime_pay,
+        "attendance_bonus": attendance_bonus,
+        "payslip_categories": payslip_categories,
+        "other_allowances": other_allowances,
+        "other_deductions": other_deductions,
         "paid_days": paid_days,
         "unpaid_days": unpaid_days,
         "basic_pay_deductions": basic_pay_deductions,
@@ -566,8 +716,24 @@ def view_deduction(request):
     )
 
 
+def estimate_standing_allowance_total(employee):
+    """
+    Period-less estimate of an employee's recurring fixed allowances,
+    used only to preview gross pay for the SSS deduction (no payslip
+    period exists at this point to run the full allowance calculation).
+    """
+    allowances = (
+        Allowance.objects.filter(is_fixed=True, one_time_date__isnull=True)
+        .filter(Q(include_active_employees=True) | Q(specific_employees=employee))
+        .exclude(exclude_employees=employee)
+        .distinct()
+    )
+    return sum(allowance.amount or 0 for allowance in allowances)
+
+
 @login_required
 @hx_request_required
+@never_cache
 def view_single_deduction(request, deduction_id):
     """
     Render template to view a single deduction instance with navigation.
@@ -575,6 +741,91 @@ def view_single_deduction(request, deduction_id):
     previous_data = get_urlencode(request)
     deduction = Deduction.objects.filter(id=deduction_id).first()
     context = {"deduction": deduction, "pd": previous_data}
+
+    if deduction and deduction.is_sss:
+        based_on_gross = deduction.if_choice == "gross_pay"
+        sss_contributions = []
+        for target_employee in deduction.get_applicable_employees():
+            contract = Contract.objects.filter(
+                employee_id=target_employee, contract_status="active"
+            ).first()
+            basic_pay = contract.wage if contract else 0
+            pay_amount = basic_pay
+            if based_on_gross:
+                pay_amount = basic_pay + estimate_standing_allowance_total(
+                    target_employee
+                )
+                work_info = getattr(target_employee, "employee_work_info", None)
+                payroll_group = getattr(work_info, "payroll_group_id", None)
+                start_date, end_date = get_current_payroll_group_period(
+                    payroll_group
+                )
+                if start_date and end_date:
+                    try:
+                        pay_amount = payroll_calculation(
+                            target_employee, start_date, end_date
+                        )["gross_pay"]
+                    except Exception as e:
+                        print(e)
+            sss = calculate_sss_contribution(basic_pay=pay_amount)
+            sss_contributions.append(
+                {
+                    "employee": target_employee,
+                    "pay_amount": pay_amount,
+                    "employee_share": sss["employee_share"],
+                    "employer_share": sss["employer_share"],
+                }
+            )
+        context["sss_contributions"] = sss_contributions
+        context["sss_pay_label"] = (
+            _("Gross Pay") if based_on_gross else _("Basic Pay")
+        )
+    elif deduction and (deduction.is_philhealth or deduction.is_pagibig):
+        based_on_gross = deduction.if_choice == "gross_pay"
+        contributions = []
+        calc_func = (
+            calculate_philhealth_contribution
+            if deduction.is_philhealth
+            else calculate_pagibig_contribution
+        )
+        for target_employee in deduction.get_applicable_employees():
+            contract = Contract.objects.filter(
+                employee_id=target_employee, contract_status="active"
+            ).first()
+            basic_pay = contract.wage if contract else 0
+            pay_amount = basic_pay
+            if based_on_gross:
+                pay_amount = basic_pay + estimate_standing_allowance_total(
+                    target_employee
+                )
+                work_info = getattr(target_employee, "employee_work_info", None)
+                payroll_group = getattr(work_info, "payroll_group_id", None)
+                start_date, end_date = get_current_payroll_group_period(
+                    payroll_group
+                )
+                if start_date and end_date:
+                    try:
+                        pay_amount = payroll_calculation(
+                            target_employee, start_date, end_date
+                        )["gross_pay"]
+                    except Exception as e:
+                        print(e)
+            share = calc_func(basic_pay=pay_amount)
+            contributions.append(
+                {
+                    "employee": target_employee,
+                    "pay_amount": pay_amount,
+                    "employee_share": share["employee_share"],
+                    "employer_share": share["employer_share"],
+                }
+            )
+        pay_label = _("Gross Pay") if based_on_gross else _("Basic Pay")
+        if deduction.is_philhealth:
+            context["philhealth_contributions"] = contributions
+            context["philhealth_pay_label"] = pay_label
+        else:
+            context["pagibig_contributions"] = contributions
+            context["pagibig_pay_label"] = pay_label
 
     # Handle deduction IDs and navigation
     deduction_ids_json = request.GET.get("instances_ids")
@@ -616,7 +867,15 @@ def view_single_deduction(request, deduction_id):
     else:
         context.update({"load_hx_url": None, "load_hx_target": None})
 
-    return render(request, "payroll/deduction/view_single_deduction.html", context)
+    if deduction and deduction.is_sss:
+        template = "payroll/deduction/sss_deduction_view.html"
+    elif deduction and deduction.is_philhealth:
+        template = "payroll/deduction/philhealth_deduction_view.html"
+    elif deduction and deduction.is_pagibig:
+        template = "payroll/deduction/pagibig_deduction_view.html"
+    else:
+        template = "payroll/deduction/view_single_deduction.html"
+    return render(request, template, context)
 
 
 @login_required
@@ -808,16 +1067,20 @@ def generate_payslip(request):
 @hx_request_required
 def check_contract_start_date(request):
     """
-    Check if the employee's contract start date is after the provided payslip start date.
+    Check if the employee's contract start date is after the pay period
+    start date resolved from the selected payroll group.
     """
     employee_id = request.GET.get("employee_id")
-    start_date = request.GET.get("start_date")
+    payroll_group_id = request.GET.get("payroll_group_id")
 
     contract = Contract.objects.filter(
         employee_id=employee_id, contract_status="active"
     ).first()
 
-    if not contract or start_date >= str(contract.contract_start_date):
+    payroll_group = PayrollGroup.objects.filter(id=payroll_group_id).first()
+    start_date, _end_date = get_current_payroll_group_period(payroll_group)
+
+    if not contract or not start_date or start_date >= contract.contract_start_date:
         return HttpResponse("")
 
     title_message = _(
@@ -844,6 +1107,77 @@ def check_contract_start_date(request):
 
 
 @login_required
+@hx_request_required
+def payslip_period_options(request):
+    """
+    Return the <select> options for the pay periods a payroll group offers
+    in a given month, for the Create Payslip form's period picker.
+    """
+    payroll_group_id = request.GET.get("payroll_group_id")
+    year_month = request.GET.get("year_month")
+
+    payroll_group = PayrollGroup.objects.filter(id=payroll_group_id).first()
+    periods = []
+    if payroll_group and year_month:
+        try:
+            year, month = (int(part) for part in year_month.split("-"))
+            periods = list_payroll_group_periods(payroll_group, year, month)
+        except (ValueError, TypeError):
+            periods = []
+
+    return render(
+        request, "payroll/payslip/period_options.html", {"periods": periods}
+    )
+
+
+def _generate_and_save_payslip(request, employee, start_date, end_date, status="draft"):
+    """
+    Run the payroll calculation for an employee over the given period and
+    persist (or update) the resulting Payslip. Shared by the payroll-group
+    driven creation flow and internal recompute callers (e.g. after adding
+    a bonus/deduction to an existing payslip) that already know the exact
+    period to (re)compute.
+    """
+    contract = Contract.objects.filter(
+        employee_id=employee, contract_status="active"
+    ).first()
+    if contract and start_date < contract.contract_start_date:
+        start_date = contract.contract_start_date
+
+    payslip = Payslip.objects.filter(
+        employee_id=employee, start_date=start_date, end_date=end_date
+    ).first()
+    payslip_data = payroll_calculation(employee, start_date, end_date)
+    payslip_data["payslip"] = payslip
+    data = {}
+    data["employee"] = employee
+    data["start_date"] = payslip_data["start_date"]
+    data["end_date"] = payslip_data["end_date"]
+    data["status"] = status
+    data["contract_wage"] = payslip_data["contract_wage"]
+    data["basic_pay"] = payslip_data["basic_pay"]
+    data["gross_pay"] = payslip_data["gross_pay"]
+    data["deduction"] = payslip_data["total_deductions"]
+    data["net_pay"] = payslip_data["net_pay"]
+    data["pay_data"] = json.loads(payslip_data["json_data"])
+    calculate_employer_contribution(data)
+    data["installments"] = payslip_data["installments"]
+    instance = save_payslip(**data)
+    notify.send(
+        request.user.employee_get,
+        recipient=employee.employee_user_id,
+        verb="Payslip has been generated for you.",
+        verb_ar="تم إصدار كشف راتب لك.",
+        verb_de="Gehaltsabrechnung wurde für Sie erstellt.",
+        verb_es="Se ha generado la nómina para usted.",
+        verb_fr="La fiche de paie a été générée pour vous.",
+        redirect=reverse("view-created-payslip", kwargs={"payslip_id": instance.id}),
+        icon="close",
+    )
+    return instance
+
+
+@login_required
 @permission_required("payroll.add_payslip")
 def create_payslip(request, new_post_data=None):
     """
@@ -863,82 +1197,45 @@ def create_payslip(request, new_post_data=None):
     form = forms.PayslipForm()
 
     if request.method == "POST":
-        employee_id = request.POST.get("employee_id")
-        start_date = (
-            datetime.strptime(request.POST.get("start_date"), "%Y-%m-%d").date()
-            if isinstance(request.POST.get("start_date"), str)
-            else request.POST.get("start_date")
-        )
-
-        if employee_id and start_date:
-            contract = Contract.objects.filter(
-                employee_id=employee_id, contract_status="active"
-            ).first()
-
-            if contract and start_date < contract.contract_start_date:
-                new_post_data = request.POST.copy()
-                new_post_data["start_date"] = contract.contract_start_date
-                request.POST = new_post_data
         form = forms.PayslipForm(request.POST)
         if form.is_valid():
             employee = form.cleaned_data["employee_id"]
-            start_date = form.cleaned_data["start_date"]
-            end_date = form.cleaned_data["end_date"]
-            payslip = Payslip.objects.filter(
-                employee_id=employee, start_date=start_date, end_date=end_date
-            ).first()
+            start_date = form.cleaned_data.get("resolved_start_date")
+            end_date = form.cleaned_data.get("resolved_end_date")
 
-            if form.is_valid():
-                employee = form.cleaned_data["employee_id"]
-                start_date = form.cleaned_data["start_date"]
-                end_date = form.cleaned_data["end_date"]
-                payslip_data = payroll_calculation(employee, start_date, end_date)
-                payslip_data["payslip"] = payslip
-                data = {}
-                data["employee"] = employee
-                data["start_date"] = payslip_data["start_date"]
-                data["end_date"] = payslip_data["end_date"]
-                data["status"] = (
+            if not start_date or not end_date:
+                form.add_error(
+                    "payroll_group_id",
+                    _(
+                        "Could not resolve a pay period for the selected payroll "
+                        "group. Please check its cut-off configuration."
+                    ),
+                )
+            else:
+                status = (
                     "draft"
                     if request.GET.get("status") is None
                     else request.GET["status"]
                 )
-                data["contract_wage"] = payslip_data["contract_wage"]
-                data["basic_pay"] = payslip_data["basic_pay"]
-                data["gross_pay"] = payslip_data["gross_pay"]
-                data["deduction"] = payslip_data["total_deductions"]
-                data["net_pay"] = payslip_data["net_pay"]
-                data["pay_data"] = json.loads(payslip_data["json_data"])
-                calculate_employer_contribution(data)
-                data["installments"] = payslip_data["installments"]
-                payslip_data["instance"] = save_payslip(**data)
+                payslip = _generate_and_save_payslip(
+                    request, employee, start_date, end_date, status=status
+                )
                 form = forms.PayslipForm()
                 messages.success(request, _("Payslip Saved"))
-                payslip = payslip_data["instance"]
-                notify.send(
-                    request.user.employee_get,
-                    recipient=employee.employee_user_id,
-                    verb="Payslip has been generated for you.",
-                    verb_ar="تم إصدار كشف راتب لك.",
-                    verb_de="Gehaltsabrechnung wurde für Sie erstellt.",
-                    verb_es="Se ha generado la nómina para usted.",
-                    verb_fr="La fiche de paie a été générée pour vous.",
-                    redirect=reverse(
-                        "view-created-payslip", kwargs={"payslip_id": payslip.pk}
-                    ),
-                    icon="close",
-                )
                 return HorillaRedirect(
                     request,
                     redirect_to=reverse(
-                        "view-payslip", kwargs={"payslip_id": payslip.pk}
+                        "view-created-payslip", kwargs={"payslip_id": payslip.pk}
                     ),
                 )
 
     return render(
         request,
         "payroll/payslip/create_payslip.html",
-        {"individual_form": form},
+        {
+            "individual_form": form,
+            "employee_group_map_json": json.dumps(form.employee_group_map),
+        },
     )
 
 
@@ -1255,21 +1552,11 @@ def add_bonus(request):
             if payslip_id != "None" and payslip_id:
                 if contract and contract.contract_start_date <= instance.start_date:
 
-                    new_post_data = QueryDict(mutable=True)
-                    new_post_data.update(
-                        {
-                            "employee_id": instance.employee_id,
-                            "start_date": instance.start_date,
-                            "end_date": instance.end_date,
-                        }
-                    )
+                    start_date, end_date = instance.start_date, instance.end_date
                     instance.delete()
-                    create_payslip(request, new_post_data)
-                    payslip = Payslip.objects.filter(
-                        employee_id=instance.employee_id,
-                        start_date=instance.start_date,
-                        end_date=instance.end_date,
-                    ).first()
+                    payslip = _generate_and_save_payslip(
+                        request, employee, start_date, end_date
+                    )
                     return HttpResponse(
                         f"<script>window.location.href='/payroll/view-payslip/{payslip.id}'</script>"
                     )
@@ -1312,21 +1599,12 @@ def add_deduction(request):
             deduction_instance.save()
 
             # Now create new payslip by deleting existing payslip
-            new_post_data = QueryDict(mutable=True)
-            new_post_data.update(
-                {
-                    "employee_id": instance.employee_id,
-                    "start_date": instance.start_date,
-                    "end_date": instance.end_date,
-                }
-            )
+            employee = instance.employee_id
+            start_date, end_date = instance.start_date, instance.end_date
             instance.delete()
-            create_payslip(request, new_post_data)
-            payslip = Payslip.objects.filter(
-                employee_id=instance.employee_id,
-                start_date=instance.start_date,
-                end_date=instance.end_date,
-            ).first()
+            payslip = _generate_and_save_payslip(
+                request, employee, start_date, end_date
+            )
             return HttpResponse(
                 f"<script>window.location.href='/payroll/view-payslip/{payslip.id}'</script>"
             )

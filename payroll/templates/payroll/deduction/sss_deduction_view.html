@@ -1,0 +1,161 @@
+{% load i18n %} {% load static %} {% load horillafilters %}
+{% if messages %}
+    <div class="oh-wrapper">
+        {% for message in messages %}
+        <div class="oh-alert-container">
+            <div class="oh-alert oh-alert--animated {{message.tags}}">
+                {{ message }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <span hx-trigger="load" hx-get="{{load_hx_url}}" hx-target="{{load_hx_target}}" ></span>
+{% endif %}
+{% if deduction %}
+    <style>
+        .oh-sss-search-group {
+            position: relative;
+        }
+        .oh-sss-search-group ion-icon {
+            position: absolute;
+            top: 50%;
+            left: 12px;
+            transform: translateY(-50%);
+            color: hsl(216, 3%, 39%);
+            pointer-events: none;
+        }
+        .oh-sss-search-group input {
+            padding-left: 36px;
+        }
+    </style>
+    <div class="oh-modal__dialog-header">
+        <span class="oh-modal__dialog-title" id="sssDeductionModalLabel">
+            <h5 style="margin-bottom: 20px;">{{deduction.title}}</h5>
+        </span>
+        <button type="button" class="oh-modal__close" data-dismiss="oh-modal" aria-label="Close" data-toggle="oh-modal-toggle">
+            <ion-icon name="close-outline"></ion-icon>
+        </button>
+
+        <div class="oh-timeoff-modal__stats-container mb-3">
+            <div class="oh-timeoff-modal__stat">
+                <span class="oh-timeoff-modal__stat-title">{% trans "Applies To" %}</span>
+                <span class="oh-timeoff-modal__stat-count">
+                    {% if deduction.include_active_employees %}
+                        {% trans "All Active Employees" %}
+                    {% else %}
+                        {% trans "Specific Employees" %} ({{ deduction.specific_employees.count }})
+                    {% endif %}
+                </span>
+            </div>
+            <div class="oh-timeoff-modal__stat">
+                <span class="oh-timeoff-modal__stat-title">{% trans "Excluded" %}</span>
+                <span class="oh-timeoff-modal__stat-count">{{ deduction.exclude_employees.count }}</span>
+            </div>
+        </div>
+        <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+            <div class="oh-timeoff-modal__stat">
+                <span class="oh-timeoff-modal__stat-title">{% trans "Total Employees" %}</span>
+                <span class="oh-timeoff-modal__stat-count">{{ sss_contributions|length }}</span>
+            </div>
+            <div class="oh-timeoff-modal__stat">
+                <span class="oh-timeoff-modal__stat-title">{% trans "Amount" %}</span>
+                <span class="oh-timeoff-modal__stat-count">
+                    <a href="{% url 'sss-contribution-view' %}" target="_blank">{% trans "SSS Contribution Table" %}</a>
+                </span>
+            </div>
+        </div>
+
+        <div class="mt-2 mb-2">
+            <div class="oh-sss-search-group">
+                <ion-icon name="search-outline"></ion-icon>
+                <input type="text" class="oh-input w-100" id="sssEmployeeSearch"
+                    placeholder="{% trans 'Search employee...' %}" onkeyup="filterSssRows(this.value)" />
+            </div>
+        </div>
+
+        {% if sss_contributions %}
+            <div class="oh-sticky-table" style="max-height: 380px; overflow-y: auto;">
+                <div class="oh-sticky-table__table">
+                    <div class="oh-sticky-table__thead" style="position: sticky; top: 0; z-index: 2;">
+                        <div class="oh-sticky-table__tr">
+                            <div class="oh-sticky-table__th">{% trans "Employee" %}</div>
+                            <div class="oh-sticky-table__th">{{ sss_pay_label }}</div>
+                            <div class="oh-sticky-table__th">{% trans "Employee Share" %}</div>
+                            <div class="oh-sticky-table__th">{% trans "Employer Share" %}</div>
+                        </div>
+                    </div>
+                    <div class="oh-sticky-table__tbody" id="sssContributionRows">
+                        {% for row in sss_contributions %}
+                            <div class="oh-sticky-table__tr sss-employee-row" data-employee-name="{{ row.employee|lower }}">
+                                <div class="oh-sticky-table__td">{{ row.employee }}</div>
+                                <div class="oh-sticky-table__td">{{ row.pay_amount|stringformat:".2f"|currency_symbol_position }}</div>
+                                <div class="oh-sticky-table__td">{{ row.employee_share|stringformat:".2f"|currency_symbol_position }}</div>
+                                <div class="oh-sticky-table__td">{{ row.employer_share|stringformat:".2f"|currency_symbol_position }}</div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div id="sssNoResults" class="text-center text-muted py-3" style="display: none;">
+                {% trans "No employees match your search." %}
+            </div>
+        {% else %}
+            <div class="text-center text-muted py-3">
+                {% trans "No employees targeted." %}
+            </div>
+        {% endif %}
+
+        {% if perms.payroll.change_deduction or perms.payroll.delete_deduction %}
+            <div class="oh-modal__button-container text-center mt-3">
+                <div class="oh-btn-group">
+                    {% if perms.payroll.change_deduction %}
+                        <a href="{% url 'update-deduction' deduction.id %}" class="oh-btn oh-btn--info" style="width: 100%;">
+                            <ion-icon name="create-outline" role="img" class="md hydrated" aria-label="create outline"></ion-icon>
+                            {% trans "Edit" %}
+                        </a>
+                    {% endif %}
+                    {% if perms.payroll.delete_deduction %}
+                        <a onclick="event.preventDefault();event.stopPropagation();"
+                            hx-confirm="{% trans 'Do you want to delete this deduction?' %}"
+                            hx-post="{% url 'delete-deduction' deduction.id %}?{{pd}}"
+                            hx-target="#sssDeductionModalTarget" class="oh-btn oh-btn--danger" style="width: 100%;"
+                            data-action="delete">
+                            <ion-icon name="trash-outline" role="img" class="md hydrated" aria-label="create outline"></ion-icon>
+                            {% trans "Delete" %}
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+    </div>
+    <script>
+        function filterSssRows(value) {
+            value = value.toLowerCase();
+            var rows = document.querySelectorAll('#sssContributionRows .sss-employee-row');
+            var visibleCount = 0;
+            rows.forEach(function (row) {
+                var name = row.getAttribute('data-employee-name') || '';
+                var match = name.indexOf(value) !== -1;
+                row.style.display = match ? '' : 'none';
+                if (match) visibleCount++;
+            });
+            document.getElementById('sssNoResults').style.display = (rows.length && visibleCount === 0) ? 'block' : 'none';
+        }
+    </script>
+{% else %}
+    <div class="oh-modal__dialog-header">
+        <span class="oh-modal__dialog-title"></span>
+        <button type="button" class="oh-modal__close" data-dismiss="oh-modal" aria-label="Close"
+            data-toggle="oh-modal-toggle">
+            <ion-icon name="close-outline"></ion-icon>
+        </button>
+        <h2 class="mb-4"></h2>
+    </div>
+    <div class="oh-modal__dialog-body oh-modal__dialog-relative">
+        <img style="margin-left: 33%; width: 150px; height: 150px" src="{% static 'images/ui/deduction_icon.png' %}"
+            class="oh-404__image mb-2" alt="Page not found. 404." />
+        <h5 class="oh-404__subtitle">
+            {% trans "There are currently no deductions to consider." %}
+        </h5>
+    </div>
+{% endif %}

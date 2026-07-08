@@ -1,65 +1,77 @@
 """
 Forms for handling payroll-related operations.
 
-This module provides Django ModelForms for creating and managing payroll-related data,
-including filing status, tax brackets, and federal tax records.
+This module provides Django ModelForms for creating and managing
+payroll-related statutory deduction/withholding-tax data (SSS, PhilHealth,
+Pag-IBIG, BIR withholding tax).
 
 The forms in this module inherit from the Django `forms.ModelForm` class and customize
 the widget attributes to enhance the user interface and provide a better user experience.
 
 """
 
-from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from base.forms import ModelForm
-from payroll.methods import federal_tax
-from payroll.models.models import FilingStatus
-from payroll.models.tax_models import TaxBracket
+from payroll.models.tax_models import (
+    BIRWithholdingTax,
+    PagibigSettings,
+    PerfectAttendanceBonusSettings,
+    PhilHealthSettings,
+    SSSContribution,
+)
 
 
-class FilingStatusForm(ModelForm):
-    """Form for creating and updating filing status."""
-
-    class Meta:
-        """Meta options for the form."""
-
-        model = FilingStatus
-        fields = "__all__"
-        exclude = ["is_active"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        attrs: dict = self.fields["use_py"].widget.attrs
-        self.fields["python_code"].required = False
-        attrs[
-            "onchange"
-        ] = """
-        if($(this).is(':checked')){
-            $('#oc-editor').show();
-            //$("#objectCreateModal #objectCreateModalTarget").css("max-width","90%")
-        }else{
-            //$("#objectCreateModal #objectCreateModalTarget").css("max-width","650px")
-            $('#oc-editor').hide();
-        }
-        """
-
-        if self.instance.pk is None:
-            self.instance.python_code = federal_tax.CODE
-        else:
-            del self.fields["use_py"]
-            del self.fields["python_code"]
-
-
-class TaxBracketForm(ModelForm):
-    """Form for creating and updating tax bracket."""
+class SSSContributionForm(ModelForm):
+    """Form for creating and updating SSS contribution brackets."""
 
     class Meta:
         """Meta options for the form."""
 
-        model = TaxBracket
+        model = SSSContribution
         fields = "__all__"
         exclude = ["is_active"]
-        widgets = {
-            "filing_status_id": forms.HiddenInput(),
-        }
+
+
+class PhilHealthSettingsForm(ModelForm):
+    """Form for editing the singleton PhilHealth settings."""
+
+    class Meta:
+        """Meta options for the form."""
+
+        model = PhilHealthSettings
+        fields = "__all__"
+        exclude = ["is_active"]
+
+
+class PagibigSettingsForm(ModelForm):
+    """Form for editing the singleton Pag-IBIG settings."""
+
+    class Meta:
+        """Meta options for the form."""
+
+        model = PagibigSettings
+        fields = "__all__"
+        exclude = ["is_active"]
+
+
+class PerfectAttendanceBonusSettingsForm(ModelForm):
+    """Form for editing the singleton Perfect Attendance Bonus settings."""
+
+    class Meta:
+        """Meta options for the form."""
+
+        model = PerfectAttendanceBonusSettings
+        fields = "__all__"
+        exclude = ["is_active"]
+
+
+class BIRWithholdingTaxForm(ModelForm):
+    """Form for creating and updating BIR withholding tax brackets."""
+
+    class Meta:
+        """Meta options for the form."""
+
+        model = BIRWithholdingTax
+        fields = "__all__"
+        exclude = ["is_active"]

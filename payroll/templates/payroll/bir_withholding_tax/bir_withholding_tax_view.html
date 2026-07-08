@@ -1,0 +1,34 @@
+{% extends 'index.html' %} {% block content %} {% load i18n %}
+{% load static %}
+<style>
+    .oh-sticky-table__right {
+        position: sticky;
+        right: 0;
+        background-color: #fff;
+    }
+</style>
+
+<section class="oh-wrapper oh-main__topbar">
+    <div class="oh-main__titlebar oh-main__titlebar--left">
+        <h1 class="oh-main__titlebar-title fw-bold">{% trans "BIR Withholding Tax Table" %}</h1>
+    </div>
+    <div class="oh-main__titlebar oh-main__titlebar--right">
+        <div class="oh-main__titlebar-button-container">
+            {% if perms.payroll.add_birwithholdingtax %}
+                <div class="oh-btn-group ml-2">
+                    <a class="oh-btn oh-btn--secondary oh-btn--shadow" data-toggle="oh-modal-toggle"
+                        data-target="#objectCreateModal" hx-get="{% url 'bir-withholding-tax-create' %}"
+                        hx-target="#objectCreateModalTarget">
+                        <ion-icon class="md hydrated" name="add-outline" role="img"
+                            aria-label="add outline"></ion-icon>{% trans "Create" %}</a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+<div class="oh-wrapper">
+    <div id="birWithholdingTaxListContainer">
+        {% include 'payroll/bir_withholding_tax/bir_withholding_tax_list.html' %}
+    </div>
+</div>
+{% endblock content %}

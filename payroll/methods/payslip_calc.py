@@ -13,7 +13,14 @@ from django.apps import apps
 # from attendance.models import Attendance
 from horilla.methods import get_horilla_model_class
 from payroll.methods.deductions import update_compensation_deduction
+from payroll.methods.holiday_pay_calc import (
+    calculate_holiday_pay,
+    calculate_night_differential,
+)
 from payroll.methods.limits import compute_limit
+from payroll.methods.pagibig_calc import calculate_pagibig_contribution
+from payroll.methods.philhealth_calc import calculate_philhealth_contribution
+from payroll.methods.sss_calc import calculate_sss_contribution
 from payroll.models import models
 from payroll.models.models import (
     Allowance,
@@ -233,6 +240,55 @@ def calculate_gross_pay(*_args, **kwargs):
     }
 
 
+def calculate_holiday_and_night_pay(*_args, **kwargs):
+    """
+    Calculate the holiday pay premium and night differential pay earned by
+    an employee within a given date range. This is additive to gross pay
+    (earnings), not a deduction.
+
+    Args:
+        employee: The employee object for whom to calculate the amounts.
+        start_date: The start date of the period.
+        end_date: The end date of the period.
+
+    Returns:
+        A dictionary containing the combined "total" amount, the
+        "holiday_pay", "night_differential" breakdowns, and the holiday
+        pay split into three Philippine-payslip buckets:
+        "regular_holiday_pay" (unworked regular holiday, "no work, still
+        pay"), "worked_regular_holiday_pay", and "worked_special_holiday_pay".
+    """
+    holiday = calculate_holiday_pay(**kwargs)
+    night = calculate_night_differential(**kwargs)
+
+    regular_holiday_pay = sum(
+        entry["amount"]
+        for entry in holiday["breakdown"]
+        if entry["holiday_type"] == "regular" and not entry["worked"]
+    )
+    worked_regular_holiday_pay = sum(
+        entry["amount"]
+        for entry in holiday["breakdown"]
+        if entry["holiday_type"] == "regular" and entry["worked"]
+    )
+    worked_special_holiday_pay = sum(
+        entry["amount"]
+        for entry in holiday["breakdown"]
+        if entry["holiday_type"] == "special" and entry["worked"]
+    )
+
+    return {
+        "total": holiday["holiday_pay"] + night["night_differential"],
+        "holiday_pay": holiday["holiday_pay"],
+        "holiday_breakdown": holiday["breakdown"],
+        "regular_holiday_pay": round(regular_holiday_pay, 2),
+        "worked_regular_holiday_pay": round(worked_regular_holiday_pay, 2),
+        "worked_special_holiday_pay": round(worked_special_holiday_pay, 2),
+        "night_differential": night["night_differential"],
+        "night_hours": night["night_hours"],
+    }
+
+
 def calculate_taxable_gross_pay(*_args, **kwargs):
     """
     Calculate the taxable gross pay for an employee within a given date range.
@@ -408,6 +464,8 @@ def calculate_allowance(**kwargs):
             "allowance_id": allowance.id,
             "title": allowance.title,
             "is_taxable": allowance.is_taxable,
+            "payslip_category": allowance.payslip_category,
+            "based_on": allowance.based_on,
             "amount": amount,
         }
         serialized_allowances.append(serialized_allowance)
@@ -418,6 +476,8 @@ def calculate_allowance(**kwargs):
             "allowance_id": allowance.id,
             "title": allowance.title,
             "is_taxable": allowance.is_taxable,
+            "payslip_category": allowance.payslip_category,
+            "based_on": allowance.based_on,
             "amount": amount,
         }
         serialized_allowances.append(serialized_allowance)
@@ -480,6 +540,7 @@ def calculate_tax_deduction(*_args, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_tax": deduction.is_tax,
+            "payslip_category": deduction.payslip_category,
             "amount": amount,
             "employer_contribution_rate": deduction.employer_rate,
         }
@@ -585,6 +646,7 @@ def calculate_pre_tax_deduction(*_args, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_pretax": deduction.is_pretax,
+            "payslip_category": deduction.payslip_category,
             "amount": amount,
             "employer_contribution_rate": deduction.employer_rate,
         }
@@ -612,6 +674,7 @@ def calculate_post_tax_deduction(*_args, **kwargs):
     allowances = kwargs["allowances"]
     total_allowance = kwargs["total_allowance"]
     basic_pay = kwargs["basic_pay"]
+    gross_pay = kwargs.get("gross_pay")
     day_dict = kwargs["day_dict"]
     specific_deductions = models.Deduction.objects.filter(
         specific_employees=employee, is_pretax=False, is_tax=False
@@ -650,7 +713,37 @@ def calculate_post_tax_deduction(*_args, **kwargs):
         else:
             post_tax_deductions.append(deduction)
     for deduction in post_tax_deductions:
-        if deduction.is_fixed:
+        if deduction.is_sss:
+            sss_pay_amount = gross_pay if deduction.if_choice == "gross_pay" else basic_pay
+            sss = calculate_sss_contribution(basic_pay=sss_pay_amount)
+            amount = sss["employee_share"]
+            kwargs["amount"] = amount
+            kwargs["component"] = deduction
+            amount = if_condition_on(**kwargs)
+            post_tax_deductions_amt.append(amount)
+        elif deduction.is_philhealth:
+            philhealth_pay_amount = (
+                gross_pay if deduction.if_choice == "gross_pay" else basic_pay
+            )
+            philhealth = calculate_philhealth_contribution(
+                basic_pay=philhealth_pay_amount
+            )
+            amount = philhealth["employee_share"]
+            kwargs["amount"] = amount
+            kwargs["component"] = deduction
+            amount = if_condition_on(**kwargs)
+            post_tax_deductions_amt.append(amount)
+        elif deduction.is_pagibig:
+            pagibig_pay_amount = (
+                gross_pay if deduction.if_choice == "gross_pay" else basic_pay
+            )
+            pagibig = calculate_pagibig_contribution(basic_pay=pagibig_pay_amount)
+            amount = pagibig["employee_share"]
+            kwargs["amount"] = amount
+            kwargs["component"] = deduction
+            amount = if_condition_on(**kwargs)
+            post_tax_deductions_amt.append(amount)
+        elif deduction.is_fixed:
             amount = deduction.amount
             kwargs["amount"] = amount
             kwargs["component"] = deduction
@@ -681,8 +774,41 @@ def calculate_post_tax_deduction(*_args, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_pretax": deduction.is_pretax,
+            "is_sss": deduction.is_sss,
+            "is_philhealth": deduction.is_philhealth,
+            "is_pagibig": deduction.is_pagibig,
+            "payslip_category": deduction.payslip_category,
             "amount": amount,
             "employer_contribution_rate": deduction.employer_rate,
+            "employer_contribution_amount": (
+                calculate_sss_contribution(
+                    basic_pay=(
+                        gross_pay if deduction.if_choice == "gross_pay" else basic_pay
+                    )
+                )["employer_share"]
+                if deduction.is_sss
+                else (
+                    calculate_philhealth_contribution(
+                        basic_pay=(
+                            gross_pay
+                            if deduction.if_choice == "gross_pay"
+                            else basic_pay
+                        )
+                    )["employer_share"]
+                    if deduction.is_philhealth
+                    else (
+                        calculate_pagibig_contribution(
+                            basic_pay=(
+                                gross_pay
+                                if deduction.if_choice == "gross_pay"
+                                else basic_pay
+                            )
+                        )["employer_share"]
+                        if deduction.is_pagibig
+                        else None
+                    )
+                )
+            ),
         }
         serialized_deductions.append(serialized_deduction)
     for deduction in post_tax_deductions:
@@ -724,6 +850,7 @@ def calculate_net_pay_deduction(net_pay, net_pay_deductions, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_pretax": deduction.is_pretax,
+            "payslip_category": deduction.payslip_category,
             "amount": amount,
             "employer_contribution_rate": deduction.employer_rate,
         }

@@ -1,0 +1,9 @@
+{% load i18n %}
+<select name="period" id="id_period" class="oh-select oh-select-2">
+    <option value="">{% trans "---------" %}</option>
+    {% for period in periods %}
+    <option value="{{ period.start_date|date:'Y-m' }}:{{ period.slot }}">
+        {{ period.label }}: {{ period.start_date|date:"M d" }} &ndash; {{ period.end_date|date:"M d" }}
+    </option>
+    {% endfor %}
+</select>

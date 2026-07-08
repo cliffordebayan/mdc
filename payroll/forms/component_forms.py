@@ -17,14 +17,16 @@ from django.utils.translation import gettext_lazy as _
 import payroll.models.models
 from base.forms import Form, ModelForm
 from base.methods import reload_queryset
+from base.models import PayrollGroup
 from employee.filters import EmployeeFilter
-from employee.models import BonusPoint, Employee
+from employee.models import BonusPoint, Employee, EmployeeWorkInformation
 from horilla import horilla_middlewares
 from horilla.methods import get_horilla_model_class
 from horilla_widgets.forms import HorillaForm, default_select_option_template
 from horilla_widgets.widgets.horilla_multi_select_field import HorillaMultiSelectField
 from horilla_widgets.widgets.select_widgets import HorillaMultiSelectWidget
 from notifications.signals import notify
+from payroll.methods.methods import list_payroll_group_periods
 from payroll.models import tax_models as models
 from payroll.models.models import (
     Allowance,
@@ -354,6 +356,26 @@ class PayslipForm(ModelForm):
     Form for Payslip
     """
 
+    payroll_group_id = forms.ModelChoiceField(
+        queryset=PayrollGroup.objects.all(),
+        label=_("Payroll Group"),
+        required=True,
+        help_text=_(
+            "Auto-filled from the employee's assigned payroll group; change "
+            "it if this payslip should use a different group."
+        ),
+    )
+    year_month = forms.CharField(
+        required=False,
+        label=_("Month"),
+        widget=forms.TextInput(attrs={"type": "month"}),
+    )
+    period = forms.CharField(
+        required=True,
+        label=_("Pay Period"),
+        widget=forms.Select(choices=[("", _("Select employee and month first"))]),
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         active_contracts = Contract.objects.filter(contract_status="active")
@@ -362,17 +384,46 @@ class PayslipForm(ModelForm):
             for contract in active_contracts
             if contract.employee_id.is_active
         ]
-        self.fields["employee_id"].widget.attrs.update(
-            {
-                "hx-get": "/payroll/check-contract-start-date",
-                "hx-target": "#contractStartDateDiv",
-                "hx-include": "#payslipCreateForm",
-                "hx-trigger": "change delay:300ms",
-            }
-        )
+        self.employee_group_map = {}
+        for contract in active_contracts:
+            work_info = getattr(contract.employee_id, "employee_work_info", None)
+            group_id = getattr(work_info, "payroll_group_id_id", None)
+            if group_id:
+                self.employee_group_map[contract.employee_id.id] = group_id
+
+        hx_attrs = {
+            "hx-get": "/payroll/check-contract-start-date",
+            "hx-target": "#contractStartDateDiv",
+            "hx-include": "#payslipCreateForm",
+            "hx-trigger": "change delay:300ms",
+        }
+        self.fields["employee_id"].widget.attrs.update(hx_attrs)
+        self.fields["payroll_group_id"].widget.attrs.update(hx_attrs)
         if self.instance.pk is None:
-            self.initial["start_date"] = datetime.date.today().replace(day=1)
-            self.initial["end_date"] = datetime.date.today()
+            self.fields["year_month"].initial = datetime.date.today().strftime("%Y-%m")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        group = cleaned_data.get("payroll_group_id")
+        raw_period = cleaned_data.get("period")
+        if group and raw_period:
+            try:
+                year_month, slot_str = raw_period.split(":")
+                year, month = (int(part) for part in year_month.split("-"))
+            except (ValueError, AttributeError):
+                self.add_error("period", _("Invalid pay period selection."))
+                return cleaned_data
+            periods = list_payroll_group_periods(group, year, month)
+            match = next((p for p in periods if str(p["slot"]) == slot_str), None)
+            if not match:
+                self.add_error(
+                    "period",
+                    _("Selected pay period is no longer valid; please reselect."),
+                )
+            else:
+                cleaned_data["resolved_start_date"] = match["start_date"]
+                cleaned_data["resolved_end_date"] = match["end_date"]
+        return cleaned_data
 
     class Meta:
         """
@@ -382,26 +433,8 @@ class PayslipForm(ModelForm):
         model = payroll.models.models.Payslip
         fields = [
             "employee_id",
-            "start_date",
-            "end_date",
         ]
         exclude = ["is_active"]
-        widgets = {
-            "start_date": forms.DateInput(
-                attrs={
-                    "type": "date",
-                    "hx-get": "/payroll/check-contract-start-date",
-                    "hx-target": "#contractStartDateDiv",
-                    "hx-include": "#payslipCreateForm",
-                    "hx-trigger": "change delay:300ms",
-                }
-            ),
-            "end_date": forms.DateInput(
-                attrs={
-                    "type": "date",
-                }
-            ),
-        }
 
 
 class GeneratePayslipForm(HorillaForm):
@@ -551,7 +584,6 @@ class ContractExportFieldForm(forms.Form):
             "contract_end_date",
             "wage_type",
             "wage",
-            "filing_status",
             "contract_status",
         ],
     )

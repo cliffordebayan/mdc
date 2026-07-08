@@ -24,8 +24,6 @@ urlpatterns = [
         ReimbusementApproveRejectView.as_view(),
         name="",
     ),
-    path("tax-bracket/<int:pk>", TaxBracketView.as_view(), name=""),
-    path("tax-bracket/", TaxBracketView.as_view(), name=""),
     path("allowance", AllowanceView.as_view(), name=""),
     path("allowance/<int:pk>", AllowanceView.as_view(), name=""),
     path("deduction", DeductionView.as_view(), name=""),

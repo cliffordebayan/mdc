@@ -2213,7 +2213,10 @@ def _attendance_activity_export_daily_rows(activities):
     filtered_rows = [
         row for row in rows
         if (row.employee.id, row.attendance_date) in row_keys
-        or getattr(row, "is_leave_only", False)
+        or (
+            getattr(row, "is_leave_only", False)
+            and row.attendance_date in attendance_dates
+        )
     ]
     filtered_rows.sort(
         key=lambda r: (

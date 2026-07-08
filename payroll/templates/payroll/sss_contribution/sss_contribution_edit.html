@@ -1,0 +1,31 @@
+{% load i18n %}
+{% if messages %}
+    <div class="oh-alert-container">
+        {% for message in messages %}
+            <div class="oh-alert oh-alert--animated {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    <script>
+        setTimeout(function () {
+            $(".sss-refresh-trigger").click();
+        }, 1000);
+    </script>
+    <span class="sss-refresh-trigger d-none" hx-get="{% url 'sss-contribution-view' %}"
+        hx-select="#sssContributionListContainer" hx-swap="outerHTML"
+        hx-target="#sssContributionListContainer"></span>
+{% endif %}
+<div class="oh-modal__dialog-header pb-0">
+    <span class="oh-modal__dialog-title"><h5>{% trans "SSS Contribution Bracket" %}</h5></span>
+    <button type="button" class="oh-modal__close" data-dismiss="oh-modal" aria-label="Close">
+        <ion-icon name="close-outline"></ion-icon>
+    </button>
+</div>
+<div class="oh-modal__dialog-body">
+    <form hx-post="{% url 'sss-contribution-update' pk=form.instance.id %}" hx-target="#objectUpdateModalTarget"
+        class="oh-profile-section">
+        {% csrf_token %} {{ form.as_p }}
+        <div class="oh-modal__dialog-footer p-0">
+            <button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">{% trans "Save" %}</button>
+        </div>
+    </form>
+</div>

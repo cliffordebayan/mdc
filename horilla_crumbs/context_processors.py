@@ -54,7 +54,6 @@ sidebar_urls = [
     "view-allowance",
     "view-deduction",
     "view-payslip",
-    "filing-status-view",
     "attendance-view",
     "work-records",
     "request-attendance-view",

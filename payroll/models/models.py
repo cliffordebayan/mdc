@@ -73,50 +73,6 @@ def get_date_range(start_date, end_date):
     return date_list
 
 
-class FilingStatus(HorillaModel):
-    """
-    FilingStatus model
-    """
-
-    based_on_choice = [
-        ("basic_pay", _("Basic Pay")),
-        ("gross_pay", _("Gross Pay")),
-        ("taxable_gross_pay", _("Taxable Gross Pay")),
-    ]
-    filing_status = models.CharField(
-        max_length=30,
-        blank=False,
-        verbose_name=_("Filing status"),
-    )
-    based_on = models.CharField(
-        max_length=255,
-        choices=based_on_choice,
-        null=False,
-        blank=False,
-        default="taxable_gross_pay",
-        verbose_name=_("Based on"),
-    )
-    use_py = models.BooleanField(verbose_name="Python Code", default=False)
-    python_code = models.TextField(null=True)
-    description = models.TextField(
-        blank=True,
-        verbose_name=_("Description"),
-        max_length=255,
-    )
-    company_id = models.ForeignKey(
-        Company, null=True, editable=False, on_delete=models.PROTECT
-    )
-    objects = HorillaCompanyManager()
-
-    def __str__(self) -> str:
-        return str(self.filing_status)
-
-    class Meta:
-        ordering = ["-id"]
-        verbose_name = _("Filing Status")
-        verbose_name_plural = _("Filing Statuses")
-
-
 class Contract(HorillaModel):
     """
     Contract Model
@@ -129,6 +85,7 @@ class Contract(HorillaModel):
     )
 
     PAY_FREQUENCY_CHOICES = (
+        ("daily", _("Daily")),
         ("weekly", _("Weekly")),
         ("monthly", _("Monthly")),
         ("semi_monthly", _("Semi-Monthly")),
@@ -147,13 +104,6 @@ class Contract(HorillaModel):
         ("expired", _("Expired")),
         ("terminated", _("Terminated")),
     )
-    try:
-        # Here would be not filing status model at the initial/empty db
-        FILING_STATUS_CHOICES = [("", _("None"))] + list(
-            FilingStatus.objects.values_list("id", "filing_status")
-        )
-    except:
-        pass
 
     contract_name = models.CharField(
         max_length=250, help_text=_("Contract Title."), verbose_name=_("Contract")
@@ -182,14 +132,6 @@ class Contract(HorillaModel):
         verbose_name=_("Pay Frequency"),
     )
     wage = models.FloatField(verbose_name=_("Basic Salary"), null=True, default=0)
-    filing_status = models.ForeignKey(
-        FilingStatus,
-        on_delete=models.PROTECT,
-        related_name="contracts",
-        null=True,
-        blank=True,
-        verbose_name=_("Filing Status"),
-    )
     contract_status = models.CharField(
         choices=CONTRACT_STATUS_CHOICES,
         max_length=250,
@@ -716,6 +658,15 @@ class Allowance(HorillaModel):
         ("max_amount", _("Provide max amount")),
     ]
 
+    payslip_category_choice = [
+        ("", _("None")),
+        ("de_minimis", _("De Minimis")),
+        ("wfh_utility_allowance", _("(WFH) Utility Allowance")),
+        ("non_taxable_allowance", _("Non Taxable Allowance")),
+        ("adjustment_basic", _("Adjustment - Basic")),
+        ("adjustment_nd_ot", _("Adjustment - ND & OT")),
+    ]
+
     based_on_choice = [
         ("basic_pay", _("Basic Pay")),
         ("children", _("Children")),
@@ -769,6 +720,19 @@ class Allowance(HorillaModel):
     is_taxable = models.BooleanField(
         default=True,
         help_text=_("This field is used to calculate the taxable allowances"),
+    )
+    payslip_category = models.CharField(
+        max_length=30,
+        choices=payslip_category_choice,
+        null=True,
+        blank=True,
+        default="",
+        verbose_name=_("Payslip Category"),
+        help_text=_(
+            "Marks this allowance for a specific named row on the "
+            "Philippine-style payslip layout (e.g. De Minimis, WFH Utility "
+            "Allowance) instead of being grouped as a generic allowance."
+        ),
     )
     is_condition_based = models.BooleanField(
         default=False,
@@ -1072,6 +1036,14 @@ class Deduction(HorillaModel):
         ("max_amount", _("Provide max amount")),
     ]
 
+    payslip_category_choice = [
+        ("", _("None")),
+        ("insurance", _("Insurance")),
+        ("accountability", _("Accountability")),
+        ("adjustment_basic", _("Adjustment - Basic")),
+        ("adjustment_nd_ot", _("Adjustment - ND & OT")),
+    ]
+
     title = models.CharField(max_length=255, help_text=_("Title of the deduction"))
     one_time_date = models.DateField(
         null=True,
@@ -1245,6 +1217,47 @@ class Deduction(HorillaModel):
     objects = HorillaCompanyManager()
 
     is_installment = models.BooleanField(default=False, editable=False)
+    is_sss = models.BooleanField(
+        default=False,
+        verbose_name=_("Is SSS"),
+        help_text=_(
+            "Marks this deduction as the SSS contribution, whose amount is looked \
+            up per employee from the SSS Contribution Table instead of a fixed \
+            amount or rate."
+        ),
+    )
+    is_philhealth = models.BooleanField(
+        default=False,
+        verbose_name=_("Is PhilHealth"),
+        help_text=_(
+            "Marks this deduction as the PhilHealth contribution, whose amount \
+            is computed per employee from the PhilHealth Settings instead of a \
+            fixed amount or rate."
+        ),
+    )
+    is_pagibig = models.BooleanField(
+        default=False,
+        verbose_name=_("Is Pag-IBIG"),
+        help_text=_(
+            "Marks this deduction as the Pag-IBIG (HDMF) contribution, whose \
+            amount is computed per employee from the Pag-IBIG Settings instead \
+            of a fixed amount or rate."
+        ),
+    )
+    payslip_category = models.CharField(
+        max_length=30,
+        choices=payslip_category_choice,
+        null=True,
+        blank=True,
+        default="",
+        verbose_name=_("Payslip Category"),
+        help_text=_(
+            "Marks this deduction for a specific named row on the "
+            "Philippine-style payslip layout (e.g. Insurance, "
+            "Accountability, Adjustment - Basic) instead of being grouped "
+            "as a generic deduction."
+        ),
+    )
     other_conditions = models.ManyToManyField(
         MultipleCondition, blank=True, editable=False
     )
@@ -1256,8 +1269,68 @@ class Deduction(HorillaModel):
         payslip = Payslip.objects.filter(installment_ids=self).first()
         return payslip
 
+    def get_applicable_employees(self):
+        """
+        Resolve the employees this deduction currently targets, honoring
+        include_active_employees / specific_employees / exclude_employees.
+        """
+        if self.include_active_employees:
+            queryset = Employee.objects.filter(is_active=True)
+        else:
+            queryset = self.specific_employees.all()
+        return queryset.exclude(
+            id__in=self.exclude_employees.values_list("id", flat=True)
+        )
+
     def clean(self):
         super().clean()
+
+        if self.is_sss:
+            if Deduction.objects.filter(is_sss=True).exclude(pk=self.pk).exists():
+                raise ValidationError(
+                    {
+                        "is_sss": _(
+                            "An SSS contribution deduction already exists. \
+                            Only one is allowed."
+                        )
+                    }
+                )
+            if self.amount is None:
+                self.amount = 0
+
+        if self.is_philhealth:
+            if (
+                Deduction.objects.filter(is_philhealth=True)
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                raise ValidationError(
+                    {
+                        "is_philhealth": _(
+                            "A PhilHealth contribution deduction already exists. \
+                            Only one is allowed."
+                        )
+                    }
+                )
+            if self.amount is None:
+                self.amount = 0
+
+        if self.is_pagibig:
+            if (
+                Deduction.objects.filter(is_pagibig=True)
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                raise ValidationError(
+                    {
+                        "is_pagibig": _(
+                            "A Pag-IBIG contribution deduction already exists. \
+                            Only one is allowed."
+                        )
+                    }
+                )
+            if self.amount is None:
+                self.amount = 0
 
         if self.is_tax:
             self.is_pretax = False
@@ -1380,6 +1453,8 @@ class Payslip(HorillaModel):
 
     def clean(self):
         super().clean()
+        if not self.start_date or not self.end_date:
+            return
         today = date.today()
         if self.end_date < self.start_date:
             raise ValidationError(
@@ -1468,6 +1543,8 @@ class LoanAccount(HorillaModel):
         ("loan", _("Loan")),
         ("advanced_salary", _("Advanced Salary")),
         ("fine", _("Penalty / Fine")),
+        ("sss_loan", _("SSS Salary Loan")),
+        ("pagibig_loan", _("HDMF (Pag-IBIG) Salary Loan")),
     ]
     type = models.CharField(default="loan", choices=loan_type, max_length=15)
     title = models.CharField(max_length=20)

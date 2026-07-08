@@ -12,7 +12,6 @@ from payroll.models.models import (
     Reimbursement,
     ReimbursementMultipleAttachment,
 )
-from payroll.models.tax_models import TaxBracket
 
 
 class PayslipSerializer(serializers.ModelSerializer):
@@ -314,9 +313,3 @@ class ReimbursementSerializer(serializers.ModelSerializer):
         instance.other_attachments.add(*multiple_attachment_ids)
 
         return super().save(**kwargs)
-
-
-class TaxBracketSerializer(serializers.ModelSerializer):
-    class Meta:
-        fields = "__all__"
-        model = TaxBracket

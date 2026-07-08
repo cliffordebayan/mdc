@@ -8,7 +8,11 @@
       "Bash(python manage.py makemigrations employee)",
       "Bash(grep -E \"\\\\.py$\")",
       "Read(//c/Users/CLIFFORD/Music/**)",
-      "Bash(\"./horillavenv/Scripts/python.exe\" manage.py test attendance --keepdb)"
+      "Bash(\"./horillavenv/Scripts/python.exe\" manage.py test attendance --keepdb)",
+      "Bash(./horillavenv/Scripts/python.exe manage.py check)",
+      "Bash(./horillavenv/Scripts/python.exe manage.py shell -c ' *)",
+      "Bash(./horillavenv/Scripts/python.exe manage.py makemigrations payroll --name add_is_sss_to_deduction)",
+      "Bash(./horillavenv/Scripts/python.exe manage.py migrate payroll)"
     ]
   }
 }

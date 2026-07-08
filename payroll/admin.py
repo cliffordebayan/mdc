@@ -10,7 +10,6 @@ from payroll.models.models import (
     Allowance,
     Contract,
     Deduction,
-    FilingStatus,
     LoanAccount,
     MultipleCondition,
     Payslip,
@@ -18,11 +17,9 @@ from payroll.models.models import (
     Reimbursement,
     ReimbursementrequestComment,
 )
-from payroll.models.tax_models import PayrollSettings, TaxBracket
+from payroll.models.tax_models import PayrollSettings
 
 # Register your models here.
-admin.site.register(FilingStatus)
-admin.site.register(TaxBracket)
 admin.site.register(Contract)
 admin.site.register(Allowance)
 admin.site.register(Deduction)
