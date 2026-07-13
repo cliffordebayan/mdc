@@ -1995,6 +1995,19 @@ def _duration_hhmm_to_minutes_str(value):
     return str(total_minutes)
 
 
+def _duration_hhmm_to_hours_dot_str(value):
+    """Convert an 'HH:MM' duration string to 'H' or 'H.MM' (dot, not true decimal)."""
+    if not value or not isinstance(value, str) or ":" not in value:
+        return value
+    hours_str, _, minutes_str = value.partition(":")
+    try:
+        hours = int(hours_str)
+        minutes = int(minutes_str)
+    except ValueError:
+        return value
+    return str(hours) if minutes == 0 else f"{hours}.{minutes:02d}"
+
+
 def _attendance_activity_daily_export_value(row, field_name, employee, formatter=None):
     if not row:
         return ""
@@ -2112,27 +2125,29 @@ def _attendance_activity_daily_export_value(row, field_name, employee, formatter
         )
     if field_name == "daily_early_out":
         value = _format_attendance_activity_export_value(
-            row.early_out_duration, employee, formatter
+            _duration_hhmm_to_minutes_str(row.early_out_duration), employee, formatter
         )
         if not value and getattr(row, "is_leave_only", False):
             return ""
-        return value or "00:00"
+        return value or "0"
     if field_name == "daily_work_hours":
         return _format_attendance_activity_export_value(
-            row.work_hours, employee, formatter
+            _duration_hhmm_to_hours_dot_str(row.work_hours), employee, formatter
         )
     if field_name == "daily_basic_hours":
         return ""
     if field_name == "daily_break_hours":
         return _format_attendance_activity_export_value(
-            row.break_hours, employee, formatter
+            _duration_hhmm_to_hours_dot_str(row.break_hours), employee, formatter
         )
     if field_name == "daily_lunch_hours":
         return _format_attendance_activity_export_value(
-            row.lunch_hours, employee, formatter
+            _duration_hhmm_to_hours_dot_str(row.lunch_hours), employee, formatter
         )
     if field_name == "daily_overtime":
-        return _format_attendance_activity_export_value(row.overtime, employee, formatter)
+        return _format_attendance_activity_export_value(
+            _duration_hhmm_to_hours_dot_str(row.overtime), employee, formatter
+        )
     if field_name == "daily_leave":
         return row.leave or ""
     if field_name == "daily_leave_type":
@@ -2145,8 +2160,10 @@ def _attendance_activity_daily_export_value(row, field_name, employee, formatter
     if field_name == "daily_holiday_type":
         return _holiday_type_export_label(getattr(row, "holiday_type", None))
     if field_name in ATTENDANCE_PREMIUM_EXPORT_FIELD_NAMES:
-        return _premium_bucket_time(
-            _attendance_activity_premium_buckets(row).get(field_name, 0)
+        return _duration_hhmm_to_hours_dot_str(
+            _premium_bucket_time(
+                _attendance_activity_premium_buckets(row).get(field_name, 0)
+            )
         )
 
     return ""
@@ -2674,10 +2691,12 @@ EXPORT_TOTAL_SHEET_COLUMNS = [
     ("Undertime", "daily_early_out"),
 ]
 
+EXPORT_TOTAL_SHEET_MINUTES_FIELDS = {"daily_late_come", "daily_early_out"}
+
 EXPORT_TOTAL_SHEET_DURATION_FIELDS = {
     field_name
     for _column_name, field_name in EXPORT_TOTAL_SHEET_COLUMNS
-    if field_name not in {"employee_number", "employee_id", "daily_late_come"}
+    if field_name not in {"employee_number", "employee_id"} | EXPORT_TOTAL_SHEET_MINUTES_FIELDS
 }
 
 
@@ -2777,17 +2796,29 @@ def _sheet_formula_range_for_df_rows(sheet_name, col_idx, start_df_row, end_df_r
     return f"{_quote_excel_sheet_name(sheet_name)}!{cell_range}"
 
 
-def _duration_time_formula(cell_range):
-    text_duration = (
-        f"(VALUE(LEFT({cell_range},FIND(\":\",{cell_range})-1))*60+"
-        f"VALUE(MID({cell_range},FIND(\":\",{cell_range})+1,2)))/1440"
-    )
-    return f"SUMPRODUCT(IFERROR(N({cell_range}),0)+IFERROR({text_duration},0))"
-
-
-def _late_come_minutes_total_formula(cell_range):
+def _minutes_total_formula(cell_range):
     """Sum plain whole-minute text values (e.g. '13'), treating blanks as 0."""
     return f"SUMPRODUCT(IFERROR(VALUE({cell_range}),0))"
+
+
+def _hours_dot_total_formula(cell_range):
+    """Sum 'H' / 'H.MM' dot-style text cells and re-render the total the same way."""
+    dot_minutes = (
+        f"(VALUE(LEFT({cell_range},FIND(\".\",{cell_range})-1))*60+"
+        f"VALUE(MID({cell_range},FIND(\".\",{cell_range})+1,2)))"
+    )
+    plain_minutes = f"(VALUE({cell_range})*60)"
+    per_cell_minutes = (
+        f'IF(ISNUMBER(SEARCH(".",{cell_range})),'
+        f'IFERROR({dot_minutes},0),IFERROR({plain_minutes},0))'
+    )
+    total_minutes = f"SUMPRODUCT({per_cell_minutes})"
+    hrs = f"INT({total_minutes}/60)"
+    mins = f"MOD({total_minutes},60)"
+    return (
+        f'IF({total_minutes}=0,"",'
+        f'IF({mins}=0,TEXT({hrs},"0"),TEXT({hrs},"0")&"."&TEXT({mins},"00")))'
+    )
 
 
 def _time_value_formula(cell_ref):
@@ -2803,9 +2834,12 @@ def _paired_duration_formula(start_ref, end_ref):
 
 
 def _format_duration_formula(duration_formula):
+    total_minutes = f"ROUND(MAX(0,{duration_formula})*1440,0)"
+    hrs = f"INT({total_minutes}/60)"
+    mins = f"MOD({total_minutes},60)"
     return (
-        f'=IF(MAX(0,{duration_formula})=0,"",'
-        f'TEXT(MAX(0,{duration_formula}),"[hh]:mm"))'
+        f'=IF({total_minutes}=0,"",'
+        f'IF({mins}=0,TEXT({hrs},"0"),TEXT({hrs},"0")&"."&TEXT({mins},"00")))'
     )
 
 
@@ -2814,10 +2848,13 @@ def _excel_false():
 
 
 def _premium_duration_formula(duration_formula, condition_formula):
+    total_minutes = f"ROUND(MAX(0,{duration_formula})*1440,0)"
+    hrs = f"INT({total_minutes}/60)"
+    mins = f"MOD({total_minutes},60)"
     return (
         f'=IF({condition_formula},'
-        f'IF(MAX(0,{duration_formula})=0,"",'
-        f'TEXT(MAX(0,{duration_formula}),"[hh]:mm")),'
+        f'IF({total_minutes}=0,"",'
+        f'IF({mins}=0,TEXT({hrs},"0"),TEXT({hrs},"0")&"."&TEXT({mins},"00"))),'
         f'""'
         f")"
     )
@@ -3085,7 +3122,7 @@ def _write_export_row_formulas(
         def zero_hours_formula(formula):
             if not zero_hours_clocked_condition:
                 return formula
-            return f'=IF({zero_hours_clocked_condition},"00:00",{formula[1:]})'
+            return f'=IF({zero_hours_clocked_condition},"0",{formula[1:]})'
 
         shift_end_adjusted = None
         clock_in_adjusted = None
@@ -3122,7 +3159,7 @@ def _write_export_row_formulas(
             early_duration = f"MAX(0,{shift_end_adjusted}-{clock_out_adjusted})"
             formula = (
                 f'=IF(OR({clock_out}="",{shift_start}="",{shift_end}=""),"",'
-                f'IF({early_duration}=0,"",TEXT({early_duration},"[hh]:mm")))'
+                f'IF({early_duration}=0,"",TEXT(ROUND({early_duration}*1440,0),"0")))'
             )
             _write_formula_cell(worksheet, xlsx_row, early_col, formula, duration_format)
 
@@ -3172,17 +3209,22 @@ def _write_export_row_formulas(
                 f"MAX(0,{shift_end_adjusted}-"
                 f"{_time_value_formula(shift_start)}-TIME(1,0,0))"
             )
+            basic_minutes = f"ROUND({basic_duration}*1440,0)"
+            basic_hrs = f"INT({basic_minutes}/60)"
+            basic_mins = f"MOD({basic_minutes},60)"
             formula = (
                 f'=IF(OR({clock_in}="",{clock_out}="",'
                 f'{shift_start}="",{shift_end}=""),"",'
-                f'IF({basic_duration}=0,"",TEXT({basic_duration},"[hh]:mm")))'
+                f'IF({basic_minutes}=0,"",'
+                f'IF({basic_mins}=0,TEXT({basic_hrs},"0"),'
+                f'TEXT({basic_hrs},"0")&"."&TEXT({basic_mins},"00"))))'
             )
             formula = zero_hours_formula(formula)
             _write_formula_cell(
                 worksheet, xlsx_row, basic_col, formula, duration_format
             )
         elif basic_col is not None and zero_hours_clocked_condition:
-            formula = f'=IF({zero_hours_clocked_condition},"00:00","")'
+            formula = f'=IF({zero_hours_clocked_condition},"0","")'
             _write_formula_cell(
                 worksheet, xlsx_row, basic_col, formula, duration_format
             )
@@ -3190,16 +3232,21 @@ def _write_export_row_formulas(
         overtime_col = target("daily_overtime")
         if overtime_col is not None and clock_out and shift_start and shift_end:
             overtime_duration = f"MAX(0,{clock_out_adjusted}-{shift_end_adjusted})"
+            overtime_minutes = f"ROUND({overtime_duration}*1440,0)"
+            overtime_hrs = f"INT({overtime_minutes}/60)"
+            overtime_mins = f"MOD({overtime_minutes},60)"
             formula = (
                 f'=IF(OR({clock_out}="",{shift_start}="",{shift_end}=""),"",'
-                f'IF({overtime_duration}=0,"",TEXT({overtime_duration},"[hh]:mm")))'
+                f'IF({overtime_minutes}=0,"",'
+                f'IF({overtime_mins}=0,TEXT({overtime_hrs},"0"),'
+                f'TEXT({overtime_hrs},"0")&"."&TEXT({overtime_mins},"00"))))'
             )
             formula = zero_hours_formula(formula)
             _write_formula_cell(
                 worksheet, xlsx_row, overtime_col, formula, duration_format
             )
         elif overtime_col is not None and zero_hours_clocked_condition:
-            formula = f'=IF({zero_hours_clocked_condition},"00:00","")'
+            formula = f'=IF({zero_hours_clocked_condition},"0","")'
             _write_formula_cell(
                 worksheet, xlsx_row, overtime_col, formula, duration_format
             )
@@ -3229,14 +3276,7 @@ def _write_export_totals_sheet(
         {"align": "center", "valign": "vcenter", "bold": True}
     )
     centered = workbook.add_format({"align": "center", "valign": "vcenter"})
-    hour_total_format = workbook.add_format(
-        {
-            "align": "center",
-            "valign": "vcenter",
-            "num_format": '[hh]:mm "hr"',
-        }
-    )
-    late_total_format = workbook.add_format(
+    minutes_total_format = workbook.add_format(
         {
             "align": "center",
             "valign": "vcenter",
@@ -3265,11 +3305,9 @@ def _write_export_totals_sheet(
             EXPORT_TOTAL_SHEET_COLUMNS[2:], start=2
         ):
             source_col = source_col_indexes.get(field_name)
-            is_late_come = field_name == "daily_late_come"
-            if source_col is None or (
-                field_name not in EXPORT_TOTAL_SHEET_DURATION_FIELDS
-                and not is_late_come
-            ):
+            is_minutes_field = field_name in EXPORT_TOTAL_SHEET_MINUTES_FIELDS
+            is_hours_field = field_name in EXPORT_TOTAL_SHEET_DURATION_FIELDS
+            if source_col is None or not (is_minutes_field or is_hours_field):
                 worksheet.write_blank(output_row, output_col, None, centered)
                 continue
 
@@ -3279,20 +3317,20 @@ def _write_export_totals_sheet(
                 total_range.get("start_df_row"),
                 total_range.get("end_df_row"),
             )
-            if is_late_come:
+            if is_minutes_field:
                 formula = (
-                    f"={_late_come_minutes_total_formula(cell_range)}"
+                    f"={_minutes_total_formula(cell_range)}"
                     if cell_range
                     else "=0"
                 )
-                total_format = late_total_format
+                total_format = minutes_total_format
             else:
                 formula = (
-                    f"={_duration_time_formula(cell_range)}"
+                    f"={_hours_dot_total_formula(cell_range)}"
                     if cell_range
-                    else "=0"
+                    else '=""'
                 )
-                total_format = hour_total_format
+                total_format = centered
             worksheet.write_array_formula(
                 output_row,
                 output_col,
