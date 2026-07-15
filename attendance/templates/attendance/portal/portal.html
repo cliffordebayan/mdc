@@ -2963,8 +2963,10 @@
         let capturedAddress = null;
         let geocodingPromise = null;
         let locationAccuracy = null;
+        let locationCaptureInFlight = false;
         let pinInput = '';
         const PIN_LENGTH = 6;
+        const REVERSE_GEOCODE_TIMEOUT_MS = 7000;
         let geofenceMap = null;
         let portalHelpdeskModalState = {
             ticketTypes: [],
@@ -3153,6 +3155,7 @@
             startLiveClock();
             updatePinUi();
             focusSearchInput();
+            initGeolocationPermissionWatcher();
         });
 
         function focusSearchInput() {
@@ -3199,12 +3202,14 @@
 
         // Get device location
         function initializeLocationCapture() {
+            locationCaptureInFlight = true;
             if (navigator.geolocation) {
                 setPortalLocationText('{% trans "Getting location..." %}');
                 setPortalCoordinatesText(null, null);
                 $('#reload-location-btn').hide();
 
                 function onSuccess(position) {
+                    locationCaptureInFlight = false;
                     latitude = position.coords.latitude;
                     longitude = position.coords.longitude;
                     locationAccuracy = Math.round(position.coords.accuracy);
@@ -3233,19 +3238,18 @@
                 }
 
                 function onFinalError(error) {
+                    locationCaptureInFlight = false;
                     let errorMsg = '{% trans "Location unavailable" %}';
-                    let showReload = false;
 
                     switch (error.code) {
                         case error.PERMISSION_DENIED:
                             errorMsg = '{% trans "Location permission denied. Enable location for this site in Settings, then reload this page." %}';
-                            showReload = true;
                             break;
                         case error.POSITION_UNAVAILABLE:
-                            errorMsg = '{% trans "Location position unavailable" %}';
+                            errorMsg = '{% trans "Location position unavailable. Try again, or reload the page if this keeps happening." %}';
                             break;
                         case error.TIMEOUT:
-                            errorMsg = '{% trans "Location request timeout" %}';
+                            errorMsg = '{% trans "Location request timed out. Try again, or reload the page if this keeps happening." %}';
                             break;
                     }
 
@@ -3255,9 +3259,7 @@
                     setPortalCoordinatesText(null, null);
                     $('#location-coordinates').text('');
                     $('#retry-location-btn').show();
-                    if (showReload) {
-                        $('#reload-location-btn').show();
-                    }
+                    $('#reload-location-btn').show();
                     $('#refresh-location-fab').removeClass('fab-visible fab-loading');
                     $('#location-status').removeClass('success').addClass('warning');
                     disableClockButtons();
@@ -3267,13 +3269,21 @@
 
                 function onError(error) {
                     // Safari on iOS returns PERMISSION_DENIED for high-accuracy requests
-                    // even when the user has granted permission. Retry with low accuracy
-                    // (WiFi/Cell) as a fallback before giving up.
-                    if (error.code === error.PERMISSION_DENIED) {
-                        console.info('High-accuracy location denied, retrying with low accuracy (Safari fallback)...');
+                    // even when the user has granted permission. Android commonly hits
+                    // TIMEOUT/POSITION_UNAVAILABLE when the GPS radio is cold or the signal
+                    // is weak (e.g. indoors). In all three cases, fall back once to a
+                    // network/WiFi-based fix, which resolves in a couple seconds and
+                    // doesn't depend on a GPS lock. This retry's error callback is
+                    // onFinalError (not onError), so it's capped at 2 attempts total.
+                    if (
+                        error.code === error.PERMISSION_DENIED ||
+                        error.code === error.TIMEOUT ||
+                        error.code === error.POSITION_UNAVAILABLE
+                    ) {
+                        console.info('High-accuracy location failed (code ' + error.code + '), retrying with low-accuracy (network-based) location...');
                         navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
                             enableHighAccuracy: false,
-                            timeout: 15000,
+                            timeout: 10000,
                             maximumAge: 0
                         });
                         return;
@@ -3287,6 +3297,7 @@
                     maximumAge: 0
                 });
             } else {
+                locationCaptureInFlight = false;
                 latitude = null;
                 longitude = null;
                 setPortalLocationText('{% trans "Geolocation not supported by this browser." %}');
@@ -3294,6 +3305,36 @@
                 $('#location-coordinates').text('');
                 $('#location-status').removeClass('success').addClass('warning');
                 disableClockButtons();
+            }
+        }
+
+        // One-time watcher: proactively detect when geolocation permission becomes
+        // 'granted' (e.g. after the user backgrounds the browser to fix it in Android
+        // Settings) so we can auto-recover without a manual reload/retry. Feature
+        // detected: navigator.permissions isn't supported in all browsers, and even
+        // where it exists, some browsers reject the 'geolocation' descriptor.
+        function initGeolocationPermissionWatcher() {
+            if (!navigator.permissions || !navigator.permissions.query) {
+                return;
+            }
+            try {
+                navigator.permissions.query({ name: 'geolocation' }).then(function (status) {
+                    status.onchange = function () {
+                        console.info('Geolocation permission changed to:', status.state);
+                        if (
+                            status.state === 'granted' &&
+                            !locationCaptureInFlight &&
+                            (!latitude || !longitude) &&
+                            $('#step-clock').hasClass('active')
+                        ) {
+                            initializeLocationCapture();
+                        }
+                    };
+                }).catch(function (err) {
+                    console.info('Permissions API geolocation query unavailable:', err);
+                });
+            } catch (err) {
+                console.info('Permissions API not usable for geolocation:', err);
             }
         }
 
@@ -5307,6 +5348,7 @@
 
             // Retry location button
             $('#retry-location-btn').on('click', function () {
+                if (locationCaptureInFlight) { return; }
                 setPortalLocationText('{% trans "Getting location..." %}');
                 setPortalCoordinatesText(null, null);
                 $('#location-coordinates').text('');
@@ -5316,6 +5358,7 @@
 
             // Refresh Location FAB (mobile top-right)
             $('#refresh-location-fab').on('click', function () {
+                if (locationCaptureInFlight) { return; }
                 $(this).addClass('fab-loading');
                 $(this).find('ion-icon').attr('name', 'refresh-outline');
                 setPortalLocationText('{% trans "Getting location..." %}');
@@ -5780,12 +5823,21 @@
 
         // Reverse geocode lat/lng → address string using Nominatim
         function reverseGeocode(lat, lng) {
+            const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+            const timeoutId = controller
+                ? setTimeout(function () { controller.abort(); }, REVERSE_GEOCODE_TIMEOUT_MS)
+                : null;
+
             return fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
-                headers: { 'Accept-Language': 'en' }
+                headers: { 'Accept-Language': 'en' },
+                signal: controller ? controller.signal : undefined
             })
                 .then(r => r.json())
                 .then(data => data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`)
-                .catch(() => `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                .catch(() => `${lat.toFixed(6)}, ${lng.toFixed(6)}`)
+                .finally(function () {
+                    if (timeoutId) { clearTimeout(timeoutId); }
+                });
         }
 
         function loadCanvasImage(src) {
@@ -6690,6 +6742,14 @@
                 // When page becomes visible again, restart camera if we are on the clock step
                 if ($('#step-clock').hasClass('active')) {
                     startCamera();
+
+                    // If the user backgrounded the tab to fix something (e.g. toggled
+                    // the OS location permission in Android Settings) and location
+                    // had not already been captured, auto-retry instead of leaving
+                    // them stuck on a stale timeout/error with only a manual Retry.
+                    if (!locationCaptureInFlight && (!latitude || !longitude)) {
+                        initializeLocationCapture();
+                    }
                 }
             }
         });
