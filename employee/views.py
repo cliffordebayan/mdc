@@ -26,7 +26,6 @@ import pandas as pd
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login
 from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.models import User
 from django.core.cache import cache
@@ -5461,7 +5460,6 @@ def employee_portal_pin(request, token):
             portal.save()
             user = employee.employee_user_id
             if user is not None:
-                login(request, user)
                 if hasattr(user, "is_new_employee"):
                     user.is_new_employee = False
                     user.save(update_fields=["is_new_employee"])
