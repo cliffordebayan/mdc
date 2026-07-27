@@ -47,6 +47,13 @@ var norowdeleteMessages = {
     en: "No rows are selected for deleting attendances.",
     fr: "Aucune ligne n'est sélectionnée pour la suppression des présences.",
 };
+var norowUpdateMessages = {
+    ar: "لم يتم تحديد أي صفوف لتحديث الحضور.",
+    de: "Es sind keine Zeilen zum Aktualisieren von Anwesenheiten ausgewählt.",
+    es: "No se seleccionan filas para actualizar asistencias.",
+    en: "No rows are selected for updating attendances.",
+    fr: "Aucune ligne n'est sélectionnée pour la mise à jour des présences.",
+};
 var norowAddToBatchMessages = {
     ar: "لم يتم تحديد أي صفوف لإضافتها إلى الحضور الجماعي.",
     de: "Es wurden keine Zeilen zur Stapelteilnahme hinzugefügt.",
@@ -1105,6 +1112,23 @@ $("#exportActivity").click(function (e) {
                 });
             }
         });
+    });
+});
+
+$("#activityBulkUpdateId").click(function (e) {
+    var ids = JSON.parse($("#selectedActivity").attr("data-ids") || "[]");
+    getCurrentLanguageCode(function (languageCode) {
+        if (ids.length === 0) {
+            $("#bulkUpdateModal").removeClass("oh-modal--show");
+            Swal.fire({
+                text: norowUpdateMessages[languageCode],
+                icon: "warning",
+                confirmButtonText: "Close",
+            });
+        } else {
+            $("#id_bulk_activity_ids").val(JSON.stringify(ids));
+            $("#bulkUpdateModal").addClass("oh-modal--show");
+        }
     });
 });
 

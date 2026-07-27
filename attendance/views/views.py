@@ -40,7 +40,7 @@ from django.core.paginator import Paginator
 from django.core.validators import validate_ipv46_address
 from django.db import transaction
 from django.db.models import ProtectedError, Q
-from django.forms import ValidationError
+from django.forms import ModelChoiceField, ModelForm, Select, ValidationError
 from django.http import (
     FileResponse,
     HttpResponse,
@@ -70,8 +70,14 @@ from attendance.filters import (
     LateComeEarlyOutReGroup,
 )
 from attendance.forms import (
+    ATTENDANCE_ACTIVITY_BULK_FIELDS,
+    ATTENDANCE_ACTIVITY_BULK_SAFE_FIELDS,
+    ATTENDANCE_ACTIVITY_BULK_SHIFT_FIELD,
+    ATTENDANCE_ACTIVITY_BULK_TIME_FIELDS,
     ATTENDANCE_PREMIUM_EXPORT_FIELDS,
+    AttendanceActivityBulkUpdateFieldForm,
     AttendanceActivityExportForm,
+    AttendanceActivityForm,
     AttendanceActivityUpdateForm,
     AttendanceExportForm,
     AttendanceForm,
@@ -139,6 +145,7 @@ from base.methods import (
 from base.models import (
     AttendanceAllowedIP,
     Branch,
+    EmployeeShift,
     EmployeeShiftDay,
     EmployeeShiftSchedule,
     Holidays,
@@ -4382,6 +4389,7 @@ def attendance_activity_view(request):
             "activity_ids": activity_ids,
             "branches": Branch.objects.all(),
             "payroll_groups": PayrollGroup.objects.all(),
+            "update_fields_form": AttendanceActivityBulkUpdateFieldForm(),
         },
     )
 
@@ -4778,6 +4786,206 @@ def attendance_activity_bulk_delete(request):
         )
 
     return HttpResponse("<script>$('.filterButton')[0].click()</script>")
+
+
+def _parse_bulk_date(date_str):
+    """
+    Parses a "YYYY-MM-DD" date string from an HTML date input.
+    """
+    if not date_str:
+        return None
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+@login_required
+@permission_required("attendance.change_attendanceactivity")
+@require_http_methods(["POST"])
+def view_attendance_activity_bulk_update(request):
+    """
+    Renders a full-page form containing only the fields chosen in the Bulk
+    Update field-picker modal, scoped to the selected AttendanceActivity ids.
+    """
+    update_fields = [
+        field
+        for field in request.POST.getlist("update_fields")
+        if field in ATTENDANCE_ACTIVITY_BULK_FIELDS
+    ]
+    bulk_activity_ids = request.POST.get("bulk_activity_ids")
+    if not update_fields or not bulk_activity_ids:
+        messages.warning(
+            request,
+            _("There are no attendance activities selected for bulk update."),
+        )
+        return redirect(attendance_activity_view)
+
+    model_fields = [f for f in update_fields if f != ATTENDANCE_ACTIVITY_BULK_SHIFT_FIELD]
+    field_widgets = {
+        field: widget
+        for field, widget in AttendanceActivityForm.Meta.widgets.items()
+        if field in model_fields
+    }
+    if "location_verified" in model_fields:
+        field_widgets["location_verified"] = Select(
+            choices=[(True, _("Yes")), (False, _("No"))]
+        )
+
+    class AttendanceActivityBulkUpdateForm(ModelForm):
+        class Meta:
+            model = AttendanceActivity
+            fields = model_fields
+            widgets = field_widgets
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            for field in self.fields.values():
+                field.required = True
+
+    form = AttendanceActivityBulkUpdateForm()
+    if ATTENDANCE_ACTIVITY_BULK_SHIFT_FIELD in update_fields:
+        # "shift" edits Attendance.shift_id, not a field on AttendanceActivity,
+        # so it's added to the form directly instead of via the ModelForm Meta.
+        form.fields[ATTENDANCE_ACTIVITY_BULK_SHIFT_FIELD] = ModelChoiceField(
+            queryset=EmployeeShift.objects.all(),
+            required=True,
+            label=_("Shift"),
+        )
+
+    return render(
+        request,
+        "attendance/attendance_activity/bulk_update.html",
+        {
+            "form": form,
+            "update_fields": json.dumps(update_fields),
+            "bulk_activity_ids": bulk_activity_ids,
+        },
+    )
+
+
+@login_required
+@permission_required("attendance.change_attendanceactivity")
+@require_http_methods(["POST"])
+def save_attendance_activity_bulk_update(request):
+    """
+    Applies the bulk-edited field values to every selected AttendanceActivity.
+    """
+    update_fields_str = request.POST.get("update_fields", "")
+    update_fields = json.loads(update_fields_str) if update_fields_str else []
+    bulk_activity_ids_str = request.POST.get("bulk_activity_ids", "")
+    try:
+        activity_ids = (
+            json.loads(bulk_activity_ids_str) if bulk_activity_ids_str else []
+        )
+        activity_ids = [int(i) for i in activity_ids]
+    except (json.JSONDecodeError, ValueError, TypeError):
+        activity_ids = []
+
+    activities = AttendanceActivity.objects.filter(id__in=activity_ids)
+    count = activities.count()
+
+    if count == 0:
+        messages.warning(
+            request, _("No attendance activities were selected for bulk update.")
+        )
+        return redirect("/attendance/attendance-activity-view/")
+
+    safe_fields = [f for f in update_fields if f in ATTENDANCE_ACTIVITY_BULK_SAFE_FIELDS]
+    time_fields = [f for f in update_fields if f in ATTENDANCE_ACTIVITY_BULK_TIME_FIELDS]
+    update_shift = ATTENDANCE_ACTIVITY_BULK_SHIFT_FIELD in update_fields
+
+    with transaction.atomic():
+        for field in safe_fields:
+            value = request.POST.get(field)
+            if field == "location_verified":
+                value = value == "True"
+            activities.update(**{field: value})
+
+        touched_pairs = set()
+
+        if time_fields:
+            new_clock_in_date = (
+                _parse_bulk_date(request.POST.get("clock_in_date"))
+                if "clock_in_date" in time_fields
+                else None
+            )
+            new_clock_in = (
+                parse_time(request.POST.get("clock_in"))
+                if "clock_in" in time_fields
+                else None
+            )
+            new_clock_out_date = (
+                _parse_bulk_date(request.POST.get("clock_out_date"))
+                if "clock_out_date" in time_fields
+                else None
+            )
+            new_clock_out = (
+                parse_time(request.POST.get("clock_out"))
+                if "clock_out" in time_fields
+                else None
+            )
+            touch_in = "clock_in_date" in time_fields or "clock_in" in time_fields
+            touch_out = "clock_out_date" in time_fields or "clock_out" in time_fields
+
+            for activity in activities:
+                if new_clock_in_date is not None:
+                    activity.clock_in_date = new_clock_in_date
+                if new_clock_in is not None:
+                    activity.clock_in = new_clock_in
+                if new_clock_out_date is not None:
+                    activity.clock_out_date = new_clock_out_date
+                if new_clock_out is not None:
+                    activity.clock_out = new_clock_out
+
+                if touch_in and activity.clock_in_date and activity.clock_in:
+                    activity.in_datetime = datetime.combine(
+                        activity.clock_in_date, activity.clock_in
+                    )
+                if touch_out:
+                    if activity.clock_out_date and activity.clock_out:
+                        activity.out_datetime = datetime.combine(
+                            activity.clock_out_date, activity.clock_out
+                        )
+                    else:
+                        activity.out_datetime = None
+
+                activity.save()
+                touched_pairs.add((activity.employee_id_id, activity.attendance_date))
+        elif update_shift:
+            touched_pairs = set(
+                activities.values_list("employee_id_id", "attendance_date")
+            )
+
+        if update_shift:
+            # "shift" edits the related Attendance.shift_id, not a field on
+            # AttendanceActivity itself. Only existing Attendance rows are
+            # updated -- no Attendance is created for an activity that lacks one.
+            new_shift_id = request.POST.get(ATTENDANCE_ACTIVITY_BULK_SHIFT_FIELD) or None
+            for employee_id_id, attendance_date in touched_pairs:
+                Attendance.objects.filter(
+                    employee_id_id=employee_id_id,
+                    attendance_date=attendance_date,
+                ).update(shift_id=new_shift_id)
+
+        if touched_pairs:
+            shifts_to_recalc = set()
+            for employee_id_id, attendance_date in touched_pairs:
+                attendance = Attendance.objects.filter(
+                    employee_id_id=employee_id_id,
+                    attendance_date=attendance_date,
+                ).first()
+                if attendance and attendance.shift_id:
+                    shifts_to_recalc.add(attendance.shift_id)
+
+            for shift in shifts_to_recalc:
+                recalculate_attendance_for_shift(shift)
+
+    messages.success(
+        request,
+        _("{count} attendance activities updated successfully.").format(count=count),
+    )
+    return redirect("/attendance/attendance-activity-view/")
 
 
 def _import_open_activity(employee):

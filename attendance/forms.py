@@ -613,6 +613,53 @@ class AttendanceActivityUpdateForm(BaseModelForm):
         return render_to_string("attendance_form.html", context)
 
 
+# Fields that can be bulk-edited on AttendanceActivity via the Bulk Update
+# action. Excludes employee/date (no sensible bulk-set use case), derived
+# in_datetime/out_datetime, and selfie/GPS fields (per-row capture data).
+ATTENDANCE_ACTIVITY_BULK_SAFE_FIELDS = [
+    "shift_day",
+    "activity_type",
+    "source",
+    "location_verified",
+]
+ATTENDANCE_ACTIVITY_BULK_TIME_FIELDS = [
+    "clock_in_date",
+    "clock_in",
+    "clock_out_date",
+    "clock_out",
+]
+# "shift" is not a field on AttendanceActivity itself -- it edits the
+# shift_id on the related Attendance record for each employee+date touched.
+ATTENDANCE_ACTIVITY_BULK_SHIFT_FIELD = "shift"
+ATTENDANCE_ACTIVITY_BULK_FIELDS = (
+    ATTENDANCE_ACTIVITY_BULK_SAFE_FIELDS
+    + ATTENDANCE_ACTIVITY_BULK_TIME_FIELDS
+    + [ATTENDANCE_ACTIVITY_BULK_SHIFT_FIELD]
+)
+
+
+class AttendanceActivityBulkUpdateFieldForm(forms.Form):
+    """
+    Lets the user pick which AttendanceActivity fields to bulk-update.
+    """
+
+    update_fields = forms.MultipleChoiceField(
+        choices=[
+            (name, AttendanceActivity._meta.get_field(name).verbose_name)
+            for name in ATTENDANCE_ACTIVITY_BULK_SAFE_FIELDS
+            + ATTENDANCE_ACTIVITY_BULK_TIME_FIELDS
+        ]
+        + [(ATTENDANCE_ACTIVITY_BULK_SHIFT_FIELD, _("Shift"))],
+        label=_("Select Fields to Update"),
+    )
+    bulk_activity_ids = forms.CharField(widget=forms.HiddenInput())
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for visible in self.visible_fields():
+            visible.field.widget.attrs["class"] = "oh-select oh-select-2 oh-input w-100"
+
+
 class MonthSelectField(forms.ChoiceField):
     """
     Generate month choices

@@ -1,0 +1,32 @@
+{% extends "index.html" %} {% load i18n %} {% block content %}
+<div class="oh-wrapper d-flex justify-content-center mt-4 mb-4">
+  <form
+    action="{% url 'save-attendance-activity-bulk-update' %}"
+    class="oh-onboarding-card"
+    method="post"
+  >
+    {% csrf_token %}
+    <input type="hidden" name="update_fields" value="{{ update_fields }}" />
+    <input
+      type="hidden"
+      name="bulk_activity_ids"
+      value="{{ bulk_activity_ids }}"
+    />
+    <div class="oh-profile-section">
+      <div class="oh-payslip__header">
+        <div class="oh-payslip__header-left">
+          <div class="oh-payroll__component-title">
+            {% trans "Attendance Activities Bulk Update" %}
+          </div>
+        </div>
+      </div>
+      {{form.as_p}}
+      <div class="oh-dropdown__filter-footer" style="margin-bottom: 10px">
+        <button class="oh-btn oh-btn--secondary oh-btn--small w-100">
+          {% trans "Update" %}
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
