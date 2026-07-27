@@ -41,16 +41,30 @@
           </p>
           {% if employee %}
           <a href="{% url 'employee-portal-download-card' %}"
+             id="downloadCardBtn"
              class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100"
              role="button">
             <ion-icon class="me-2" name="download-outline"></ion-icon>
             {% trans "Download ID Card" %}
           </a>
-          {% endif %}
+          <p id="downloadCardHint" class="text-center mt-2 mb-0">
+            {% trans "Please download your ID card to continue." %}
+          </p>
+          <a href="javascript:void(0)"
+             data-href="/"
+             id="goHomeBtn"
+             class="oh-btn oh-onboarding-card__button mt-3 oh-btn--light oh-btn--shadow w-100 oh-btn--disabled"
+             aria-disabled="true"
+             role="button">
+            {% trans "Go to Home" %}
+            <ion-icon class="ms-2" name="arrow-forward-outline"></ion-icon>
+          </a>
+          {% else %}
           <a href="/" class="oh-btn oh-onboarding-card__button mt-3 oh-btn--light oh-btn--shadow w-100" role="button">
             {% trans "Go to Home" %}
             <ion-icon class="ms-2" name="arrow-forward-outline"></ion-icon>
           </a>
+          {% endif %}
         </div>
       </div>
     </main>
@@ -59,5 +73,20 @@
   <script src="{% static 'build/js/web.frontend.min.js' %}"></script>
   <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
   <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
+  <script>
+    (function () {
+      var downloadBtn = document.getElementById("downloadCardBtn");
+      var goHomeBtn = document.getElementById("goHomeBtn");
+      var hint = document.getElementById("downloadCardHint");
+      if (!downloadBtn || !goHomeBtn) return;
+
+      downloadBtn.addEventListener("click", function () {
+        goHomeBtn.classList.remove("oh-btn--disabled");
+        goHomeBtn.removeAttribute("aria-disabled");
+        goHomeBtn.setAttribute("href", goHomeBtn.getAttribute("data-href"));
+        if (hint) hint.style.display = "none";
+      });
+    })();
+  </script>
 </body>
 </html>

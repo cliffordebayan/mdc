@@ -1,11 +1,15 @@
 """
 Module: payroll.holiday_pay_calc
 
-This module calculates Philippine holiday pay premiums and night
-differential pay for a given employee and payroll period.
+This module calculates Philippine holiday pay premiums, ordinary rest-day
+pay, and night differential pay for a given employee and payroll period.
 
 Unlike SSS/PhilHealth/Pag-IBIG/BIR, these are earnings (added to gross pay),
 not deductions.
+
+All rates are configurable via the singleton payroll.HolidayPaySettings
+(edited under Settings > Payroll > Holiday & Rest Day Pay), rather than
+hardcoded, since the applicable percentages are set by DOLE and can change.
 
 Important: the basic pay computation in payroll.methods.methods
 (monthly_computation/daily_computation) excludes holiday dates from the
@@ -15,19 +19,27 @@ means, under this codebase's current basic-pay logic, a holiday currently
 contributes 0 to basic_pay whether or not the employee worked it. This
 module therefore adds the *full* applicable percentage for each holiday
 (not just the "extra" premium on top of an assumed-already-paid base day):
-  - Regular holiday, worked: 200% of the daily rate.
+  - Regular holiday, worked: 200% of the daily rate (260% if it also falls
+    on the employee's scheduled rest day).
   - Regular holiday, unworked but eligible (present the prior scheduled
     workday, or on approved leave covering the holiday): 100% of the daily
     rate (the "no work, still pay" rule).
-  - Special (non-working) holiday, worked: 130% of the daily rate.
+  - Special (non-working) holiday, worked: 130% of the daily rate (150% if
+    it also falls on the employee's scheduled rest day).
   - Special holiday, unworked: 0 (no work, no pay for special holidays).
 
-Night differential (+10% for hours worked between 10:00 PM and 6:00 AM) is
-computed directly from AttendanceActivity clock in/out datetimes, since
-EmployeeShift.is_night_shift is only a whole-shift flag and too coarse for
-per-hour computation. The hourly rate is derived from the daily rate
-assuming a standard 8-hour workday -- verify this assumption against the
-employee's actual contracted hours before trusting it in production.
+Ordinary (non-holiday) rest days are NOT excluded from the paid
+working-days count, so that day's regular pay is already included in
+basic_pay. Working a scheduled rest day therefore adds only the
+*premium* portion (default 30%) on top, not a full 130%.
+
+Night differential (+10% by default for hours worked between 10:00 PM and
+6:00 AM) is computed directly from AttendanceActivity clock in/out
+datetimes, since EmployeeShift.is_night_shift is only a whole-shift flag
+and too coarse for per-hour computation. The hourly rate is derived from
+the daily rate assuming a standard 8-hour workday -- verify this
+assumption against the employee's actual contracted hours before trusting
+it in production.
 """
 
 import datetime
@@ -35,22 +47,42 @@ import datetime
 from django.apps import apps
 
 from base.methods import is_holiday
+from base.models import EmployeeShiftSchedule
 from horilla.methods import get_horilla_model_class
 from payroll.methods.methods import get_daily_salary
 from payroll.models.models import Contract
+from payroll.models.tax_models import HolidayPaySettings
 
-HOLIDAY_WORKED_RATE = {
-    "regular": 2.0,
-    "special": 1.3,
-}
-HOLIDAY_UNWORKED_RATE = {
-    "regular": 1.0,
-    "special": 0.0,
-}
-NIGHT_DIFFERENTIAL_RATE = 0.10
 NIGHT_WINDOW_START = datetime.time(22, 0)
 NIGHT_WINDOW_END = datetime.time(6, 0)
 STANDARD_HOURS_PER_DAY = 8
+
+
+def _get_holiday_pay_settings():
+    """
+    Retrieve the singleton holiday pay settings, falling back to an
+    unsaved instance (which carries the model's field defaults) if none
+    has been configured yet.
+    """
+    return HolidayPaySettings.objects.first() or HolidayPaySettings()
+
+
+def _is_employee_rest_day(employee, check_date):
+    """
+    Check whether check_date falls on the employee's scheduled rest day,
+    based on their shift's per-day-of-week schedule
+    (base.models.EmployeeShiftSchedule.is_rest_day).
+    """
+    work_info = getattr(employee, "employee_work_info", None)
+    shift = getattr(work_info, "shift_id", None)
+    if not shift:
+        return False
+
+    day_name = check_date.strftime("%A").lower()
+    schedule = EmployeeShiftSchedule.objects.filter(
+        shift_id=shift, day__day=day_name
+    ).first()
+    return bool(schedule and schedule.is_rest_day)
 
 
 def _is_eligible_for_unworked_holiday_pay(employee, holiday_date):
@@ -91,8 +123,8 @@ def _is_eligible_for_unworked_holiday_pay(employee, holiday_date):
 
 def calculate_holiday_pay(**kwargs):
     """
-    Calculate the holiday pay premium earned by the employee within the
-    given period.
+    Calculate the holiday pay premium and ordinary rest-day pay premium
+    earned by the employee within the given period.
 
     Args:
         employee (Employee): The employee for whom to calculate holiday pay.
@@ -101,7 +133,10 @@ def calculate_holiday_pay(**kwargs):
 
     Returns:
         dict: {"holiday_pay": float, "breakdown": [ {date, holiday_name,
-        holiday_type, worked, rate, amount}, ... ]}
+        holiday_type, category, worked, rate, amount}, ... ]}. holiday_type
+        is None for a plain rest-day (non-holiday) entry; category
+        distinguishes each DOLE pay scenario (e.g. "regular_holiday_worked",
+        "regular_holiday_rest_day_worked", "rest_day_worked").
     """
     employee = kwargs["employee"]
     start_date = kwargs["start_date"]
@@ -117,38 +152,70 @@ def calculate_holiday_pay(**kwargs):
         return {"holiday_pay": 0, "breakdown": []}
 
     Attendance = get_horilla_model_class(app_label="attendance", model="attendance")
+    settings_instance = _get_holiday_pay_settings()
 
     breakdown = []
     total = 0.0
     current_date = start_date
     while current_date <= end_date:
         holiday = is_holiday(current_date)
-        if holiday and holiday.holiday_type in HOLIDAY_WORKED_RATE:
-            daily_rate = get_daily_salary(wage=contract.wage, wage_date=current_date)[
-                "day_wage"
-            ]
-            worked = Attendance.objects.filter(
-                employee_id=employee,
-                attendance_date=current_date,
-                attendance_validated=True,
-            ).exists()
-            if worked:
-                rate = HOLIDAY_WORKED_RATE[holiday.holiday_type]
-            elif holiday.holiday_type == "regular" and _is_eligible_for_unworked_holiday_pay(
-                employee, current_date
-            ):
-                rate = HOLIDAY_UNWORKED_RATE[holiday.holiday_type]
-            else:
-                rate = HOLIDAY_UNWORKED_RATE.get(holiday.holiday_type, 0.0)
+        is_rest_day = _is_employee_rest_day(employee, current_date)
 
-            amount = round(daily_rate * rate, 2)
+        if not holiday and not is_rest_day:
+            current_date += datetime.timedelta(days=1)
+            continue
+        if holiday and holiday.holiday_type not in ("regular", "special"):
+            current_date += datetime.timedelta(days=1)
+            continue
+
+        worked = Attendance.objects.filter(
+            employee_id=employee,
+            attendance_date=current_date,
+            attendance_validated=True,
+        ).exists()
+
+        rate = None
+        category = None
+        holiday_type = holiday.holiday_type if holiday else None
+        holiday_name = holiday.name if holiday else None
+
+        if holiday and holiday.holiday_type == "regular":
+            if worked and is_rest_day:
+                rate = settings_instance.regular_holiday_rest_day_worked_rate
+                category = "regular_holiday_rest_day_worked"
+            elif worked:
+                rate = settings_instance.regular_holiday_worked_rate
+                category = "regular_holiday_worked"
+            elif _is_eligible_for_unworked_holiday_pay(employee, current_date):
+                rate = settings_instance.regular_holiday_unworked_rate
+                category = "regular_holiday_unworked"
+        elif holiday and holiday.holiday_type == "special":
+            if worked and is_rest_day:
+                rate = settings_instance.special_holiday_rest_day_worked_rate
+                category = "special_holiday_rest_day_worked"
+            elif worked:
+                rate = settings_instance.special_holiday_worked_rate
+                category = "special_holiday_worked"
+            else:
+                rate = settings_instance.special_holiday_unworked_rate
+                category = "special_holiday_unworked"
+        elif not holiday and is_rest_day and worked:
+            rate = settings_instance.rest_day_worked_premium_rate
+            category = "rest_day_worked"
+
+        if rate:
+            daily_rate = get_daily_salary(
+                wage=contract.wage, wage_date=current_date
+            )["day_wage"]
+            amount = round(daily_rate * rate / 100, 2)
             if amount:
                 total += amount
                 breakdown.append(
                     {
                         "date": current_date.strftime("%Y-%m-%d"),
-                        "holiday_name": holiday.name,
-                        "holiday_type": holiday.holiday_type,
+                        "holiday_name": holiday_name,
+                        "holiday_type": holiday_type,
+                        "category": category,
                         "worked": worked,
                         "rate": rate,
                         "amount": amount,
@@ -223,8 +290,9 @@ def calculate_night_differential(**kwargs):
     night_hours = total_night_seconds / 3600
     daily_rate = get_daily_salary(wage=contract.wage, wage_date=start_date)["day_wage"]
     hourly_rate = daily_rate / STANDARD_HOURS_PER_DAY if daily_rate else 0
+    settings_instance = _get_holiday_pay_settings()
     night_differential = round(
-        night_hours * hourly_rate * NIGHT_DIFFERENTIAL_RATE, 2
+        night_hours * hourly_rate * settings_instance.night_differential_rate / 100, 2
     )
 
     return {

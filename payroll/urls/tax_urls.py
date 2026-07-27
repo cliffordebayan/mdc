@@ -46,6 +46,11 @@ urlpatterns = [
         name="perfect-attendance-bonus-settings-view",
     ),
     path(
+        "holiday-pay-settings-view/",
+        tax_views.view_holiday_pay_settings,
+        name="holiday-pay-settings-view",
+    ),
+    path(
         "bir-withholding-tax-view/",
         tax_views.view_bir_withholding_tax,
         name="bir-withholding-tax-view",

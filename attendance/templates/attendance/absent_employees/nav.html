@@ -1,0 +1,41 @@
+{% load i18n %}
+<section class="oh-wrapper oh-main__topbar" x-data="{searchShow: false}">
+    <div class="oh-main__titlebar oh-main__titlebar--left">
+        <h1 class="oh-main__titlebar-title fw-bold">
+            <a href="{% url 'attendance-absent-employees-view' %}" class='text-dark'>
+                {% trans "Absent Employees" %}
+            </a>
+        </h1>
+        <a class="oh-main__titlebar-search-toggle" role="button" aria-label="Toggle Search"
+            @click="searchShow = !searchShow">
+            <ion-icon name="search-outline" class="oh-main__titlebar-serach-icon"></ion-icon>
+        </a>
+    </div>
+    <form hx-get="{% url 'attendance-absent-employees-search' %}" id="absentFilterForm" hx-swap="innerHTML"
+        hx-target="#absent-table" class="d-flex" onsubmit="event.preventDefault()">
+        <div class="oh-main__titlebar oh-main__titlebar--right">
+            <div class="oh-input-group me-2">
+                <label class="oh-label" for="absent-date-from">{% trans "From" %}</label>
+                <input type="date" class="oh-input" id="absent-date-from" name="date_from"
+                    value="{{ date_from|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"
+                    hx-get="{% url 'attendance-absent-employees-search' %}" hx-target="#absent-table"
+                    hx-trigger="change" hx-include="#absentFilterForm" />
+            </div>
+            <div class="oh-input-group me-2">
+                <label class="oh-label" for="absent-date-to">{% trans "Till" %}</label>
+                <input type="date" class="oh-input" id="absent-date-to" name="date_to"
+                    value="{{ date_to|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"
+                    hx-get="{% url 'attendance-absent-employees-search' %}" hx-target="#absent-table"
+                    hx-trigger="change" hx-include="#absentFilterForm" />
+            </div>
+            <div class="oh-input-group oh-input__search-group"
+                :class="searchShow ? 'oh-input__search-group--show' : ''">
+                <ion-icon name="search-outline" class="oh-input-group__icon oh-input-group__icon--left"></ion-icon>
+                <input type="text" class="oh-input oh-input__icon" aria-label="Search Input" id="absent-search"
+                    name='search' placeholder="{% trans 'Search' %}"
+                    hx-get="{% url 'attendance-absent-employees-search' %}" hx-target="#absent-table"
+                    hx-trigger="keyup changed delay:400ms" hx-include="#absentFilterForm" />
+            </div>
+        </div>
+    </form>
+</section>

@@ -9,12 +9,14 @@ import contextlib
 import datetime as dt
 import json
 from datetime import date, datetime, timedelta
+from uuid import uuid4
 
 from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 from attendance.methods.utils import (
@@ -39,6 +41,40 @@ from horilla_audit.models import HorillaAuditInfo, HorillaAuditLog
 
 # to skip the migration issue with the old migrations
 _validate_time_in_minutes = validate_time_in_minutes
+
+
+def attendance_selfie_upload_path(instance, filename):
+    """
+    Generates clock in/out selfie filenames in the format:
+    attendance/selfies/{employee_no}_{date}_{random}.ext
+    Using employee number and date (instead of the original upload name)
+    keeps selfies easy to identify by employee/day when browsing backups.
+    """
+    ext = filename.split(".")[-1]
+
+    employee = getattr(instance, "employee_id", None)
+    employee_no = getattr(employee, "employee_no", None) or (
+        f"emp{employee.pk}" if employee and employee.pk else "unknown"
+    )
+    employee_no = slugify(employee_no) or "unknown"
+
+    field_name = next(
+        (
+            k
+            for k, v in instance.__dict__.items()
+            if hasattr(v, "name") and v.name == filename
+        ),
+        None,
+    )
+    if field_name == "clock_out_selfie":
+        selfie_date = instance.clock_out_date or instance.clock_in_date or date.today()
+    else:
+        selfie_date = instance.clock_in_date or date.today()
+
+    date_str = selfie_date.strftime("%Y%m%d")
+    random_number = uuid4().hex[:6]
+
+    return f"attendance/selfies/{employee_no}_{date_str}_{random_number}.{ext}"
 
 
 # Create your models here.
@@ -85,13 +121,13 @@ class AttendanceActivity(HorillaModel):
     )
     # Self-service clock in/out fields
     clock_in_selfie = models.ImageField(
-        upload_to=upload_path,
+        upload_to=attendance_selfie_upload_path,
         null=True,
         blank=True,
         verbose_name=_("Clock In Selfie"),
     )
     clock_out_selfie = models.ImageField(
-        upload_to=upload_path,
+        upload_to=attendance_selfie_upload_path,
         null=True,
         blank=True,
         verbose_name=_("Clock Out Selfie"),

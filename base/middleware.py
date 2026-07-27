@@ -205,7 +205,9 @@ class ForcePasswordChangeMiddleware:
 
     def __call__(self, request):
         excluded_paths = ["/change-password", "/login", "/logout"]
-        if request.path.rstrip("/") in excluded_paths:
+        if request.path.rstrip("/") in excluded_paths or request.path.startswith(
+            "/employee/employee-portal/"
+        ):
             return self.get_response(request)
 
         if hasattr(request, "user") and request.user.is_authenticated:
@@ -232,7 +234,9 @@ class TwoFactorAuthMiddleware:
             "/send-otp",
         ]
 
-        if request.path.rstrip("/") in excluded_paths:
+        if request.path.rstrip("/") in excluded_paths or request.path.startswith(
+            "/employee/employee-portal/"
+        ):
             return self.get_response(request)
 
         if TWO_FACTORS_AUTHENTICATION:

@@ -573,6 +573,14 @@
 															>{% trans "Payslip Auto Generation" %}</a
 														>
 													{% endif %}
+													{% if perms.payroll.view_holidaypaysettings %}
+														<a
+															id="holidayPaySettings"
+															href="{% url 'holiday-pay-settings-view' %}"
+															class="oh-inner-sidebar__link oh-dropdown__link"
+															>{% trans "Holiday & Rest Day Pay" %}</a
+														>
+													{% endif %}
 												</div>
 											</div>
 										</div>

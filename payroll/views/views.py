@@ -12,6 +12,7 @@ from urllib.parse import parse_qs
 
 import pandas as pd
 import pdfkit
+from django.apps import apps
 from django.contrib import messages
 from django.db.models import ProtectedError, Q
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -41,6 +42,7 @@ from horilla.decorators import (
 from horilla.group_by import group_by_queryset
 from horilla.horilla_settings import HORILLA_DATE_FORMATS
 from horilla.http.response import HorillaRedirect
+from horilla.methods import get_horilla_model_class
 from notifications.signals import notify
 from payroll.context_processors import get_active_employees
 from payroll.filters import ContractFilter, ContractReGroup, PayslipFilter
@@ -619,6 +621,90 @@ def view_created_payslip(request, payslip_id, **kwargs):
         data["instance"] = payslip
         return render(request, "payroll/payslip/individual_payslip.html", data)
     return render(request, "404.html")
+
+
+@login_required
+def view_payslip_attendance_details(request, payslip_id):
+    """
+    This method is used to view the day-by-day attendance (clock in/out,
+    worked hours, late, undertime, overtime) for the employee and pay
+    period covered by a payslip.
+    """
+    payslip = Payslip.objects.filter(id=payslip_id).first()
+    if payslip is None or not (
+        request.user.has_perm("payroll.view_payslip")
+        or payslip.employee_id.employee_user_id == request.user
+    ):
+        return render(request, "404.html")
+
+    rows = []
+    totals = {
+        "worked_hours": "00:00",
+        "late": "00:00",
+        "undertime": "00:00",
+        "overtime": "00:00",
+    }
+
+    if apps.is_installed("attendance"):
+        from attendance.methods.utils import format_time, strtime_seconds
+
+        worked_seconds = late_seconds = undertime_seconds = overtime_seconds = 0
+        Attendance = get_horilla_model_class(app_label="attendance", model="attendance")
+        attendances = Attendance.objects.filter(
+            employee_id=payslip.employee_id,
+            attendance_date__range=(payslip.start_date, payslip.end_date),
+        ).order_by("attendance_date")
+
+        for attendance in attendances:
+            late_record = attendance.late_come_early_out.filter(
+                type="late_come"
+            ).first()
+            undertime_record = attendance.late_come_early_out.filter(
+                type="early_out"
+            ).first()
+            late_duration = (
+                late_record.get_late_early_duration() if late_record else None
+            )
+            undertime_duration = (
+                undertime_record.get_late_early_duration()
+                if undertime_record
+                else None
+            )
+
+            rows.append(
+                {
+                    "date": attendance.attendance_date,
+                    "clock_in": attendance.attendance_clock_in,
+                    "clock_out": attendance.attendance_clock_out,
+                    "worked_hours": attendance.attendance_worked_hour,
+                    "late": late_duration,
+                    "undertime": undertime_duration,
+                    "overtime": attendance.attendance_overtime,
+                }
+            )
+
+            worked_seconds += strtime_seconds(attendance.attendance_worked_hour)
+            late_seconds += strtime_seconds(late_duration or "00:00")
+            undertime_seconds += strtime_seconds(undertime_duration or "00:00")
+            overtime_seconds += strtime_seconds(attendance.attendance_overtime)
+
+        totals = {
+            "worked_hours": format_time(worked_seconds),
+            "late": format_time(late_seconds),
+            "undertime": format_time(undertime_seconds),
+            "overtime": format_time(overtime_seconds),
+        }
+
+    return render(
+        request,
+        "payroll/payslip/attendance_details_modal.html",
+        {
+            "employee": payslip.employee_id,
+            "payslip": payslip,
+            "rows": rows,
+            "totals": totals,
+        },
+    )
 
 
 @login_required

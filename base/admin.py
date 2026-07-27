@@ -32,6 +32,7 @@ from base.models import (
     PenaltyAccounts,
     RotatingShift,
     RotatingShiftAssign,
+    RotatingShiftPeriod,
     RotatingWorkType,
     RotatingWorkTypeAssign,
     ShiftRequest,
@@ -60,6 +61,7 @@ admin.site.register(RotatingWorkType)
 admin.site.register(RotatingWorkTypeAssign)
 admin.site.register(RotatingShift)
 admin.site.register(RotatingShiftAssign)
+admin.site.register(RotatingShiftPeriod)
 admin.site.register(ShiftRequest)
 admin.site.register(WorkTypeRequest)
 admin.site.register(Tags)

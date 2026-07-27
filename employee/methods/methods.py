@@ -288,6 +288,44 @@ def get_ordered_employee_nos():
     return result
 
 
+def get_next_employee_no():
+    """
+    Returns the suggested next employee number: the highest existing
+    employee number, ignoring any "-N" rehire suffix (e.g. "2024785-2"
+    for an employee who resigned and was rehired), plus one. The result
+    keeps the configured prefix and the same zero-padded digit width as
+    the matched employee number, and never carries a rehire suffix,
+    since it's meant for a brand new employee.
+    """
+    prefix = get_initial_prefix(None)["get_initial_prefix"] or ""
+
+    employee_nos = (
+        Employee.objects.entire()
+        .exclude(employee_no__isnull=True)
+        .exclude(employee_no="")
+        .values_list("employee_no", flat=True)
+    )
+
+    best_value = None
+    best_width = 0
+    for employee_no in employee_nos:
+        base = re.sub(r"-\d+$", "", employee_no)
+        if prefix and not base.lower().startswith(prefix.lower()):
+            continue
+        numeric_part = base[len(prefix):] if prefix else base
+        if not numeric_part.isdigit():
+            continue
+        value = int(numeric_part)
+        if best_value is None or value > best_value:
+            best_value = value
+            best_width = len(numeric_part)
+
+    if best_value is None:
+        return f"{prefix}0001"
+
+    return f"{prefix}{best_value + 1:0{best_width}d}"
+
+
 def check_relationship_with_employee_model(model):
     """
     Checks the relationship of a given model with the Employee model.

@@ -145,6 +145,30 @@
             font-size: 20px;
         }
 
+        /* Loading state: swap the leading icon for a spinner on tap so a
+           slow navigation doesn't feel like the tap was ignored. */
+        .lp-card.oh-loading {
+            pointer-events: none;
+            opacity: 0.85;
+        }
+
+        .lp-card__spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-right-color: #ffffff;
+            border-radius: 50%;
+            animation: lp-spin 0.6s linear infinite;
+        }
+
+        .lp-card.oh-loading .lp-card__icon-wrap ion-icon { display: none; }
+        .lp-card.oh-loading .lp-card__spinner { display: block; }
+
+        @keyframes lp-spin {
+            to { transform: rotate(360deg); }
+        }
+
         /* ── Footer ── */
         .lp-footer {
             font-size: 12px;
@@ -179,9 +203,10 @@
         <div class="lp-cards">
 
             <!-- Employee Portal -->
-            <a href="{% url 'public-portal' %}" class="lp-card lp-card--portal">
+            <a href="{% url 'public-portal' %}" class="lp-card lp-card--portal oh-tap-loading">
                 <div class="lp-card__icon-wrap">
                     <ion-icon name="finger-print-outline"></ion-icon>
+                    <span class="lp-card__spinner"></span>
                 </div>
                 <div class="lp-card__text">
                     <span class="lp-card__title">{% trans "Employee Portal" %}</span>
@@ -191,9 +216,10 @@
             </a>
 
             <!-- Sign In (HR / Admin) -->
-            <a href="{% url 'login' %}" class="lp-card lp-card--signin">
+            <a href="{% url 'login' %}" class="lp-card lp-card--signin oh-tap-loading">
                 <div class="lp-card__icon-wrap">
                     <ion-icon name="lock-closed-outline"></ion-icon>
+                    <span class="lp-card__spinner"></span>
                 </div>
                 <div class="lp-card__text">
                     <span class="lp-card__title">{% trans "Sign In" %}</span>
@@ -208,6 +234,15 @@
     </div>
 
     <script type="module" src="{% static 'images/ionicons/ui_icons/ionicons/ionicons.esm.js' %}"></script>
+    <script>
+        // Immediate tap feedback so a slow response doesn't feel like a
+        // dead button (mainly noticeable on mobile networks).
+        document.querySelectorAll('.oh-tap-loading').forEach(function (card) {
+            card.addEventListener('click', function () {
+                card.classList.add('oh-loading');
+            });
+        });
+    </script>
 </body>
 
 </html>

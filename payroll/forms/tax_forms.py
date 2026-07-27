@@ -15,6 +15,7 @@ from django.utils.translation import gettext_lazy as _
 from base.forms import ModelForm
 from payroll.models.tax_models import (
     BIRWithholdingTax,
+    HolidayPaySettings,
     PagibigSettings,
     PerfectAttendanceBonusSettings,
     PhilHealthSettings,
@@ -62,6 +63,17 @@ class PerfectAttendanceBonusSettingsForm(ModelForm):
         """Meta options for the form."""
 
         model = PerfectAttendanceBonusSettings
+        fields = "__all__"
+        exclude = ["is_active"]
+
+
+class HolidayPaySettingsForm(ModelForm):
+    """Form for editing the singleton Holiday & Rest Day Pay settings."""
+
+    class Meta:
+        """Meta options for the form."""
+
+        model = HolidayPaySettings
         fields = "__all__"
         exclude = ["is_active"]
 

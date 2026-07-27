@@ -1025,3 +1025,25 @@ form label {
     border: 0 !important;
     display: none !important;
 }
+
+/* Attendance Activity: keep titlebar buttons visible on mobile as icon-only */
+@media (max-width: 1000px) {
+    .attendance-activity-nav .oh-main__titlebar-button-container {
+        display: flex !important;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .attendance-activity-nav .oh-main__titlebar-button-container {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .attendance-activity-nav .oh-titlebar-btn-text {
+        display: none;
+    }
+
+    .attendance-activity-nav .oh-main__titlebar-button-container ion-icon.mr-1 {
+        margin-right: 0 !important;
+    }
+}

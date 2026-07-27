@@ -546,6 +546,19 @@ urlpatterns = [
         },
     ),
     path(
+        "add-remove-shift-period-fields",
+        views.add_remove_dynamic_fields,
+        name="add-remove-shift-period-fields",
+        kwargs={
+            "model": EmployeeShift,
+            "form_class": RotatingShiftForm,
+            "template": "base/rotating_shift/htmx/add_more_period_fields.html",
+            "empty_label": _("---Choose Shift---"),
+            "field_name_pre": "period",
+            "field_type": "period",
+        },
+    ),
+    path(
         "settings/rotating-shift-view/",
         views.rotating_shift_view,
         name="rotating-shift-view",

@@ -213,6 +213,16 @@ urlpatterns = [
         name="attendance-activity-search",
     ),
     path(
+        "attendance-absent-employees-view/",
+        views.absent_employees_view,
+        name="attendance-absent-employees-view",
+    ),
+    path(
+        "attendance-absent-employees-search",
+        attendance.views.search.absent_employees_search,
+        name="attendance-absent-employees-search",
+    ),
+    path(
         "attendance-activity-delete/<int:obj_id>/",
         views.attendance_activity_delete,
         name="attendance-activity-delete",

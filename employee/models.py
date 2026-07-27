@@ -601,7 +601,6 @@ class Employee(models.Model):
                 username=username,
                 email=username,
                 password=password,
-                is_new_employee=True,
             )
             if not user:
                 user = User.objects.create_user(

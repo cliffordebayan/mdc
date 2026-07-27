@@ -7,6 +7,7 @@ This module is used to register forms for base module
 import calendar
 import ipaddress
 import os
+import re
 import uuid
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -49,6 +50,7 @@ from base.models import (
     Company,
     CostCenter,
     CompanyLeaves,
+    DAY_DATE,
     Department,
     PayrollGroup,
     DriverViewed,
@@ -66,6 +68,7 @@ from base.models import (
     PenaltyAccounts,
     RotatingShift,
     RotatingShiftAssign,
+    RotatingShiftPeriod,
     RotatingWorkType,
     RotatingWorkTypeAssign,
     ShiftRequest,
@@ -109,6 +112,10 @@ BASED_ON = [
     ("after", _trans("After")),
     ("weekly", _trans("Weekend")),
     ("monthly", _trans("Monthly")),
+]
+ROTATION_TYPE = [
+    ("sequential", _trans("Sequential")),
+    ("date_range", _trans("Date Range")),
 ]
 
 
@@ -1425,6 +1432,13 @@ class RotatingShiftForm(ModelForm):
     RotatingShift model's form
     """
 
+    rotation_type = forms.ChoiceField(
+        choices=ROTATION_TYPE,
+        initial="sequential",
+        label=_trans("Rotation Type"),
+        widget=forms.Select(attrs={"class": "oh-select oh-select-2 mb-3"}),
+    )
+
     class Meta:
         """
         Meta class for additional options
@@ -1480,6 +1494,106 @@ class RotatingShiftForm(ModelForm):
 
         self.shift_counts = shift_counts
 
+        # ---- date-range periods ----
+        period_counts = 0
+
+        def create_period_field(
+            period_key,
+            required=False,
+            initial_shift=None,
+            initial_start=None,
+            initial_end=None,
+        ):
+            self.fields[f"{period_key}_shift"] = forms.ModelChoiceField(
+                queryset=EmployeeShift.objects.all(),
+                widget=forms.Select(
+                    attrs={
+                        "class": "oh-select oh-select-2 mb-3",
+                        "name": f"{period_key}_shift",
+                        "id": f"id_{period_key}_shift",
+                    }
+                ),
+                required=required,
+                empty_label=_("---Choose Shift---"),
+                initial=initial_shift,
+            )
+            self.fields[f"{period_key}_start_day"] = forms.ChoiceField(
+                choices=DAY_DATE,
+                widget=forms.Select(
+                    attrs={
+                        "class": "oh-select oh-select-2 mb-3",
+                        "name": f"{period_key}_start_day",
+                        "id": f"id_{period_key}_start_day",
+                    }
+                ),
+                required=required,
+                initial=initial_start,
+                label=_trans("Start Day"),
+            )
+            self.fields[f"{period_key}_end_day"] = forms.ChoiceField(
+                choices=DAY_DATE,
+                widget=forms.Select(
+                    attrs={
+                        "class": "oh-select oh-select-2 mb-3",
+                        "name": f"{period_key}_end_day",
+                        "id": f"id_{period_key}_end_day",
+                    }
+                ),
+                required=required,
+                initial=initial_end,
+                label=_trans("End Day"),
+            )
+
+        existing_periods = (
+            list(self.instance.periods.all()) if self.instance.pk else []
+        )
+        for period in existing_periods:
+            period_counts += 1
+            create_period_field(
+                f"period{period_counts}",
+                required=period_counts <= 2,
+                initial_shift=period.shift_id_id,
+                initial_start=period.start_day,
+                initial_end=period.end_day,
+            )
+
+        posted_period_numbers = set()
+        for key in self.data.keys():
+            match = re.match(r"^period(\d+)_(?:shift|start_day|end_day)$", key)
+            if match:
+                posted_period_numbers.add(int(match.group(1)))
+
+        for period_number in sorted(posted_period_numbers):
+            if period_number > period_counts:
+                period_counts = period_number
+                create_period_field(
+                    f"period{period_counts}", required=period_counts <= 2
+                )
+
+        while period_counts < 2:
+            period_counts += 1
+            create_period_field(f"period{period_counts}", required=period_counts <= 2)
+
+        self.period_counts = period_counts
+
+    def period_rows(self):
+        """
+        Exposes the period{N}_shift/start_day/end_day fields as grouped
+        rows for template rendering.
+        """
+        rows = []
+        for number in range(1, self.period_counts + 1):
+            rows.append(
+                {
+                    "number": number,
+                    "shift": self[f"period{number}_shift"],
+                    "start_day": self[f"period{number}_start_day"],
+                    "end_day": self[f"period{number}_end_day"],
+                    "required": number <= 2,
+                }
+            )
+        return rows
+
     def as_p(self, *args, **kwargs):
         context = {"form": self}
         return render_to_string(
@@ -1488,6 +1602,60 @@ class RotatingShiftForm(ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        rotation_type = self.data.get("rotation_type") or cleaned_data.get(
+            "rotation_type"
+        )
+
+        if rotation_type == "date_range":
+            for key in list(self.errors.keys()):
+                if key.startswith("shift"):
+                    del self.errors[key]
+
+            periods = []
+            for number in range(1, self.period_counts + 1):
+                shift = cleaned_data.get(f"period{number}_shift")
+                start_day = cleaned_data.get(f"period{number}_start_day")
+                end_day = cleaned_data.get(f"period{number}_end_day")
+                if not (shift and start_day and end_day):
+                    continue
+                periods.append(
+                    {"shift": shift, "start_day": start_day, "end_day": end_day}
+                )
+
+            if not periods:
+                raise ValidationError(_("Add at least one period"))
+
+            covered = {}
+            for index, period in enumerate(periods):
+                start = (
+                    31
+                    if period["start_day"] == "last"
+                    else int(period["start_day"])
+                )
+                end = 31 if period["end_day"] == "last" else int(period["end_day"])
+                days = (
+                    set(range(start, end + 1))
+                    if start <= end
+                    else set(range(start, 32)) | set(range(1, end + 1))
+                )
+                for day in days:
+                    if day in covered:
+                        raise ValidationError(
+                            _("Rotating shift periods must not overlap")
+                        )
+                    covered[day] = index
+            if len(covered) != 31:
+                raise ValidationError(
+                    _("Rotating shift periods must cover every day of the month")
+                )
+
+            cleaned_data["periods"] = periods
+            return cleaned_data
+
+        for key in list(self.errors.keys()):
+            if key.startswith("period"):
+                del self.errors[key]
+
         additional_shifts = []
         model_fields = list(self.instance.__dict__.keys())
 
@@ -1507,7 +1675,12 @@ class RotatingShiftForm(ModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        if self.cleaned_data.get("additional_data"):
+
+        if instance.rotation_type == "date_range":
+            instance.shift1 = None
+            instance.shift2 = None
+            instance.additional_data = None
+        elif self.cleaned_data.get("additional_data"):
             if instance.additional_data is None:
                 instance.additional_data = {}
             instance.additional_data["additional_shifts"] = self.cleaned_data[
@@ -1519,6 +1692,18 @@ class RotatingShiftForm(ModelForm):
         if commit:
             instance.save()
             self.save_m2m()
+            instance.periods.all().delete()
+            if instance.rotation_type == "date_range":
+                for sequence, period in enumerate(
+                    self.cleaned_data.get("periods", [])
+                ):
+                    RotatingShiftPeriod.objects.create(
+                        rotating_shift_id=instance,
+                        shift_id=period["shift"],
+                        start_day=period["start_day"],
+                        end_day=period["end_day"],
+                        sequence=sequence,
+                    )
         return instance
 
 
@@ -1633,6 +1818,21 @@ class RotatingShiftAssignForm(ModelForm):
         cleaned_data = super().clean()
         if "rotate_after_day" in self.errors:
             del self.errors["rotate_after_day"]
+
+        rotating_shift_id = self.data.get("rotating_shift_id")
+        rotating_shift = (
+            RotatingShift.objects.filter(id=rotating_shift_id).first()
+            if rotating_shift_id
+            else None
+        )
+        if rotating_shift and rotating_shift.rotation_type == "date_range":
+            for key in (
+                "based_on",
+                "rotate_after_day",
+                "rotate_every_weekend",
+                "rotate_every",
+            ):
+                self.errors.pop(key, None)
         return cleaned_data
 
     def save(
@@ -1641,6 +1841,27 @@ class RotatingShiftAssignForm(ModelForm):
     ):
         employee_ids = self.data.getlist("employee_id")
         rotating_shift = RotatingShift.objects.get(id=self.data["rotating_shift_id"])
+        start_date = self.cleaned_data["start_date"]
+
+        if rotating_shift.rotation_type == "date_range":
+            for employee_id in employee_ids:
+                employee = Employee.objects.filter(id=employee_id).first()
+                rotating_shift_assign = RotatingShiftAssign()
+                rotating_shift_assign.rotating_shift_id = rotating_shift
+                rotating_shift_assign.employee_id = employee
+                rotating_shift_assign.start_date = start_date
+                rotating_shift_assign.current_shift = (
+                    employee.employee_work_info.shift_id
+                )
+                next_change_date, next_period = rotating_shift.next_boundary(
+                    start_date
+                )
+                rotating_shift_assign.next_change_date = next_change_date
+                rotating_shift_assign.next_shift = (
+                    next_period.shift_id if next_period else None
+                )
+                rotating_shift_assign.save()
+            return
 
         day_name = self.cleaned_data["rotate_every_weekend"]
         day_names = [
@@ -1659,26 +1880,24 @@ class RotatingShiftAssignForm(ModelForm):
             rotating_shift_assign.rotating_shift_id = rotating_shift
             rotating_shift_assign.employee_id = employee
             rotating_shift_assign.based_on = self.cleaned_data["based_on"]
-            rotating_shift_assign.start_date = self.cleaned_data["start_date"]
-            rotating_shift_assign.next_change_date = self.cleaned_data["start_date"]
+            rotating_shift_assign.start_date = start_date
+            rotating_shift_assign.next_change_date = start_date
             rotating_shift_assign.rotate_after_day = self.data.get("rotate_after_day")
             rotating_shift_assign.rotate_every = self.cleaned_data["rotate_every"]
             rotating_shift_assign.rotate_every_weekend = self.cleaned_data[
                 "rotate_every_weekend"
             ]
-            rotating_shift_assign.next_change_date = self.cleaned_data["start_date"]
+            rotating_shift_assign.next_change_date = start_date
             rotating_shift_assign.current_shift = employee.employee_work_info.shift_id
             rotating_shift_assign.next_shift = rotating_shift.shift1
             rotating_shift_assign.additional_data["next_shift_index"] = 1
             based_on = self.cleaned_data["based_on"]
-            start_date = self.cleaned_data["start_date"]
             if based_on == "weekly":
                 next_date = get_next_week_date(target_day, start_date)
                 rotating_shift_assign.next_change_date = next_date
             elif based_on == "monthly":
                 # 0, 1, 2, ..., 31, or "last"
                 rotate_every = self.cleaned_data["rotate_every"]
-                start_date = self.cleaned_data["start_date"]
                 next_date = get_next_monthly_date(start_date, rotate_every)
                 rotating_shift_assign.next_change_date = next_date
             elif based_on == "after":
@@ -1768,6 +1987,20 @@ class RotatingShiftAssignUpdateForm(ModelForm):
         )
 
     def save(self, *args, **kwargs):
+        if self.instance.rotating_shift_id.rotation_type == "date_range":
+            next_change_date, next_period = (
+                self.instance.rotating_shift_id.next_boundary(
+                    self.instance.start_date
+                )
+            )
+            self.instance.next_change_date = next_change_date
+            self.instance.next_shift = next_period.shift_id if next_period else None
+            self.instance.based_on = None
+            self.instance.rotate_after_day = None
+            self.instance.rotate_every = None
+            self.instance.rotate_every_weekend = None
+            return super().save()
+
         day_name = self.cleaned_data["rotate_every_weekend"]
         day_names = [
             "monday",

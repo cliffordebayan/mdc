@@ -128,6 +128,7 @@ from base.methods import (
     sortby,
 )
 from base.models import (
+    DAY_DATE,
     WEEK_DAYS,
     WEEKS,
     AnnouncementExpire,
@@ -816,6 +817,7 @@ class EmployeePasswordResetView(PasswordResetView):
 setattr(PasswordResetConfirmView, "template_name", "reset_password.html")
 setattr(PasswordResetConfirmView, "form_class", ResetPasswordForm)
 setattr(PasswordResetConfirmView, "success_url", "/")
+setattr(PasswordResetConfirmView, "post_reset_login", True)
 
 
 @login_required
@@ -1517,8 +1519,8 @@ def add_remove_dynamic_fields(request, **kwargs):
             - empty_label (str, optional): The label to show for empty choices in
                 a `ModelChoiceField`.
             - field_name_pre (str): The prefix for the dynamically generated field names.
-            - field_type (str, optional): The type of field to add, either "character"
-                or "model_choice".
+            - field_type (str, optional): The type of field to add, one of "character",
+                "model_choice", or "period" (adds a shift/start_day/end_day trio).
 
     Returns:
         HttpResponse: Returns the HTML for the newly added field, rendered in the context of the
@@ -1538,6 +1540,54 @@ def add_remove_dynamic_fields(request, **kwargs):
             next_hx_target = f"{hx_target.rsplit('_', 1)[0]}_{field_counts}"
             form = form_class()
             field_name = f"{field_name_pre}{field_counts}"
+            if field_type == "period":
+                shift_field_name = f"{field_name}_shift"
+                start_field_name = f"{field_name}_start_day"
+                end_field_name = f"{field_name}_end_day"
+                form.fields[shift_field_name] = forms.ModelChoiceField(
+                    queryset=model.objects.all(),
+                    widget=forms.Select(
+                        attrs={
+                            "class": "oh-select oh-select-2 mb-3",
+                            "name": shift_field_name,
+                            "id": f"id_{shift_field_name}",
+                        }
+                    ),
+                    required=False,
+                    empty_label=empty_label,
+                )
+                form.fields[start_field_name] = forms.ChoiceField(
+                    choices=DAY_DATE,
+                    widget=forms.Select(
+                        attrs={
+                            "class": "oh-select oh-select-2 mb-3",
+                            "name": start_field_name,
+                            "id": f"id_{start_field_name}",
+                        }
+                    ),
+                    required=False,
+                )
+                form.fields[end_field_name] = forms.ChoiceField(
+                    choices=DAY_DATE,
+                    widget=forms.Select(
+                        attrs={
+                            "class": "oh-select oh-select-2 mb-3",
+                            "name": end_field_name,
+                            "id": f"id_{end_field_name}",
+                        }
+                    ),
+                    required=False,
+                )
+                context = {
+                    "field_counts": field_counts,
+                    "shift_field_html": form[shift_field_name].as_widget(),
+                    "start_field_html": form[start_field_name].as_widget(),
+                    "end_field_html": form[end_field_name].as_widget(),
+                    "current_hx_target": hx_target,
+                    "next_hx_target": next_hx_target,
+                }
+                field_html = render_to_string(template, context)
+                return HttpResponse(field_html)
             if field_type and field_type == "character":
                 form.fields[field_name] = forms.CharField(
                     widget=forms.TextInput(

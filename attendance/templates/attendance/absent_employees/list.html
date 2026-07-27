@@ -1,0 +1,109 @@
+{% load i18n %}
+{% load static %}
+
+{% if is_company_holiday %}
+    <div class="oh-alert-container">
+        <div class="oh-alert oh-alert--info">
+            {% blocktrans %}This date range falls entirely on a company holiday or off-day — attendance is not expected.{% endblocktrans %}
+        </div>
+    </div>
+{% elif data %}
+    <div class="oh-table_sticky--wrapper">
+        <div class="oh-sticky-dropdown--header">
+            <div class="oh-dropdown" x-data="{open: false}">
+                <button class="oh-sticky-dropdown_btn " @click="open = !open"><ion-icon name="ellipsis-vertical-sharp"
+                        role="img" class="md hydrated" aria-label="ellipsis vertical sharp"></ion-icon></button>
+                <div class="oh-dropdown__menu oh-sticky-table_dropdown" x-show="open" @click.outside="open = false">
+                    <ul class="oh-dropdown__items" id="AbsentEmployeeCells"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="absent-employees-table" data-table-name="absent_employees_tab">
+        <div class="oh-sticky-table">
+            <div class="oh-sticky-table__table oh-table--sortable">
+                <div class="oh-sticky-table__thead">
+                    <div class="oh-sticky-table__tr">
+                        <div class="oh-sticky-table__th">{% trans "Employee" %}</div>
+                        <div data-cell-index="0" data-cell-title="{% trans 'Employee No.' %}" class='oh-sticky-table__th'>{% trans "Employee No." %}</div>
+                        <div data-cell-index="1" data-cell-title="{% trans 'Department' %}" class='oh-sticky-table__th'>{% trans "Department" %}</div>
+                        <div data-cell-index="2" data-cell-title="{% trans 'Job Position' %}" class='oh-sticky-table__th'>{% trans "Job Position" %}</div>
+                        <div data-cell-index="3" data-cell-title="{% trans 'Shift' %}" class='oh-sticky-table__th'>{% trans "Shift" %}</div>
+                        <div data-cell-index="4" data-cell-title="{% trans 'Date' %}" class='oh-sticky-table__th'>{% trans "Date" %}</div>
+                    </div>
+                </div>
+                <div class="oh-sticky-table__tbody">
+                    {% for row in data %}
+                        <div class="oh-sticky-table__tr">
+                            <div class="oh-sticky-table__td">
+                                <div class="oh-profile oh-profile--md">
+                                    <div class="oh-profile__avatar mr-1">
+                                        <img src="{{ row.employee.get_avatar }}" class="oh-profile__image" alt="" />
+                                    </div>
+                                    <a href="{% url 'employee-view-individual' row.employee.id %}" class="oh-profile__name oh-text--dark">
+                                        {{ row.employee.get_full_name }}
+                                    </a>
+                                </div>
+                            </div>
+                            <div data-cell-index="0" class="oh-sticky-table__td">{{ row.employee.employee_no|default:"&mdash;" }}</div>
+                            <div data-cell-index="1" class="oh-sticky-table__td">{{ row.employee.employee_work_info.department_id|default:"&mdash;" }}</div>
+                            <div data-cell-index="2" class="oh-sticky-table__td">{{ row.employee.employee_work_info.job_position_id|default:"&mdash;" }}</div>
+                            <div data-cell-index="3" class="oh-sticky-table__td">{{ row.employee.employee_work_info.shift_id|default:"&mdash;" }}</div>
+                            <div data-cell-index="4" class="oh-sticky-table__td dateformat_changer">{{ row.date }}</div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="oh-pagination">
+            <span class="oh-pagination__page">
+                {% trans "Page" %} {{ data.number }} {% trans "of" %} {{ data.paginator.num_pages }}.
+            </span>
+            <nav class="oh-pagination__nav">
+                <div class="oh-pagination__input-container me-3">
+                    <span class="oh-pagination__label me-1">{% trans "Page" %}</span>
+                    <input type="number" name="page" class="oh-pagination__input" value="{{data.number}}"
+                        hx-get="{% url 'attendance-absent-employees-search' %}?{{pd}}" hx-target="#absent-table" min="1" />
+                    <span class="oh-pagination__label">{% trans "of" %} {{data.paginator.num_pages}}</span>
+                </div>
+                <ul class="oh-pagination__items">
+                    {% if data.has_previous %}
+                        <li class="oh-pagination__item oh-pagination__item--wide">
+                            <a hx-target='#absent-table'
+                                hx-get="{% url 'attendance-absent-employees-search' %}?{{pd}}&page=1"
+                                class="oh-pagination__link">{% trans "First" %}</a>
+                        </li>
+                        <li class="oh-pagination__item oh-pagination__item--wide">
+                            <a hx-target='#absent-table'
+                                hx-get="{% url 'attendance-absent-employees-search' %}?{{pd}}&page={{ data.previous_page_number }}"
+                                class="oh-pagination__link">{% trans "Previous" %}</a>
+                        </li>
+                    {% endif %}
+                    {% if data.has_next %}
+                        <li class="oh-pagination__item oh-pagination__item--wide">
+                            <a hx-target='#absent-table'
+                                hx-get="{% url 'attendance-absent-employees-search' %}?{{pd}}&page={{ data.next_page_number }}"
+                                class="oh-pagination__link">{% trans "Next" %}</a>
+                        </li>
+                        <li class="oh-pagination__item oh-pagination__item--wide">
+                            <a hx-target='#absent-table'
+                                hx-get="{% url 'attendance-absent-employees-search' %}?{{pd}}&page={{ data.paginator.num_pages }}"
+                                class="oh-pagination__link">{% trans "Last" %}</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </div>
+    <script>
+        toggleColumns('absent-employees-table', 'AbsentEmployeeCells');
+    </script>
+{% else %}
+    <div class="oh-404">
+        <img style="width: 150px; height: 150px" src="{% static 'images/ui/no-results.png' %}" class="oh-404__image mb-4" />
+        <h5 class="oh-404__subtitle">
+            {% trans "No absent employees for this date range." %}
+        </h5>
+    </div>
+{% endif %}

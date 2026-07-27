@@ -1,4 +1,5 @@
 import os
+import sys
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.core.management import call_command
@@ -242,7 +243,7 @@ def start_gdrive_backup_job():
 
         # Remove existing job if it exists
         try:
-            scheduler.remove_job("backup_job")
+            scheduler.remove_job("gdrive_backup_job")
         except:
             pass
         # Add new job based on Gdrive Backup configuration
@@ -285,3 +286,16 @@ def stop_gdrive_backup_job():
 #     """
 #     stop_gdrive_backup_job()
 #     start_gdrive_backup_job()
+
+
+if not any(
+    cmd in sys.argv
+    for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell"]
+):
+    """
+    Resume the Google Drive backup job on server startup if it was left active.
+    """
+    try:
+        start_gdrive_backup_job()
+    except Exception:
+        pass

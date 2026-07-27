@@ -30,6 +30,11 @@ SUBMENUS = [
         "menu": _("Attendance Activities"),
         "redirect": reverse("attendance-activity-view"),
     },
+    {
+        "menu": _("Absent Employees"),
+        "redirect": reverse("attendance-absent-employees-view"),
+        "accessibility": "attendance.sidebar.absent_employees_accessibility",
+    },
     # {
     #     "menu": _("Work Record"),
     #     "redirect": reverse("work-records"),
@@ -53,6 +58,15 @@ def attendances_accessibility(request, submenu, user_perms, *args, **kwargs):
     return request.user.has_perm("attendance.view_attendance") or is_reportingmanager(
         request.user
     )
+
+
+def absent_employees_accessibility(request, submenu, user_perms, *args, **kwargs):
+    """
+    Check if the user has permission to view attendance activities or is a reporting manager.
+    """
+    return request.user.has_perm(
+        "attendance.view_attendanceactivity"
+    ) or is_reportingmanager(request.user)
 
 
 def work_record_accessibility(request, submenu, user_perms, *args, **kwargs):

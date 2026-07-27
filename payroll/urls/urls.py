@@ -76,6 +76,11 @@ urlpatterns = [
         name="view-payslip-pdf",
     ),
     path(
+        "view-payslip-attendance/<int:payslip_id>/",
+        views.view_payslip_attendance_details,
+        name="view-payslip-attendance",
+    ),
+    path(
         "delete-payslip/<int:payslip_id>/", views.delete_payslip, name="delete-payslip"
     ),
     path(

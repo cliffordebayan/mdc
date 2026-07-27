@@ -17,6 +17,7 @@ from horilla.decorators import hx_request_required, login_required, permission_r
 from horilla.http.response import HorillaRedirect
 from payroll.forms.tax_forms import (
     BIRWithholdingTaxForm,
+    HolidayPaySettingsForm,
     PagibigSettingsForm,
     PerfectAttendanceBonusSettingsForm,
     PhilHealthSettingsForm,
@@ -24,6 +25,7 @@ from payroll.forms.tax_forms import (
 )
 from payroll.models.tax_models import (
     BIRWithholdingTax,
+    HolidayPaySettings,
     PagibigSettings,
     PerfectAttendanceBonusSettings,
     PhilHealthSettings,
@@ -179,6 +181,29 @@ def view_perfect_attendance_bonus_settings(request):
     return render(
         request,
         "payroll/perfect_attendance_bonus_settings/perfect_attendance_bonus_settings_view.html",
+        {"form": form},
+    )
+
+
+@login_required
+@permission_required("payroll.view_holidaypaysettings")
+def view_holiday_pay_settings(request):
+    """
+    Display and edit the singleton Holiday & Rest Day Pay settings.
+    """
+    instance = HolidayPaySettings.objects.first()
+    form = HolidayPaySettingsForm(instance=instance)
+    if request.method == "POST":
+        form = HolidayPaySettingsForm(request.POST, instance=instance)
+        if form.is_valid():
+            form.save()
+            messages.success(
+                request, _("Holiday & Rest Day Pay settings updated successfully.")
+            )
+            return HorillaRedirect(request)
+    return render(
+        request,
+        "payroll/holiday_pay_settings/holiday_pay_settings_view.html",
         {"form": form},
     )
 

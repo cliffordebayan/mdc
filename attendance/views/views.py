@@ -1552,6 +1552,126 @@ def build_daily_activity_rows(
     return rows
 
 
+def _parse_query_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _months_spanned(date_from, date_to):
+    months = []
+    current = date_from.replace(day=1)
+    while current <= date_to:
+        months.append((current.year, current.month))
+        if current.month == 12:
+            current = current.replace(year=current.year + 1, month=1)
+        else:
+            current = current.replace(month=current.month + 1)
+    return months
+
+
+def get_absent_employees(request, date_from, date_to):
+    """
+    Returns (absent_rows, all_dates_are_holiday) for employees absent within
+    date_from..date_to (inclusive). Each row is a SimpleNamespace with an
+    `employee` and a `date` — an employee can appear once per absent date.
+
+    An employee counts as absent on a given date when they have a shift
+    assigned, the date is not a company-wide off day or their own rest day,
+    they have no clock-in activity that date, and no approved leave
+    covering that date.
+    """
+    if date_to < date_from:
+        date_from, date_to = date_to, date_from
+
+    employees = Employee.objects.filter(is_active=True).select_related(
+        "employee_work_info__shift_id",
+        "employee_work_info__department_id",
+        "employee_work_info__job_position_id",
+    )
+    employees = filtersubordinatesemployeemodel(
+        request, employees, "attendance.view_attendanceactivity"
+    )
+    employees_by_id = {employee.id: employee for employee in employees}
+    self_employee = getattr(request.user, "employee_get", None)
+    if self_employee:
+        employees_by_id.setdefault(self_employee.id, self_employee)
+
+    candidates = [
+        employee
+        for employee in employees_by_id.values()
+        if getattr(employee, "employee_work_info", None)
+        and employee.employee_work_info.shift_id_id
+    ]
+    if not candidates:
+        return [], False
+
+    candidate_ids = [employee.id for employee in candidates]
+
+    present_dates_by_employee = defaultdict(set)
+    for employee_id, attendance_date in AttendanceActivity.objects.filter(
+        attendance_date__gte=date_from,
+        attendance_date__lte=date_to,
+        employee_id_id__in=candidate_ids,
+    ).values_list("employee_id_id", "attendance_date"):
+        present_dates_by_employee[employee_id].add(attendance_date)
+    for employee_id, attendance_date in Attendance.objects.filter(
+        attendance_date__gte=date_from,
+        attendance_date__lte=date_to,
+        employee_id_id__in=candidate_ids,
+    ).values_list("employee_id_id", "attendance_date"):
+        present_dates_by_employee[employee_id].add(attendance_date)
+
+    leave_dates_by_employee = defaultdict(set)
+    leave_requests = LeaveRequest.objects.filter(
+        employee_id_id__in=candidate_ids,
+        status="approved",
+        start_date__lte=date_to,
+    ).filter(Q(end_date__gte=date_from) | Q(end_date__isnull=True))
+    for leave_request in leave_requests:
+        leave_start = max(leave_request.start_date, date_from)
+        leave_end = min(leave_request.end_date or leave_request.start_date, date_to)
+        current = leave_start
+        while current <= leave_end:
+            leave_dates_by_employee[leave_request.employee_id_id].add(current)
+            current += timedelta(days=1)
+
+    shift_ids = {employee.employee_work_info.shift_id_id for employee in candidates}
+    schedule_days_by_shift_id = _shift_schedule_days_by_shift_id(shift_ids)
+
+    holiday_dates = set()
+    for year, month in _months_spanned(date_from, date_to):
+        holiday_dates.update(monthly_leave_days(month, year))
+
+    rows = []
+    all_dates_are_holiday = True
+    current_date = date_from
+    while current_date <= date_to:
+        if current_date in holiday_dates:
+            current_date += timedelta(days=1)
+            continue
+        all_dates_are_holiday = False
+        weekday_name = _normalize_shift_day_name(current_date.strftime("%A"))
+        for employee in candidates:
+            shift_id = employee.employee_work_info.shift_id_id
+            if current_date in present_dates_by_employee.get(employee.id, ()):
+                continue
+            if current_date in leave_dates_by_employee.get(employee.id, ()):
+                continue
+            if _shift_day_is_rest_day(
+                schedule_days_by_shift_id.get(shift_id), weekday_name
+            ):
+                continue
+            rows.append(SimpleNamespace(employee=employee, date=current_date))
+        current_date += timedelta(days=1)
+
+    rows.sort(key=lambda row: (row.date, row.employee.get_full_name()), reverse=True)
+    return rows, all_dates_are_holiday
+
+
 def _empty_daily_attendance_row(attendance):
     attendance_date = getattr(attendance, "attendance_date", None)
     employee = getattr(attendance, "employee_id", None)
@@ -4262,6 +4382,34 @@ def attendance_activity_view(request):
             "activity_ids": activity_ids,
             "branches": Branch.objects.all(),
             "payroll_groups": PayrollGroup.objects.all(),
+        },
+    )
+
+
+@login_required
+def absent_employees_view(request):
+    """
+    This method will render a template to view employees absent within a date range.
+    """
+    previous_data = request.GET.urlencode()
+    today = date.today()
+    date_from = _parse_query_date(request.GET.get("date_from")) or today
+    date_to = _parse_query_date(request.GET.get("date_to")) or today
+    date_from = min(date_from, today)
+    date_to = min(date_to, today)
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+    absent_rows, is_company_holiday = get_absent_employees(request, date_from, date_to)
+    return render(
+        request,
+        "attendance/absent_employees/absent_employees_view.html",
+        {
+            "data": paginator_qry(absent_rows, request.GET.get("page")),
+            "pd": previous_data,
+            "date_from": date_from,
+            "date_to": date_to,
+            "today": today,
+            "is_company_holiday": is_company_holiday,
         },
     )
 

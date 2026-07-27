@@ -137,6 +137,10 @@
                 <td class="oh-payslip__table-td" colspan="2">{% if holiday_night_pay.worked_special_holiday_pay %}{{holiday_night_pay.worked_special_holiday_pay|floatformat:2|currency_symbol_position}}{% else %}-{% endif %}</td>
             </tr>
             <tr class="oh-payslip__table-tr">
+                <td class="oh-payslip__table-td">{% trans "Rest Day Pay" %}</td>
+                <td class="oh-payslip__table-td" colspan="2">{% if holiday_night_pay.rest_day_pay %}{{holiday_night_pay.rest_day_pay|floatformat:2|currency_symbol_position}}{% else %}-{% endif %}</td>
+            </tr>
+            <tr class="oh-payslip__table-tr">
                 <td class="oh-payslip__table-td">{% trans "Adjustment - Basic" %}</td>
                 <td class="oh-payslip__table-td" colspan="2">{% if payslip_categories.adjustment_basic %}{{payslip_categories.adjustment_basic|floatformat:2|currency_symbol_position}}{% else %}-{% endif %}</td>
             </tr>

@@ -27,6 +27,9 @@
     </div>
   </form>
 </div>
+<script id="rotation-type-map" type="application/json">
+{ {% for rs in update_form.fields.rotating_shift_id.queryset %}{% if not forloop.first %},{% endif %}"{{ rs.pk }}": "{{ rs.rotation_type }}"{% endfor %} }
+</script>
 
 <script>
   $(document).ready(function () {

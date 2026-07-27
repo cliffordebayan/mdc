@@ -1,8 +1,10 @@
 {% load i18n %} {% load basefilters %} {{ form.non_field_errors }}
 {% for field in form.visible_fields %}
-{% if field.name|startswith:"shift" and not field.field.required %}
+{% if field.name|startswith:"period" %}
+{% elif field.name|startswith:"shift" and not field.field.required %}
 <div
   class="oh-input__group pt-3"
+  data-rotation-scope="sequential"
   style="display: flex"
   id="moreShiftContainer_{{ forloop.counter }}"
 >
@@ -17,6 +19,17 @@
     <ion-icon name="trash-outline"></ion-icon>
   </a>
 </div>
+{% elif field.name|startswith:"shift" %}
+<div class="oh-input__group" data-rotation-scope="sequential">
+  <label
+    class="oh-label {% if field.field.required %}required-star{% endif %}"
+    for="id_{{ field.name }}"
+    title="{{ field.help_text }}"
+  >
+    {% trans field.label %}
+  </label>
+  {{field}}
+</div>
 {% else %}
 <div class="oh-input__group">
   <label
@@ -30,7 +43,7 @@
 </div>
 
 {% endif %} {% endfor %}
-<div id="moreShiftContainer_{{form.shift_counts|add:2}}" class="pt-2" style="text-align: end">
+<div id="moreShiftContainer_{{form.shift_counts|add:2}}" class="pt-2" data-rotation-scope="sequential" style="text-align: end">
   <a
     hx-target="#moreShiftContainer_{{form.shift_counts|add:2}}"
     hx-swap="outerHTML"
@@ -39,5 +52,40 @@
     style="color: green"
   >
     {% trans "Add more shift.." %}
+  </a>
+</div>
+
+{% for row in form.period_rows %}
+<div
+  class="oh-input__group pt-3"
+  data-rotation-scope="date_range"
+  style="display: flex; gap: 8px"
+  id="morePeriodContainer_{{ row.number }}"
+>
+  {{ row.shift }}
+  {{ row.start_day }}
+  {{ row.end_day }}
+  {% if not row.required %}
+  <a
+    hx-get="{% url 'add-remove-shift-period-fields' %}"
+    class="oh-btn oh-btn--danger-outline oh-btn--light-bkg"
+    hx-target="#morePeriodContainer_{{ row.number }}"
+    hx-swap="outerHTML"
+    id="delete-link"
+  >
+    <ion-icon name="trash-outline"></ion-icon>
+  </a>
+  {% endif %}
+</div>
+{% endfor %}
+<div id="morePeriodContainer_{{form.period_counts|add:1}}" class="pt-2" data-rotation-scope="date_range" style="text-align: end">
+  <a
+    hx-target="#morePeriodContainer_{{form.period_counts|add:1}}"
+    hx-swap="outerHTML"
+    hx-post="{% url 'add-remove-shift-period-fields' %}"
+    role="button"
+    style="color: green"
+  >
+    {% trans "Add more period.." %}
   </a>
 </div>

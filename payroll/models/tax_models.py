@@ -321,6 +321,94 @@ class PerfectAttendanceBonusSettings(HorillaModel):
             )
 
 
+class HolidayPaySettings(HorillaModel):
+    """
+    HolidayPaySettings model
+
+    Stores the configurable Philippine DOLE holiday and rest-day pay
+    premium rates (as a percentage of the employee's daily rate), so they
+    can be adjusted without a code change if the labor advisory changes.
+
+    Regular and special holidays are excluded from the paid working-days
+    count used for basic pay (see base.methods.get_working_days), so their
+    rates below are the *full* percentage paid for that day. Ordinary rest
+    days are not excluded from that count -- the day's regular pay is
+    already included in basic pay -- so rest_day_worked_premium_rate is
+    only the *additional* premium on top of it.
+    """
+
+    regular_holiday_worked_rate = models.FloatField(
+        default=200.0,
+        verbose_name=_("Regular Holiday, Worked (%)"),
+        help_text=_(
+            "Percentage of the daily rate paid when a regular holiday is worked."
+        ),
+    )
+    regular_holiday_unworked_rate = models.FloatField(
+        default=100.0,
+        verbose_name=_("Regular Holiday, Unworked (%)"),
+        help_text=_(
+            "Percentage of the daily rate paid when a regular holiday is not "
+            "worked but the employee is eligible (\"no work, still pay\")."
+        ),
+    )
+    regular_holiday_rest_day_worked_rate = models.FloatField(
+        default=260.0,
+        verbose_name=_("Regular Holiday on Rest Day, Worked (%)"),
+        help_text=_(
+            "Percentage of the daily rate paid when a regular holiday that "
+            "also falls on the employee's scheduled rest day is worked."
+        ),
+    )
+    special_holiday_worked_rate = models.FloatField(
+        default=130.0,
+        verbose_name=_("Special Non-Working Holiday, Worked (%)"),
+    )
+    special_holiday_unworked_rate = models.FloatField(
+        default=0.0,
+        verbose_name=_("Special Non-Working Holiday, Unworked (%)"),
+        help_text=_(
+            "\"No work, no pay\" unless company policy states otherwise."
+        ),
+    )
+    special_holiday_rest_day_worked_rate = models.FloatField(
+        default=150.0,
+        verbose_name=_("Special Holiday on Rest Day, Worked (%)"),
+    )
+    rest_day_worked_premium_rate = models.FloatField(
+        default=30.0,
+        verbose_name=_("Ordinary Rest Day, Worked - Premium Addition (%)"),
+        help_text=_(
+            "Additional percentage of the daily rate paid when an employee "
+            "works on their scheduled rest day (non-holiday). This is added "
+            "on top of the day's regular pay, which is already included in "
+            "basic pay."
+        ),
+    )
+    night_differential_rate = models.FloatField(
+        default=10.0,
+        verbose_name=_("Night Differential (%)"),
+        help_text=_(
+            "Additional percentage of the hourly rate for hours worked "
+            "between 10:00 PM and 6:00 AM."
+        ),
+    )
+
+    objects = models.Manager()
+
+    def __str__(self):
+        return "Holiday & Rest Day Pay Settings"
+
+    def clean(self):
+        super().clean()
+
+        existing = HolidayPaySettings.objects.exclude(pk=self.pk)
+        if existing.exists():
+            raise ValidationError(
+                _("Holiday pay settings already exist. Only one is allowed.")
+            )
+
+
 class BIRWithholdingTax(HorillaModel):
     """
     BIRWithholdingTax model

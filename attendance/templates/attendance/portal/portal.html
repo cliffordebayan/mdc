@@ -1442,6 +1442,43 @@
             display: none;
         }
 
+        #camera-switch-btn {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            z-index: 3;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: 0;
+            background: rgba(255, 255, 255, 0.96);
+            color: #111827;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            -webkit-tap-highlight-color: transparent;
+            outline: none;
+            transition: opacity 0.15s ease, transform 0.12s ease;
+        }
+
+        #camera-switch-btn ion-icon {
+            font-size: 20px;
+        }
+
+        #camera-switch-btn:active {
+            transform: scale(0.93);
+            background: rgba(235, 235, 235, 0.98);
+        }
+
+        #camera-switch-btn:disabled {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
         .camera-controls-bar {
             position: absolute;
             bottom: 0;
@@ -2391,6 +2428,14 @@
             #refresh-location-fab.fab-loading ion-icon {
                 animation: spin 0.9s linear infinite;
             }
+
+            /* Stack below the refresh-location FAB so they don't overlap. */
+            #camera-switch-btn {
+                position: fixed;
+                top: calc(max(12px, env(safe-area-inset-top)) + 50px);
+                right: 12px;
+                z-index: 7;
+            }
         }
 
         /* Very small phones */
@@ -2727,6 +2772,11 @@
                             <img id="captured-photo" class="captured-photo-full" src="" style="display:none;" />
                             <canvas id="canvas"></canvas>
 
+                            <!-- Switch between front (selfie) and back camera -->
+                            <button type="button" id="camera-switch-btn" aria-label="{% trans 'Switch Camera' %}">
+                                <ion-icon name="camera-reverse-outline"></ion-icon>
+                            </button>
+
                             <!-- Location overlay on photo -->
                             <div class="location-overlay" id="location-overlay" style="display:none;">
                                 <div class="location-overlay-label">📍 {% trans "Location" %}</div>
@@ -2958,6 +3008,8 @@
         let selectedAttendanceAction = null;
         let videoStream = null;
         let cameraReady = false;
+        let cameraFacingMode = 'user';
+        let cameraSwitchInFlight = false;
         let latitude = null;
         let longitude = null;
         let capturedAddress = null;
@@ -3207,6 +3259,11 @@
                 setPortalLocationText('{% trans "Getting location..." %}');
                 setPortalCoordinatesText(null, null);
                 $('#reload-location-btn').hide();
+                // Location capture can fail or take a while, and a failure no longer
+                // blocks clocking in — show the manual retry options immediately instead
+                // of waiting for an error.
+                $('#retry-location-btn').show();
+                $('#refresh-location-fab').addClass('fab-visible');
 
                 function onSuccess(position) {
                     locationCaptureInFlight = false;
@@ -3243,13 +3300,13 @@
 
                     switch (error.code) {
                         case error.PERMISSION_DENIED:
-                            errorMsg = '{% trans "Location permission denied. Enable location for this site in Settings, then reload this page." %}';
+                            errorMsg = '{% trans "Location permission denied. You can still clock in without location, or enable location for this site in Settings and retry." %}';
                             break;
                         case error.POSITION_UNAVAILABLE:
-                            errorMsg = '{% trans "Location position unavailable. Try again, or reload the page if this keeps happening." %}';
+                            errorMsg = '{% trans "Location position unavailable. You can still clock in without location, or retry." %}';
                             break;
                         case error.TIMEOUT:
-                            errorMsg = '{% trans "Location request timed out. Try again, or reload the page if this keeps happening." %}';
+                            errorMsg = '{% trans "Location request timed out. You can still clock in without location, or retry." %}';
                             break;
                     }
 
@@ -3260,51 +3317,32 @@
                     $('#location-coordinates').text('');
                     $('#retry-location-btn').show();
                     $('#reload-location-btn').show();
-                    $('#refresh-location-fab').removeClass('fab-visible fab-loading');
+                    // Keep the FAB visible so the user can retry from it — only clear
+                    // the spinning "loading" state, don't hide the button itself.
+                    $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
+                    $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
                     $('#location-status').removeClass('success').addClass('warning');
-                    disableClockButtons();
+                    // A missing location no longer blocks clocking in — only the camera
+                    // being ready gates the clock buttons.
+                    updateFaceGatedButtons();
 
                     console.warn('Geolocation error:', error);
                 }
 
-                function onError(error) {
-                    // Safari on iOS returns PERMISSION_DENIED for high-accuracy requests
-                    // even when the user has granted permission. Android commonly hits
-                    // TIMEOUT/POSITION_UNAVAILABLE when the GPS radio is cold or the signal
-                    // is weak (e.g. indoors). In all three cases, fall back once to a
-                    // network/WiFi-based fix, which resolves in a couple seconds and
-                    // doesn't depend on a GPS lock. This retry's error callback is
-                    // onFinalError (not onError), so it's capped at 2 attempts total.
-                    if (
-                        error.code === error.PERMISSION_DENIED ||
-                        error.code === error.TIMEOUT ||
-                        error.code === error.POSITION_UNAVAILABLE
-                    ) {
-                        console.info('High-accuracy location failed (code ' + error.code + '), retrying with low-accuracy (network-based) location...');
-                        navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
-                            enableHighAccuracy: false,
-                            timeout: 10000,
-                            maximumAge: 0
-                        });
-                        return;
-                    }
-                    onFinalError(error);
-                }
-
-                navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+                navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
                     enableHighAccuracy: true,
-                    timeout: 15000,
+                    timeout: 10000,
                     maximumAge: 0
                 });
             } else {
                 locationCaptureInFlight = false;
                 latitude = null;
                 longitude = null;
-                setPortalLocationText('{% trans "Geolocation not supported by this browser." %}');
+                setPortalLocationText('{% trans "Geolocation not supported by this browser. You can still clock in without location." %}');
                 setPortalCoordinatesText(null, null);
                 $('#location-coordinates').text('');
                 $('#location-status').removeClass('success').addClass('warning');
-                disableClockButtons();
+                updateFaceGatedButtons();
             }
         }
 
@@ -3343,7 +3381,7 @@
         }
 
         function disableClockButtons() {
-            $(clockActionButtonSelector()).prop('disabled', true).attr('title', '{% trans "Location is required." %}');
+            $(clockActionButtonSelector()).prop('disabled', true).attr('title', '{% trans "Please wait..." %}');
         }
 
         function enableClockButtons() {
@@ -5368,6 +5406,11 @@
                 initializeLocationCapture();
             });
 
+            // Switch between front (selfie) and back camera
+            $('#camera-switch-btn').on('click', function () {
+                toggleCameraFacing();
+            });
+
             // Geo fence error overlay buttons
             $('#geofence-retry-btn').on('click', function () {
                 $('#geofence-error-overlay').css('display', 'none');
@@ -5693,6 +5736,7 @@
             capturedAddress = null;
             geocodingPromise = null;
             cameraReady = false;
+            cameraFacingMode = 'user';
             latitude = null;
             longitude = null;
             locationAccuracy = null;
@@ -5717,14 +5761,16 @@
         }
 
         function updateFaceGatedButtons() {
-            if (!cameraReady || !latitude || !longitude) { disableClockButtons(); return; }
+            // A missing/failed location no longer blocks clocking in — only the
+            // camera being ready gates the clock buttons.
+            if (!cameraReady) { disableClockButtons(); return; }
             enableClockButtons();
         }
 
         // Start camera
         function startCamera() {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                return navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+                return navigator.mediaDevices.getUserMedia({ video: { facingMode: cameraFacingMode }, audio: false })
                     .then(function (stream) {
                         if (!$('#step-clock').hasClass('active')) {
                             stream.getTracks().forEach(track => track.stop());
@@ -5733,6 +5779,9 @@
                         videoStream = stream;
                         const video = document.getElementById('video-preview');
                         video.style.display = 'block';
+                        // Mirror the preview for the front (selfie) camera only —
+                        // a mirrored back-camera preview looks wrong to the user.
+                        video.style.transform = cameraFacingMode === 'user' ? 'scaleX(-1)' : 'none';
                         video.srcObject = stream;
 
                         // Wait until the camera is actually streaming frames
@@ -5767,12 +5816,39 @@
             }
         }
 
-        // Capture a stamped selfie from the current live camera frame.
-        async function capturePhotoBlobFromLiveVideo() {
-            if (!latitude || !longitude) {
-                throw new Error('{% trans "Location is required. Please enable location access and retry." %}');
+        // Switch between the front (selfie) and back camera.
+        async function toggleCameraFacing() {
+            if (cameraSwitchInFlight || !cameraReady) {
+                return;
+            }
+            cameraSwitchInFlight = true;
+            $('#camera-switch-btn').prop('disabled', true);
+
+            const previousFacingMode = cameraFacingMode;
+            cameraFacingMode = previousFacingMode === 'user' ? 'environment' : 'user';
+            cameraReady = false;
+            updateFaceGatedButtons();
+
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
             }
 
+            await startCamera();
+
+            if (!cameraReady) {
+                // The requested camera likely doesn't exist on this device (e.g. a
+                // desktop webcam has no 'environment' camera) — fall back.
+                cameraFacingMode = previousFacingMode;
+                await startCamera();
+            }
+
+            cameraSwitchInFlight = false;
+            $('#camera-switch-btn').prop('disabled', false);
+        }
+
+        // Capture a stamped selfie from the current live camera frame.
+        async function capturePhotoBlobFromLiveVideo() {
             const video = document.getElementById('video-preview');
             if (!video || !videoStream) {
                 throw new Error('{% trans "Camera is not ready. Please allow camera permissions and try again." %}');
@@ -5788,8 +5864,12 @@
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             context.save();
-            context.translate(canvas.width, 0);
-            context.scale(-1, 1);
+            // Only mirror the capture for the front (selfie) camera, matching the
+            // mirrored live preview — the back camera should capture unmirrored.
+            if (cameraFacingMode === 'user') {
+                context.translate(canvas.width, 0);
+                context.scale(-1, 1);
+            }
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             context.restore();
 
@@ -5804,7 +5884,8 @@
                 }
             }
 
-            const addressToStamp = capturedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+            const addressToStamp = capturedAddress
+                || (latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : '{% trans "Location unavailable" %}');
             await stampEmployeeCardOnCanvas(canvas, context, addressToStamp);
 
             return new Promise(function (resolve, reject) {
@@ -6343,11 +6424,6 @@
                 return;
             }
 
-            if (!latitude || !longitude) {
-                Toast.fire({ icon: 'error', title: '{% trans "Location is required. Please enable location access and retry." %}' });
-                return;
-            }
-
             const btn = $('#clock-in-btn');
             const originalText = btn.html();
             btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
@@ -6386,11 +6462,6 @@
         async function clockOutEmployee() {
             if (!selectedEmployee) {
                 Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
-                return;
-            }
-
-            if (!latitude || !longitude) {
-                Toast.fire({ icon: 'error', title: '{% trans "Location is required. Please enable location access and retry." %}' });
                 return;
             }
 
@@ -6438,11 +6509,6 @@
             const config = activityActionConfig(selectedAttendanceAction);
             if (!config) {
                 Toast.fire({ icon: 'warning', title: '{% trans "Please select an attendance action first." %}' });
-                return;
-            }
-
-            if (!latitude || !longitude) {
-                Toast.fire({ icon: 'error', title: '{% trans "Location is required. Please enable location access and retry." %}' });
                 return;
             }
 

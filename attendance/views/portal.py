@@ -389,6 +389,15 @@ def get_real_now():
 
     The cache keeps the anti-client-clock behavior while avoiding a UDP request
     to public NTP servers on every portal request.
+
+    The lookup itself runs in a background thread with a hard overall timeout
+    (PORTAL_NTP_TIMEOUT_TOTAL) so a slow/blocked network - e.g. UDP/123 filtered
+    or DNS to the NTP hosts hanging, as can happen on cellular carriers - can
+    never stall a request beyond that bound. socket.settimeout() alone doesn't
+    cover this because it only bounds the UDP send/recv, not the hostname
+    resolution sendto() performs internally. If the timeout is hit we fall back
+    to the system clock for this request only, while the thread keeps running
+    to populate the cache for subsequent requests once it finishes.
     """
     monotonic_now = time_module.monotonic()
     max_age = _portal_cache_timeout("PORTAL_NTP_CACHE_SECONDS", 300)
@@ -414,10 +423,26 @@ def get_real_now():
             if 0 <= age <= max_age:
                 return cached_synced_at + timedelta(seconds=age)
 
-        synced_now = _get_real_now_uncached()
-        _PORTAL_NTP_CACHE["synced_at"] = synced_now
-        _PORTAL_NTP_CACHE["monotonic_at"] = time_module.monotonic()
-        return synced_now
+        result = {}
+
+        def _sync():
+            synced_now = _get_real_now_uncached()
+            result["synced_now"] = synced_now
+            _PORTAL_NTP_CACHE["synced_at"] = synced_now
+            _PORTAL_NTP_CACHE["monotonic_at"] = time_module.monotonic()
+
+        sync_thread = threading.Thread(target=_sync, daemon=True)
+        sync_thread.start()
+        sync_thread.join(_portal_cache_timeout("PORTAL_NTP_TIMEOUT_TOTAL", 2))
+
+        if "synced_now" in result:
+            return result["synced_now"]
+
+        logger.warning(
+            "NTP sync exceeded PORTAL_NTP_TIMEOUT_TOTAL; using system clock "
+            "for this request while the sync finishes in the background"
+        )
+        return datetime.now()
     finally:
         _PORTAL_NTP_CACHE_LOCK.release()
 
@@ -2983,14 +3008,10 @@ def public_clock_in(request):
         if not has_verified_pin:
             return JsonResponse({"success": False, "message": pin_message}, status=200)
 
-        # Require GPS location
+        # GPS location is optional: a device that fails/denies geolocation
+        # should still be able to clock in.
         latitude = request.POST.get("latitude")
         longitude = request.POST.get("longitude")
-        if not latitude or not longitude:
-            return JsonResponse(
-                {"success": False, "message": "Location is required to clock in. Please enable location access and try again."},
-                status=200,
-            )
 
         # Find employee
         try:
@@ -3194,16 +3215,10 @@ def public_activity_transition(request):
         if not has_verified_pin:
             return JsonResponse({"success": False, "message": pin_message}, status=200)
 
+        # GPS location is optional: a device that fails/denies geolocation
+        # should still be able to clock the activity transition.
         latitude = request.POST.get("latitude")
         longitude = request.POST.get("longitude")
-        if not latitude or not longitude:
-            return JsonResponse(
-                {
-                    "success": False,
-                    "message": "Location is required. Please enable location access and try again.",
-                },
-                status=200,
-            )
 
         try:
             employee = Employee.objects.get(id=employee_id, is_active=True)
@@ -3454,14 +3469,10 @@ def public_clock_out(request):
         if not has_verified_pin:
             return JsonResponse({"success": False, "message": pin_message}, status=200)
 
-        # Require GPS location
+        # GPS location is optional: a device that fails/denies geolocation
+        # should still be able to clock out.
         latitude = request.POST.get("latitude")
         longitude = request.POST.get("longitude")
-        if not latitude or not longitude:
-            return JsonResponse(
-                {"success": False, "message": "Location is required to clock out. Please enable location access and try again."},
-                status=200,
-            )
 
         # Find employee
         try:

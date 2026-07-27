@@ -4,9 +4,8 @@
         <div class="oh-sticky-table__thead">
             <div class="oh-sticky-table__tr">
                 <div class="oh-sticky-table__th">{% trans "Title" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Shift 1" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Shift 2" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Additional Shifts" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Type" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Shifts / Periods" %}</div>
                 {% if perms.base.change_rotatingshift or perms.base.delete_rotatingshift %}
                     <div class="oh-sticky-table__th">{% trans "Actions" %}</div>
                 {% endif %}
@@ -16,15 +15,19 @@
             {% for rshift in rshifts %}
                 <div class="oh-sticky-table__tr" draggable="true">
                     <div class="oh-sticky-table__sd">{{rshift.name}}</div>
-                    <div class="oh-sticky-table__td">{{rshift.shift1}}</div>
-                    <div class="oh-sticky-table__td">{{rshift.shift2}}</div>
+                    <div class="oh-sticky-table__td">{{rshift.get_rotation_type_display}}</div>
                     <div class="oh-sticky-table__td">
-                        {% if rshift.additional_shifts %}
-                            {% for shift in rshift.additional_shifts %}
-                                {{shift}} </br>
+                        {% if rshift.rotation_type == "date_range" %}
+                            {% for period in rshift.periods.all %}
+                                {{period.start_day}} - {{period.end_day}}: {{period.shift_id}} </br>
                             {% endfor %}
                         {% else %}
-                            {{rshift.additional_shifts}}
+                            {{rshift.shift1}}, {{rshift.shift2}}
+                            {% if rshift.additional_shifts %}
+                                {% for shift in rshift.additional_shifts %}
+                                    , {{shift}}
+                                {% endfor %}
+                            {% endif %}
                         {% endif %}
                     </div>
                     {% if perms.base.change_rotatingshift or perms.base.delete_rotatingshift %}

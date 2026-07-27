@@ -254,9 +254,12 @@ def calculate_holiday_and_night_pay(*_args, **kwargs):
     Returns:
         A dictionary containing the combined "total" amount, the
         "holiday_pay", "night_differential" breakdowns, and the holiday
-        pay split into three Philippine-payslip buckets:
-        "regular_holiday_pay" (unworked regular holiday, "no work, still
-        pay"), "worked_regular_holiday_pay", and "worked_special_holiday_pay".
+        pay split into Philippine-payslip buckets: "regular_holiday_pay"
+        (unworked regular holiday, "no work, still pay"),
+        "worked_regular_holiday_pay" (includes the regular-holiday +
+        rest-day combo), "worked_special_holiday_pay" (includes the
+        special-holiday + rest-day combo), and "rest_day_pay" (ordinary,
+        non-holiday rest day worked).
     """
     holiday = calculate_holiday_pay(**kwargs)
     night = calculate_night_differential(**kwargs)
@@ -276,6 +279,11 @@ def calculate_holiday_and_night_pay(*_args, **kwargs):
         for entry in holiday["breakdown"]
         if entry["holiday_type"] == "special" and entry["worked"]
     )
+    rest_day_pay = sum(
+        entry["amount"]
+        for entry in holiday["breakdown"]
+        if entry["category"] == "rest_day_worked"
+    )
 
     return {
         "total": holiday["holiday_pay"] + night["night_differential"],
@@ -284,6 +292,7 @@ def calculate_holiday_and_night_pay(*_args, **kwargs):
         "regular_holiday_pay": round(regular_holiday_pay, 2),
         "worked_regular_holiday_pay": round(worked_regular_holiday_pay, 2),
         "worked_special_holiday_pay": round(worked_special_holiday_pay, 2),
+        "rest_day_pay": round(rest_day_pay, 2),
         "night_differential": night["night_differential"],
         "night_hours": night["night_hours"],
     }

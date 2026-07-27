@@ -4,6 +4,7 @@ models.py
 This module is used to register django models
 """
 
+import calendar
 import ipaddress
 from datetime import date, datetime, timedelta
 from typing import Iterable
@@ -489,6 +490,18 @@ BASED_ON = [
     ("weekly", _("Weekend")),
     ("monthly", _("Monthly")),
 ]
+ROTATION_TYPE = [
+    ("sequential", _("Sequential")),
+    ("date_range", _("Date Range")),
+]
+
+
+def _canonical_day(day):
+    """
+    Resolves a DAY_DATE value ("1".."31" or "last") to a comparable
+    integer, treating "last" as day 31 since calendar days never exceed 31.
+    """
+    return 31 if day == "last" else int(day)
 
 
 class RotatingWorkTypeAssign(HorillaModel):
@@ -821,6 +834,12 @@ class RotatingShift(HorillaModel):
         blank=True,
         null=True,
     )
+    rotation_type = models.CharField(
+        max_length=10,
+        choices=ROTATION_TYPE,
+        default="sequential",
+        verbose_name=_("Rotation Type"),
+    )
     objects = HorillaCompanyManager("employee_id__employee_work_info__company_id")
 
     class Meta:
@@ -835,6 +854,10 @@ class RotatingShift(HorillaModel):
         return str(self.name)
 
     def clean(self):
+
+        if self.rotation_type == "date_range":
+            self._clean_periods()
+            return
 
         additional_shifts = (
             self.additional_data.get("additional_shifts", [])
@@ -857,6 +880,71 @@ class RotatingShift(HorillaModel):
         #     if additional_shifts[i] and additional_shifts[i + 1]:
         #         if additional_shifts[i] == additional_shifts[i + 1]:
         #             raise ValidationError(_("Select different shift continuously"))
+
+    def _clean_periods(self):
+        """
+        Validates that this rotating shift's periods, taken together, cover
+        every day of the month (1-31) exactly once with no gaps or overlaps.
+        """
+        if not self.pk:
+            # Periods are only created after the RotatingShift itself is
+            # saved (they FK to it), so nothing to validate yet on create.
+            return
+        covered = {}
+        for period in self.periods.all():
+            for day in period.covered_days():
+                if day in covered:
+                    raise ValidationError(
+                        _("Rotating shift periods must not overlap")
+                    )
+                covered[day] = period.id
+        if len(covered) != 31:
+            raise ValidationError(
+                _("Rotating shift periods must cover every day of the month")
+            )
+
+    def active_period_for_date(self, for_date):
+        """
+        Returns the RotatingShiftPeriod active on the given date, or None
+        if this rotating shift has no periods (or isn't date_range mode).
+        """
+        day = for_date.day
+        for period in self.periods.all():
+            if day in period.covered_days():
+                return period
+        return None
+
+    def next_boundary(self, for_date):
+        """
+        Returns a (next_change_date, next_period) tuple: the date the
+        period active on `for_date` ends (plus one day), and the period
+        that becomes active on that date. Returns (None, None) if there
+        is no active period for `for_date`.
+        """
+        active_period = self.active_period_for_date(for_date)
+        if active_period is None:
+            return None, None
+
+        start = _canonical_day(active_period.start_day)
+        end = _canonical_day(active_period.end_day)
+
+        if start > end and for_date.day >= start:
+            # Wrapping period, currently in the "before month-end" half:
+            # the period ends in next month.
+            end_year = for_date.year + (1 if for_date.month == 12 else 0)
+            end_month = for_date.month % 12 + 1
+        else:
+            # Non-wrapping period, or the "after month-start" half of a
+            # wrapping period: the period ends in this month.
+            end_year = for_date.year
+            end_month = for_date.month
+
+        last_day_of_month = calendar.monthrange(end_year, end_month)[1]
+        end_date = date(end_year, end_month, min(end, last_day_of_month))
+        next_change_date = end_date + timedelta(days=1)
+
+        next_period = self.active_period_for_date(next_change_date)
+        return next_change_date, next_period
 
     def additional_shifts(self):
         additional_data = self.additional_data
@@ -887,6 +975,55 @@ class RotatingShift(HorillaModel):
             total_shifts += list(self.additional_shifts())
 
         return total_shifts
+
+
+class RotatingShiftPeriod(HorillaModel):
+    """
+    RotatingShiftPeriod model
+
+    Represents one calendar day-of-month range within a date_range
+    RotatingShift, e.g. "26th to 10th uses Shift A".
+    """
+
+    rotating_shift_id = models.ForeignKey(
+        RotatingShift,
+        related_name="periods",
+        on_delete=models.CASCADE,
+        verbose_name=_("Rotating Shift"),
+    )
+    shift_id = models.ForeignKey(
+        EmployeeShift, on_delete=models.PROTECT, verbose_name=_("Shift")
+    )
+    start_day = models.CharField(
+        max_length=10, choices=DAY_DATE, verbose_name=_("Start Day")
+    )
+    end_day = models.CharField(
+        max_length=10, choices=DAY_DATE, verbose_name=_("End Day")
+    )
+    sequence = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        """
+        Meta class to add additional options
+        """
+
+        verbose_name = _("Rotating Shift Period")
+        verbose_name_plural = _("Rotating Shift Periods")
+        ordering = ["sequence"]
+
+    def __str__(self) -> str:
+        return f"{self.start_day} - {self.end_day}: {self.shift_id}"
+
+    def covered_days(self):
+        """
+        Returns the set of calendar days (1-31) this period covers,
+        handling ranges that wrap across month-end (e.g. 26 to 10).
+        """
+        start = _canonical_day(self.start_day)
+        end = _canonical_day(self.end_day)
+        if start <= end:
+            return set(range(start, end + 1))
+        return set(range(start, 32)) | set(range(1, end + 1))
 
 
 class RotatingShiftAssign(HorillaModel):
@@ -921,8 +1058,8 @@ class RotatingShiftAssign(HorillaModel):
     based_on = models.CharField(
         max_length=10,
         choices=BASED_ON,
-        null=False,
-        blank=False,
+        null=True,
+        blank=True,
         verbose_name=_("Based On"),
     )
     rotate_after_day = models.IntegerField(
@@ -976,6 +1113,12 @@ class RotatingShiftAssign(HorillaModel):
                 raise ValidationError(_("Only one active record allowed per employee"))
         if self.start_date < django.utils.timezone.now().date():
             raise ValidationError(_("Date must be greater than or equal to today"))
+        if (
+            self.rotating_shift_id_id is not None
+            and self.rotating_shift_id.rotation_type == "sequential"
+            and not self.based_on
+        ):
+            raise ValidationError({"based_on": _("This field is required")})
 
 
 class BaserequestFile(models.Model):

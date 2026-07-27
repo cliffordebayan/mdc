@@ -124,15 +124,43 @@ def rotate_work_type():
     return
 
 
+def _apply_rotating_shift_change(rotating_shift, new_date, next_shift):
+    """
+    Applies the rotating shift's currently-due switch (moving `next_shift`
+    into the employee's live shift and current_shift, and storing the
+    given `next_shift` as what comes after), then notifies the employee.
+    Shared by both the sequential and date-range rotation paths.
+    """
+    from django.contrib.auth.models import User
+
+    employee = rotating_shift.employee_id
+    employee_work_info = employee.employee_work_info
+    employee_work_info.shift_id = rotating_shift.next_shift
+    employee_work_info.save()
+    rotating_shift.next_change_date = new_date
+    rotating_shift.current_shift = rotating_shift.next_shift
+    rotating_shift.next_shift = next_shift
+    rotating_shift.save()
+    bot = User.objects.filter(username="Horilla Bot").first()
+    if bot is not None:
+        notify.send(
+            bot,
+            recipient=employee.employee_user_id,
+            verb="Your shift has been changed.",
+            verb_ar="تم تغيير التحول الخاص بك.",
+            verb_de="Ihre Schicht wurde geändert.",
+            verb_es="Tu turno ha sido cambiado.",
+            verb_fr="Votre quart de travail a été modifié.",
+            icon="infinite",
+            redirect=reverse("employee-profile"),
+        )
+    return
+
+
 def update_rotating_shift_assign(rotating_shift, new_date):
     """
     Here will update the employee work information and send notification
     """
-    from django.contrib.auth.models import User
-
-    next_shift_index = 0
-    employee = rotating_shift.employee_id
-    employee_work_info = employee.employee_work_info
     rotating_shift_id = rotating_shift.rotating_shift_id
     shift1 = rotating_shift_id.shift1
     shift2 = rotating_shift_id.shift2
@@ -148,26 +176,22 @@ def update_rotating_shift_assign(rotating_shift, new_date):
     else:
         next_shift_index = 0  # Wrap around to the beginning of the list
     rotating_shift.additional_data["next_shift_index"] = next_shift_index
-    employee_work_info.shift_id = rotating_shift.next_shift
-    employee_work_info.save()
-    rotating_shift.next_change_date = new_date
-    rotating_shift.current_shift = rotating_shift.next_shift
-    rotating_shift.next_shift = next_shift
-    rotating_shift.save()
-    bot = User.objects.filter(username="Horilla Bot").first()
-    if bot is not None:
-        employee = rotating_shift.employee_id
-        notify.send(
-            bot,
-            recipient=employee.employee_user_id,
-            verb="Your shift has been changed.",
-            verb_ar="تم تغيير التحول الخاص بك.",
-            verb_de="Ihre Schicht wurde geändert.",
-            verb_es="Tu turno ha sido cambiado.",
-            verb_fr="Votre quart de travail a été modifié.",
-            icon="infinite",
-            redirect=reverse("employee-profile"),
-        )
+    _apply_rotating_shift_change(rotating_shift, new_date, next_shift)
+    return
+
+
+def shift_rotate_date_range(rotating_shift, today):
+    """
+    This method rotates shift based on the calendar day-of-month periods
+    defined on the rotating shift template (e.g. 26th-10th = Shift A).
+    """
+    if rotating_shift.next_change_date != today:
+        return
+    new_date, next_period = rotating_shift.rotating_shift_id.next_boundary(today)
+    if new_date is None:
+        return
+    next_shift = next_period.shift_id if next_period else None
+    _apply_rotating_shift_change(rotating_shift, new_date, next_shift)
     return
 
 
@@ -236,6 +260,9 @@ def rotate_shift():
         emp_shift.update(is_active=False)
 
     for rotating_shift in (rotating_shifts_modified or []):
+        if rotating_shift.rotating_shift_id.rotation_type == "date_range":
+            shift_rotate_date_range(rotating_shift, today)
+            continue
         based_on = rotating_shift.based_on
         # after day condition
         if based_on == "after":

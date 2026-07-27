@@ -151,11 +151,27 @@
                         {% if "attendance"|app_installed %}
                             <!-- Start of attendance portal button in nav bar -->
                             <div class="oh-navbar__action-icons" title="{% trans 'Attendance Portal' %}">
-                                <a href="{% url 'public-portal' %}" target="_blank" class="oh-navbar__action-icons-link">
+                                <a href="{% url 'public-portal' %}" class="oh-navbar__action-icons-link oh-portal-nav-link">
                                     <ion-icon name="finger-print-outline" class="oh-navbar__icon"></ion-icon>
                                 </a>
                             </div>
                             <!-- End of attendance portal button in nav bar -->
+                            <style>
+                                .oh-portal-nav-link.oh-tapped ion-icon {
+                                    animation: oh-portal-nav-spin 0.6s linear infinite;
+                                    opacity: 0.6;
+                                }
+                                @keyframes oh-portal-nav-spin {
+                                    to { transform: rotate(360deg); }
+                                }
+                            </style>
+                            <script>
+                                document.querySelectorAll('.oh-portal-nav-link').forEach(function (link) {
+                                    link.addEventListener('click', function () {
+                                        link.classList.add('oh-tapped');
+                                    });
+                                });
+                            </script>
                         {% endif %}
 
                         {% if request.user|any_permission:'base' or perms.attendance.view_attendancevalidationcondition %}
@@ -223,6 +239,10 @@
                     <div class="oh-modal" style="z-index: 100;" id="pagibigDeductionModal" role="dialog"
                         aria-labelledby="pagibigDeductionModalLabel" aria-hidden="true">
                         <div class="oh-modal__dialog oh-modal__dialog-relative" style="max-width: 900px" id="pagibigDeductionModalTarget"> </div>
+                    </div>
+                    <div class="oh-modal" style="z-index: 100;" id="attendanceDetailsModal" role="dialog"
+                        aria-labelledby="attendanceDetailsModalLabel" aria-hidden="true">
+                        <div class="oh-modal__dialog oh-modal__dialog-relative" style="max-width: 900px" id="attendanceDetailsModalTarget"> </div>
                     </div>
                     <div class="oh-modal" id="objectCreateModal" role="dialog" aria-labelledby="objectCreateModalLabel" aria-hidden="true">
                         <div class="oh-modal__dialog" id="objectCreateModalTarget"></div>

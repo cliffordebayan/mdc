@@ -1,0 +1,10 @@
+{% extends 'index.html' %}{% block content %} {% load i18n %}{% load static %}
+<div>
+    {% include 'attendance/absent_employees/nav.html' %}
+    <div class="oh-wrapper">
+        <div id="absent-table">
+            {% include 'attendance/absent_employees/list.html' %}
+        </div>
+    </div>
+</div>
+{% endblock %}

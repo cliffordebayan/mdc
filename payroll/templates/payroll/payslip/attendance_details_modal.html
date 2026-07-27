@@ -1,0 +1,71 @@
+{% load i18n %}
+{% load static %}
+<div class="oh-modal__dialog-header">
+    <span class="oh-modal__dialog-title" id="attendanceDetailsModalLabel">
+        <h5 style="margin-bottom: 5px;">{% trans "Attendance Details" %} - {{ employee }}</h5>
+        <span class="oh-timeoff-modal__stat-title">
+            <span class="dateformat_changer">{{ payslip.start_date }}</span>
+            {% trans "to" %}
+            <span class="dateformat_changer">{{ payslip.end_date }}</span>
+        </span>
+    </span>
+    <button type="button" class="oh-modal__close" data-dismiss="oh-modal" aria-label="Close" data-toggle="oh-modal-toggle">
+        <ion-icon name="close-outline"></ion-icon>
+    </button>
+
+    {% if rows %}
+        <div class="oh-sticky-table mt-3" style="max-height: 380px; overflow-y: auto;">
+            <div class="oh-sticky-table__table">
+                <div class="oh-sticky-table__thead" style="position: sticky; top: 0; z-index: 2;">
+                    <div class="oh-sticky-table__tr">
+                        <div class="oh-sticky-table__th">{% trans "Date" %}</div>
+                        <div class="oh-sticky-table__th">{% trans "Clock In" %}</div>
+                        <div class="oh-sticky-table__th">{% trans "Clock Out" %}</div>
+                        <div class="oh-sticky-table__th">{% trans "Worked Hours" %}</div>
+                        <div class="oh-sticky-table__th">{% trans "Late" %}</div>
+                        <div class="oh-sticky-table__th">{% trans "Undertime" %}</div>
+                        <div class="oh-sticky-table__th">{% trans "Overtime" %}</div>
+                    </div>
+                </div>
+                <div class="oh-sticky-table__tbody">
+                    {% for row in rows %}
+                        <div class="oh-sticky-table__tr">
+                            <div class="oh-sticky-table__td dateformat_changer">{{ row.date }}</div>
+                            <div class="oh-sticky-table__td">
+                                {% if row.clock_in %}
+                                    <span class="timeformat_changer">{{ row.clock_in }}</span>
+                                {% else %}
+                                    <span class="oh-text--light">&mdash;</span>
+                                {% endif %}
+                            </div>
+                            <div class="oh-sticky-table__td">
+                                {% if row.clock_out %}
+                                    <span class="timeformat_changer">{{ row.clock_out }}</span>
+                                {% else %}
+                                    <span class="oh-text--light">&mdash;</span>
+                                {% endif %}
+                            </div>
+                            <div class="oh-sticky-table__td">{{ row.worked_hours|default:"00:00" }}</div>
+                            <div class="oh-sticky-table__td">{{ row.late|default:"&mdash;" }}</div>
+                            <div class="oh-sticky-table__td">{{ row.undertime|default:"&mdash;" }}</div>
+                            <div class="oh-sticky-table__td">{{ row.overtime|default:"00:00" }}</div>
+                        </div>
+                    {% endfor %}
+                    <div class="oh-sticky-table__tr fw-bold" style="border-top: 2px solid hsl(213, 22%, 84%);">
+                        <div class="oh-sticky-table__td">{% trans "Total" %}</div>
+                        <div class="oh-sticky-table__td"></div>
+                        <div class="oh-sticky-table__td"></div>
+                        <div class="oh-sticky-table__td">{{ totals.worked_hours }}</div>
+                        <div class="oh-sticky-table__td">{{ totals.late }}</div>
+                        <div class="oh-sticky-table__td">{{ totals.undertime }}</div>
+                        <div class="oh-sticky-table__td">{{ totals.overtime }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <div class="text-center text-muted py-3">
+            {% trans "No attendance records found for this pay period." %}
+        </div>
+    {% endif %}
+</div>

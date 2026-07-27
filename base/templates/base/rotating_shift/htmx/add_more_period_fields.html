@@ -1,0 +1,30 @@
+{% load i18n %}
+<div
+  class="oh-input__group pt-3"
+  id="{{ current_hx_target }}"
+  data-rotation-scope="date_range"
+  style="display: flex; gap: 8px"
+>
+  {{shift_field_html}}
+  {{start_field_html}}
+  {{end_field_html}}
+  <a
+    hx-get="{% url 'add-remove-shift-period-fields' %}"
+    class="oh-btn oh-btn--danger-outline oh-btn--light-bkg"
+    hx-target="#{{ current_hx_target }}"
+    hx-swap="outerHTML"
+    id="delete-link"
+  >
+    <ion-icon name="trash-outline"></ion-icon>
+  </a>
+</div>
+<div id="{{ next_hx_target }}" data-rotation-scope="date_range" style="text-align: end">
+  <a
+    hx-target="#{{ next_hx_target }}"
+    hx-swap="outerHTML"
+    hx-post="{% url 'add-remove-shift-period-fields' %}"
+    role="button"
+    style="color: green"
+    >{% trans "Add more period.." %}</a
+  >
+</div>

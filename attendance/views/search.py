@@ -5,6 +5,7 @@ This is moduel is used to register end point related to the search filter functi
 """
 
 import json
+from datetime import date
 from django.utils.dateparse import parse_date
 from urllib.parse import parse_qs
 
@@ -30,6 +31,7 @@ from attendance.views.views import (
     build_attendance_tab_context,
     build_my_attendance_activity_meta,
     build_daily_activity_rows,
+    get_absent_employees,
     get_current_cut_off_dates,
     group_daily_activity_rows,
     paginator_qry,
@@ -189,6 +191,45 @@ def attendance_activity_search(request):
             "field": field,
             "filter_dict": data_dict,
             "activity_ids": activity_ids,
+        },
+    )
+
+
+@login_required
+@hx_request_required
+def absent_employees_search(request):
+    """
+    This method is used to search/filter absent employees by date and name.
+    """
+    previous_data = request.GET.urlencode()
+    today = date.today()
+    date_from = parse_date(request.GET.get("date_from") or "") or today
+    date_to = parse_date(request.GET.get("date_to") or "") or today
+    date_from = min(date_from, today)
+    date_to = min(date_to, today)
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+    absent_rows, is_company_holiday = get_absent_employees(request, date_from, date_to)
+
+    search = request.GET.get("search", "").strip().lower()
+    if search:
+        absent_rows = [
+            row
+            for row in absent_rows
+            if search in row.employee.get_full_name().lower()
+            or search in (row.employee.employee_no or "").lower()
+        ]
+
+    return render(
+        request,
+        "attendance/absent_employees/list.html",
+        {
+            "data": paginator_qry(absent_rows, request.GET.get("page")),
+            "pd": previous_data,
+            "date_from": date_from,
+            "date_to": date_to,
+            "today": today,
+            "is_company_holiday": is_company_holiday,
         },
     )
 

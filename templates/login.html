@@ -15,6 +15,20 @@
         href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-16x16.png' %}{% endif %}">
     <link rel="stylesheet" href="{% static '/build/css/style.min.css' %}" />
     <link rel="manifest" href="{% url 'pwa-manifest' %}" />
+    <style>
+        .oh-btn-spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: oh-btn-spin 0.6s linear infinite;
+        }
+        @keyframes oh-btn-spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 
 <body>
@@ -48,7 +62,7 @@
                 <p class="text-muted text-center">
                     {% trans "Please login to access the dashboard." %}
                 </p>
-                <form method="post" class="oh-form-group">
+                <form method="post" class="oh-form-group" id="loginForm">
                     {% csrf_token %}
                     <div class="oh-input-group">
                         <label class="oh-label" for="username">{% trans "Username" %}</label>
@@ -68,11 +82,12 @@
                             </button>
                         </div>
                     </div>
-                    <button type="submit"
+                    <button type="submit" id="loginSubmitBtn"
                         class="oh-btn oh-onboarding-card__button mt-4 oh-btn--secondary oh-btn--shadow w-100 mb-4"
                         role="button">
-                        <ion-icon class="me-2" name="lock-closed-outline"></ion-icon>
-                        {% trans "Secure Sign-in" %}
+                        <span class="oh-btn-spinner me-2 d-none"></span>
+                        <ion-icon class="me-2 oh-btn-icon" name="lock-closed-outline"></ion-icon>
+                        <span class="oh-btn-label">{% trans "Secure Sign-in" %}</span>
                     </button>
                     {% if not initialize_database %}
                         <small class="text-center">
@@ -84,8 +99,8 @@
 
                     <!-- Employee Portal Button -->
                     <div class="mt-3">
-                        <a href="{% url 'public-portal' %}"
-                            class="oh-btn oh-onboarding-card__button oh-btn--secondary oh-btn--shadow w-100"
+                        <a href="{% url 'public-portal' %}" id="employeePortalBtn"
+                            class="oh-btn oh-onboarding-card__button oh-btn--secondary oh-btn--shadow w-100 oh-loading-link"
                             role="button"
                             style="
                                 background-color: rgba(49, 130, 206, 0.08);
@@ -99,7 +114,8 @@
                                 padding: 1rem 1.25rem;
                                 font-size: 1.05rem;
                             ">
-                            <ion-icon name="people-outline" style="font-size: 1.6rem;"></ion-icon>
+                            <ion-icon name="people-outline" class="oh-btn-icon" style="font-size: 1.6rem;"></ion-icon>
+                            <span class="oh-btn-spinner d-none" style="font-size: 1.6rem;"></span>
                             <span style="display: flex; flex: 1; flex-direction: column; align-items: center; line-height: 1.25;">
                                 <span style="font-size: 1.15rem; font-weight: 700;">{% trans "Employee Portal" %}</span>
                                 <span style="font-size: 0.82rem; font-weight: 500; opacity: 0.78; margin-top: 0.2rem;">{% trans "Attendance • Leave • Request" %}</span>
@@ -154,6 +170,23 @@
                     confirmButtonText: 'OK',
                 });
             }
+        });
+
+        // Immediate tap feedback so a slow response doesn't feel like a
+        // dead button (mainly noticeable on mobile networks).
+        document.getElementById('loginForm').addEventListener('submit', function () {
+            var btn = document.getElementById('loginSubmitBtn');
+            btn.disabled = true;
+            btn.querySelector('.oh-btn-icon').classList.add('d-none');
+            btn.querySelector('.oh-btn-spinner').classList.remove('d-none');
+            btn.querySelector('.oh-btn-label').textContent = '{% trans "Signing in…" %}';
+        });
+
+        document.getElementById('employeePortalBtn').addEventListener('click', function () {
+            var btn = this;
+            btn.querySelector('.oh-btn-icon').classList.add('d-none');
+            btn.querySelector('.oh-btn-spinner').classList.remove('d-none');
+            btn.style.pointerEvents = 'none';
         });
     </script>
 </body>

@@ -4676,11 +4676,17 @@ def _employee_portal_step_redirect(portal):
 
 
 @login_required
-@permission_required("employee.add_employee")
 def send_employee_portal_link(request, obj_id):
     """Send a self-service portal link to an employee so they can set their password
     and fill in their own profile data."""
     employee = get_object_or_404(Employee, pk=obj_id)
+    if not (
+        request.user.has_perm("employee.add_employee")
+        or getattr(employee.employee_work_info, "reporting_manager_id", None)
+        == request.user.employee_get
+    ):
+        messages.error(request, _("You do not have permission to perform this action."))
+        return HorillaRedirect(request)
 
     if request.method == "POST":
         token = secrets.token_hex(15)
@@ -4955,7 +4961,7 @@ def send_bulk_pin_to_email(request):
 
 
 @login_required
-@permission_required(["employee.add_employee"])
+@permission_required("employee.add_employee")
 def check_bulk_email_status(request):
     """Return which employees have already received a given email type."""
     if request.method != "POST":
@@ -5022,7 +5028,7 @@ def check_bulk_email_status(request):
 
 
 @login_required
-@permission_required(["employee.add_employee"])
+@permission_required("employee.add_employee")
 def send_single_bulk_email(request):
     """Send one bulk email (portal / password-reset / pin) to a single employee."""
     if request.method != "POST":
@@ -5273,7 +5279,6 @@ def employee_portal_set_password(request, token):
         form = SetPasswordForm(user, request.POST)
         if form.is_valid():
             form.save()
-            login(request, user)
             portal.count = 1
             portal.save()
             messages.success(request, _("Password set successfully."))
@@ -5447,6 +5452,12 @@ def employee_portal_pin(request, token):
             portal.count = 5
             portal.used = True
             portal.save()
+            user = employee.employee_user_id
+            if user is not None:
+                login(request, user)
+                if hasattr(user, "is_new_employee"):
+                    user.is_new_employee = False
+                    user.save(update_fields=["is_new_employee"])
             request.session["portal_completed_employee_id"] = employee.pk
             messages.success(request, _("Portal PIN set successfully."))
             return redirect("employee-portal-done")
