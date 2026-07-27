@@ -44,6 +44,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext as __
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from accessibility.decorators import enter_if_accessible
@@ -5265,6 +5266,7 @@ def send_single_bulk_email(request):
         )
 
 
+@csrf_exempt
 def employee_portal_set_password(request, token):
     """Step 1 — Employee sets their own password via the portal link."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
@@ -5295,6 +5297,7 @@ def employee_portal_set_password(request, token):
     )
 
 
+@csrf_exempt
 def employee_portal_profile(request, token):
     """Step 2 — Employee uploads a profile picture."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
@@ -5349,6 +5352,7 @@ def employee_portal_profile(request, token):
     )
 
 
+@csrf_exempt
 def employee_portal_remove_photo(request, token):
     """Remove the employee's profile photo from the portal."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
@@ -5368,6 +5372,7 @@ def employee_portal_remove_photo(request, token):
     return redirect("employee-portal-profile", token)
 
 
+@csrf_exempt
 def employee_portal_personal(request, token):
     """Step 3 — Employee fills in personal details."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
@@ -5399,6 +5404,7 @@ def employee_portal_personal(request, token):
     )
 
 
+@csrf_exempt
 def employee_portal_bank(request, token):
     """Step 4 — Employee fills in bank details."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()
@@ -5432,6 +5438,7 @@ def employee_portal_bank(request, token):
     )
 
 
+@csrf_exempt
 def employee_portal_pin(request, token):
     """Step 5 — Employee sets their attendance portal PIN."""
     portal = EmployeeOnboardingPortal.objects.filter(token=token).first()

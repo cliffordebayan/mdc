@@ -5755,7 +5755,7 @@
             // so the geolocation prompt is silently dropped. Fix: request camera first,
             // then initiate location inside .then() — WebKit propagates user-gesture
             // activation through the first Promise microtask, so the prompt still appears.
-            startCamera().then(function () {
+            startCamera().catch(function () {}).then(function () {
                 initializeLocationCapture();
             });
         }
@@ -5784,31 +5784,53 @@
                         video.style.transform = cameraFacingMode === 'user' ? 'scaleX(-1)' : 'none';
                         video.srcObject = stream;
 
-                        // Wait until the camera is actually streaming frames
-                        const onPlaying = function() {
-                            if (!video.srcObject || video.srcObject !== stream) {
-                                return;
-                            }
-                            video.removeEventListener('playing', onPlaying);
-                            cameraReady = true;
+                        // Wait until the camera is actually streaming frames before
+                        // resolving, so callers (e.g. toggleCameraFacing) can trust
+                        // that cameraReady reflects the true outcome instead of
+                        // racing ahead of the 'playing' event.
+                        return new Promise(function (resolve, reject) {
+                            let settled = false;
+                            const timeoutId = setTimeout(function () {
+                                if (settled) return;
+                                settled = true;
+                                video.removeEventListener('playing', onPlaying);
+                                const err = new Error('Camera did not start in time');
+                                err.isTimeout = true;
+                                reject(err);
+                            }, 9000);
 
-                            $('#video-preview').css('display', 'block');
-                            $('#captured-photo').css('display', 'none');
-                            $('#location-overlay').css('display', 'none');
-                            $('#action-buttons').css('display', 'flex');
-                            applySelectedClockActionVisibility();
+                            const onPlaying = function () {
+                                if (settled) return;
+                                if (!video.srcObject || video.srcObject !== stream) {
+                                    return;
+                                }
+                                settled = true;
+                                clearTimeout(timeoutId);
+                                video.removeEventListener('playing', onPlaying);
+                                cameraReady = true;
 
-                            updateFaceGatedButtons();
-                        };
-                        video.addEventListener('playing', onPlaying);
+                                $('#video-preview').css('display', 'block');
+                                $('#captured-photo').css('display', 'none');
+                                $('#location-overlay').css('display', 'none');
+                                $('#action-buttons').css('display', 'flex');
+                                applySelectedClockActionVisibility();
 
-                        video.play().catch(function (err) {
-                            console.error("Video play failed:", err);
+                                updateFaceGatedButtons();
+                                resolve();
+                            };
+                            video.addEventListener('playing', onPlaying);
+
+                            video.play().catch(function (err) {
+                                console.error("Video play failed:", err);
+                            });
                         });
                     })
                     .catch(function (error) {
-                        Toast.fire({ icon: 'error', title: '{% trans "Camera access denied. Please allow camera permissions." %}' });
+                        if (!error.isTimeout) {
+                            Toast.fire({ icon: 'error', title: '{% trans "Camera access denied. Please allow camera permissions." %}' });
+                        }
                         console.error('Camera error:', error);
+                        throw error;
                     });
             } else {
                 Toast.fire({ icon: 'error', title: '{% trans "Camera not supported on this device." %}' });
@@ -5834,13 +5856,25 @@
                 videoStream = null;
             }
 
-            await startCamera();
+            try {
+                await startCamera();
+            } catch (err) {
+                // Fall through to the cameraReady check below.
+            }
 
             if (!cameraReady) {
                 // The requested camera likely doesn't exist on this device (e.g. a
                 // desktop webcam has no 'environment' camera) — fall back.
                 cameraFacingMode = previousFacingMode;
-                await startCamera();
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                    videoStream = null;
+                }
+                try {
+                    await startCamera();
+                } catch (err) {
+                    // Fall through — cameraSwitchInFlight/button state is still reset below.
+                }
             }
 
             cameraSwitchInFlight = false;
@@ -6807,7 +6841,7 @@
             } else {
                 // When page becomes visible again, restart camera if we are on the clock step
                 if ($('#step-clock').hasClass('active')) {
-                    startCamera();
+                    startCamera().catch(function () {});
 
                     // If the user backgrounded the tab to fix something (e.g. toggled
                     // the OS location permission in Android Settings) and location
