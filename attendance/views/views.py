@@ -2557,11 +2557,20 @@ def _attendance_activity_export_data_from_rows(
     return data_export
 
 
-def _attendance_activity_export_data(export_objects, selected_columns, employee, progress=None):
+def _attendance_activity_export_data(
+    export_objects, selected_columns, employee, progress=None,
+    date_range=None, range_employees=None,
+):
     activities = list(_attendance_activity_export_queryset(export_objects))
     if progress:
         progress(20, _("Building daily rows"))
-    daily_rows = _attendance_activity_export_daily_rows(activities)
+    if date_range and range_employees is not None:
+        date_from, date_to = date_range
+        daily_rows = _attendance_activity_payroll_group_daily_rows(
+            activities, range_employees, date_from, date_to
+        )
+    else:
+        daily_rows = _attendance_activity_export_daily_rows(activities)
     return _attendance_activity_export_data_from_rows(
         daily_rows, selected_columns, employee, progress
     )
@@ -2680,37 +2689,83 @@ def _write_plain_export_frame(writer, data_frame, sheet_name):
     return worksheet
 
 
+_EMPLOYEE_SCOPE_FILTER_FIELDS = (
+    "employee_id",
+    "employee_id__employee_no",
+    "employee_id__employee_work_info__department_id",
+    "employee_id__employee_work_info__company_id",
+    "employee_id__employee_work_info__shift_id",
+    "employee_id__employee_work_info__work_type_id",
+    "employee_id__employee_work_info__job_position_id",
+    "employee_id__employee_work_info__location",
+    "employee_id__employee_work_info__reporting_manager_id",
+    "employee_id__employee_work_info__branch_id",
+    "employee_id__employee_work_info__payroll_group_id",
+)
+
+
+def _attendance_export_range_employees(request):
+    """Employees matching the export's non-date filters, regardless of whether
+    they have any activity inside the requested date range."""
+    scope_data = QueryDict("", mutable=True)
+    for field in _EMPLOYEE_SCOPE_FILTER_FIELDS:
+        if field in request.GET:
+            scope_data.setlist(field, request.GET.getlist(field))
+    employee_ids = (
+        AttendanceActivityFilter(scope_data, queryset=AttendanceActivity.objects.all())
+        .qs.values_list("employee_id", flat=True)
+        .distinct()
+    )
+    return Employee.objects.filter(id__in=employee_ids)
+
+
 def _write_attendance_activity_export_workbook(request, output, progress=None):
     employee = request.user.employee_get
     form = AttendanceActivityExportForm()
     selected_fields = request.GET.getlist("selected_fields")
-    export_objects = AttendanceActivityFilter(request.GET).qs
+    export_filter = AttendanceActivityFilter(request.GET)
+    export_objects = export_filter.qs
 
+    used_explicit_ids = False
     if not selected_fields:
         selected_fields = form.fields["selected_fields"].initial
         ids = request.GET.get("ids")
         if ids:
             with contextlib.suppress(json.JSONDecodeError, TypeError):
                 export_objects = AttendanceActivity.objects.filter(id__in=json.loads(ids))
+                used_explicit_ids = True
 
-    payroll_group_ids = request.GET.getlist(
-        "employee_id__employee_work_info__payroll_group_id"
-    )
-    has_date_range = request.GET.get("attendance_date_from") or request.GET.get(
-        "attendance_date_till"
-    )
-    if payroll_group_ids and not has_date_range:
-        group = PayrollGroup.objects.filter(id=payroll_group_ids[0]).first()
-        if group and group.start_day and group.end_day:
-            date_from, date_to = _get_payroll_period_dates(group.start_day, group.end_day)
-            export_objects = export_objects.filter(
-                attendance_date__gte=date_from,
-                attendance_date__lte=date_to,
-            )
+    date_from = date_to = None
+    range_employees = None
+
+    if not used_explicit_ids:
+        payroll_group_ids = request.GET.getlist(
+            "employee_id__employee_work_info__payroll_group_id"
+        )
+        explicit_date_from = request.GET.get("attendance_date_from")
+        explicit_date_till = request.GET.get("attendance_date_till")
+        has_date_range = explicit_date_from or explicit_date_till
+
+        if explicit_date_from and explicit_date_till and export_filter.form.is_valid():
+            date_from = export_filter.form.cleaned_data.get("attendance_date_from")
+            date_to = export_filter.form.cleaned_data.get("attendance_date_till")
+            if date_from and date_to:
+                range_employees = _attendance_export_range_employees(request)
+        elif payroll_group_ids and not has_date_range:
+            group = PayrollGroup.objects.filter(id=payroll_group_ids[0]).first()
+            if group and group.start_day and group.end_day:
+                date_from, date_to = _get_payroll_period_dates(group.start_day, group.end_day)
+                export_objects = export_objects.filter(
+                    attendance_date__gte=date_from,
+                    attendance_date__lte=date_to,
+                )
+                range_employees = _payroll_group_accessible_employees(request, group)
 
     selected_columns = _attendance_activity_export_columns(form, selected_fields)
     data_export = _attendance_activity_export_data(
-        export_objects, selected_columns, employee, progress
+        export_objects, selected_columns, employee, progress,
+        date_range=(date_from, date_to) if date_from and date_to else None,
+        range_employees=range_employees,
     )
     if progress:
         progress(75, _("Writing workbook"))
