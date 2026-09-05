@@ -22,7 +22,7 @@ from attendance.models import (
 )
 from base.filters import FilterSet
 from base.models import Branch, PayrollGroup
-from employee.filters import EmployeeFilter
+from employee.filters import EmployeeFilter, employee_name_number_search_query
 from employee.models import Employee
 from horilla.filters import filter_by_name
 
@@ -267,7 +267,7 @@ class AttendanceActivityFilter(FilterSet):
         FilterSet (class): custom filter set class to apply styling
     """
 
-    search = django_filters.CharFilter(method=filter_by_name)
+    search = django_filters.CharFilter(method="filter_by_employee_name_or_number")
 
     attendance_date = django_filters.DateFilter(
         field_name="attendance_date", widget=forms.DateInput(attrs={"type": "date"})
@@ -355,6 +355,14 @@ class AttendanceActivityFilter(FilterSet):
         super().__init__(data=data, queryset=queryset, request=request, prefix=prefix)
         for field in self.form.fields.keys():
             self.form.fields[field].widget.attrs["id"] = f"{uuid.uuid4()}"
+
+    def filter_by_employee_name_or_number(self, queryset, name, value):
+        value = (value or "").strip()
+        if not value:
+            return queryset
+        return queryset.filter(
+            employee_name_number_search_query(value, prefix="employee_id__")
+        )
 
 
 class AttendanceFilters(FilterSet):

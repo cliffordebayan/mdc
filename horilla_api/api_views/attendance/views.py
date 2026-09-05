@@ -128,6 +128,25 @@ class ClockInAPIView(APIView):
                     end_time=end_time_sec,
                     in_datetime=datetime_now,
                 )
+                # Attach the selfie/GPS captured by the mobile app to the
+                # activity row that was just created above.
+                activity = (
+                    AttendanceActivity.objects.filter(employee_id=employee)
+                    .order_by("-id")
+                    .first()
+                )
+                if activity:
+                    from attendance.views.portal import _save_activity_location
+
+                    activity.source = "mobile_app"
+                    _save_activity_location(
+                        activity,
+                        request,
+                        request.data.get("latitude"),
+                        request.data.get("longitude"),
+                        "in",
+                    )
+                    activity.save()
                 return Response({"message": "Clocked-In"}, status=200)
             return Response(
                 {
@@ -159,26 +178,48 @@ class ClockOutAPIView(APIView):
                     return response
         except:
             pass
-        if request.user.employee_get.check_online():
-            current_date = date.today()
-            current_time = datetime.now().time()
-            current_datetime = datetime.now()
 
-            try:
-                clock_out(
-                    Request(
-                        user=request.user,
-                        date=current_date,
-                        time=current_time,
-                        datetime=current_datetime,
-                    )
+        current_date = date.today()
+        current_time = datetime.now().time()
+        current_datetime = datetime.now()
+
+        try:
+            # Capture which activity is about to be closed before calling
+            # clock_out(), so we know exactly which row to attach the
+            # mobile app's selfie/GPS to afterwards.
+            employee = request.user.employee_get
+            open_activity = (
+                AttendanceActivity.objects.filter(
+                    employee_id=employee, clock_out__isnull=True
                 )
-                return Response({"message": "Clocked-Out"}, status=200)
+                .order_by("attendance_date", "id")
+                .last()
+            )
+            clock_out(
+                Request(
+                    user=request.user,
+                    date=current_date,
+                    time=current_time,
+                    datetime=current_datetime,
+                )
+            )
+            if open_activity:
+                from attendance.views.portal import _save_activity_location
 
-            except Exception as error:
-                logger.error("Got an error in clock_out", error)
-            # return Response({"message": "Clocked-Out"}, status=200)
-        return Response({"message": "Already clocked-out"}, status=400)
+                open_activity.refresh_from_db()
+                _save_activity_location(
+                    open_activity,
+                    request,
+                    request.data.get("latitude"),
+                    request.data.get("longitude"),
+                    "out",
+                )
+                open_activity.save()
+            return Response({"message": "Clocked-Out"}, status=200)
+
+        except Exception as error:
+            logger.error("Got an error in clock_out", error)
+            return Response({"message": "Already clocked-out"}, status=400)
 
 
 class AttendanceView(APIView):

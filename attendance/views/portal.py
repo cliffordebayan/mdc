@@ -1109,6 +1109,16 @@ def _activity_label(activity_type):
 
 
 def _save_activity_location(activity, request, latitude, longitude, clock_event):
+    # The selfie is independent of GPS - attach it regardless of whether the
+    # coordinates below parse successfully, so a location hiccup never
+    # silently discards an already-captured photo.
+    if clock_event == "in":
+        if "selfie" in request.FILES:
+            activity.clock_in_selfie = request.FILES["selfie"]
+    else:
+        if "selfie" in request.FILES:
+            activity.clock_out_selfie = request.FILES["selfie"]
+
     try:
         lat_f = float(latitude)
         lng_f = float(longitude)
@@ -1118,14 +1128,10 @@ def _save_activity_location(activity, request, latitude, longitude, clock_event)
 
     gps_address = _reverse_geocode(lat_f, lng_f)
     if clock_event == "in":
-        if "selfie" in request.FILES:
-            activity.clock_in_selfie = request.FILES["selfie"]
         activity.clock_in_latitude = lat_f
         activity.clock_in_longitude = lng_f
         activity.clock_in_gps_address = gps_address
     else:
-        if "selfie" in request.FILES:
-            activity.clock_out_selfie = request.FILES["selfie"]
         activity.clock_out_latitude = lat_f
         activity.clock_out_longitude = lng_f
         activity.clock_out_gps_address = gps_address

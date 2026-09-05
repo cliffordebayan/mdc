@@ -115,7 +115,11 @@ class AttendanceActivity(HorillaModel):
     )
     source = models.CharField(
         max_length=10,
-        choices=[("website", _("Website")), ("import", _("Import"))],
+        choices=[
+            ("website", _("Website")),
+            ("import", _("Import")),
+            ("mobile_app", _("Mobile App")),
+        ],
         default="website",
         verbose_name=_("Source"),
     )

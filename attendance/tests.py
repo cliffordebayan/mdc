@@ -21,6 +21,7 @@ from django.urls.exceptions import Resolver404
 from openpyxl import load_workbook
 import pandas as pd
 
+from attendance.filters import AttendanceActivityFilter
 from attendance.forms import AttendanceActivityExportForm, AttendanceExportForm
 from attendance.export_jobs import create_export_job, file_path, update_job
 from attendance.methods import utils as attendance_utils
@@ -70,8 +71,8 @@ from attendance.views.views import (
     build_daily_activity_rows,
     build_my_attendance_activity_meta,
 )
-from base.models import EmployeeShift, EmployeeShiftDay, EmployeeShiftSchedule, WorkType
-from employee.models import Employee
+from base.models import Branch, EmployeeShift, EmployeeShiftDay, EmployeeShiftSchedule, WorkType
+from employee.models import Employee, EmployeeWorkInformation
 from horilla.horilla_middlewares import _thread_locals
 
 
@@ -80,6 +81,100 @@ def attach_session(request):
     middleware.process_request(request)
     request.user = getattr(request, "user", AnonymousUser())
     return request
+
+
+class AttendanceActivitySearchFilterTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        unique_id = uuid.uuid4().hex[:8]
+        self.target_employee = self._employee(
+            unique_id,
+            "target",
+            employee_no="MDC-001",
+            employee_first_name="Michelle",
+            employee_middle_name="Anne",
+            employee_last_name="Reyes",
+        )
+        self.email_only_employee = self._employee(
+            unique_id,
+            "email",
+            employee_no="OPS-222",
+            employee_first_name="Rina",
+            employee_middle_name="Mae",
+            employee_last_name="Cruz",
+            email_prefix="michelle.lookup",
+        )
+        self.branch_only_employee = self._employee(
+            unique_id,
+            "branch",
+            employee_no="OPS-333",
+            employee_first_name="Paolo",
+            employee_middle_name="Luis",
+            employee_last_name="Garcia",
+        )
+        branch = Branch.objects.create(
+            branch="North Hub",
+            branch_code=f"NH{unique_id[:6]}",
+            address="Sample Address",
+            country="PH",
+            state="NCR",
+            city="Manila",
+            zip="1000",
+        )
+        EmployeeWorkInformation.objects.filter(
+            employee_id=self.branch_only_employee
+        ).update(branch_id=branch)
+
+        self.target_activity = self._activity(self.target_employee)
+        self.email_only_activity = self._activity(self.email_only_employee)
+        self.branch_only_activity = self._activity(
+            self.branch_only_employee,
+            gps_address="Activity Yard",
+        )
+
+    def _employee(self, unique_id, label, email_prefix=None, **kwargs):
+        email_prefix = email_prefix or label
+        return Employee.objects.create(
+            email=f"{email_prefix}-{unique_id}@example.com",
+            phone=f"0918{unique_id[:4]}{len(label):03}",
+            gender="male",
+            is_active=True,
+            **kwargs,
+        )
+
+    def _activity(self, employee, **kwargs):
+        defaults = {
+            "employee_id": employee,
+            "attendance_date": date(2026, 8, 28),
+            "clock_in_date": date(2026, 8, 28),
+            "clock_in": time(8, 0),
+            "activity_type": "work",
+        }
+        defaults.update(kwargs)
+        return AttendanceActivity.objects.create(**defaults)
+
+    def _search_ids(self, value):
+        return set(
+            AttendanceActivityFilter(
+                {"search": value},
+                queryset=AttendanceActivity.objects.all(),
+            ).qs.values_list("id", flat=True)
+        )
+
+    def test_search_finds_activity_by_employee_number_and_name_parts(self):
+        for value in ["MDC-00", "Michelle", "Anne", "Reyes"]:
+            with self.subTest(value=value):
+                self.assertIn(self.target_activity.id, self._search_ids(value))
+
+    def test_search_matches_all_tokens_against_employee_number_or_name(self):
+        self.assertIn(self.target_activity.id, self._search_ids("MDC Michelle"))
+        self.assertIn(self.target_activity.id, self._search_ids("mic rey"))
+        self.assertNotIn(self.target_activity.id, self._search_ids("Michelle Cruz"))
+
+    def test_search_ignores_email_activity_fields_and_branch(self):
+        self.assertNotIn(self.email_only_activity.id, self._search_ids("lookup"))
+        self.assertNotIn(self.branch_only_activity.id, self._search_ids("Activity"))
+        self.assertNotIn(self.branch_only_activity.id, self._search_ids("North"))
 
 
 class ClockOutAttendanceAndActivityTests(SimpleTestCase):
@@ -3280,6 +3375,22 @@ class AttendanceActivityUpdateViewTests(TestCase):
         self.assertEqual(self.work_activity.clock_in, time(8, 15))
         self.assertEqual(self.work_activity.clock_out, time(13, 0))
         self.assertEqual(self.break_activity.activity_type, "break")
+        recalculate_mock.assert_called_once_with(self.shift)
+
+    @patch("attendance.views.views.recalculate_attendance_for_shift")
+    def test_post_dedupes_duplicate_page_querystring(self, recalculate_mock):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"{self.url}?search=michelle&page=2&page=1",
+            data=self._post_data(),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attendance activity updated.")
+        self.assertContains(response, "search=michelle&amp;page=1")
+        self.assertNotContains(response, "page=2&amp;page=1")
         recalculate_mock.assert_called_once_with(self.shift)
 
     @patch("attendance.views.views.recalculate_attendance_for_shift")

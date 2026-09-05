@@ -1,15 +1,92 @@
 from io import BytesIO
+import uuid
 from unittest.mock import patch
 
 import pandas as pd
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TransactionTestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 
-from base.models import Company, PayrollGroup
+from base.models import Branch, Company, PayrollGroup
+from employee.filters import EmployeeFilter
 from employee.models import Employee, EmployeeBankDetails, EmployeeWorkInformation
 from horilla.horilla_middlewares import _thread_locals
+
+
+class EmployeeSearchFilterTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        unique_id = uuid.uuid4().hex[:8]
+        self.target = self._employee(
+            unique_id,
+            "target",
+            employee_no="MDC-001",
+            employee_first_name="Michelle",
+            employee_middle_name="Anne",
+            employee_last_name="Reyes",
+        )
+        self.email_only = self._employee(
+            unique_id,
+            "email",
+            employee_no="OPS-222",
+            employee_first_name="Rina",
+            employee_middle_name="Mae",
+            employee_last_name="Cruz",
+            email_prefix="michelle.lookup",
+        )
+        self.branch_only = self._employee(
+            unique_id,
+            "branch",
+            employee_no="OPS-333",
+            employee_first_name="Paolo",
+            employee_middle_name="Luis",
+            employee_last_name="Garcia",
+        )
+        branch = Branch.objects.create(
+            branch="North Hub",
+            branch_code=f"NH{unique_id[:6]}",
+            address="Sample Address",
+            country="PH",
+            state="NCR",
+            city="Manila",
+            zip="1000",
+        )
+        EmployeeWorkInformation.objects.filter(employee_id=self.branch_only).update(
+            branch_id=branch
+        )
+
+    def _employee(self, unique_id, label, email_prefix=None, **kwargs):
+        email_prefix = email_prefix or label
+        return Employee.objects.create(
+            email=f"{email_prefix}-{unique_id}@example.com",
+            phone=f"0917{unique_id[:4]}{len(label):03}",
+            gender="male",
+            is_active=True,
+            **kwargs,
+        )
+
+    def _search_ids(self, value):
+        return set(
+            EmployeeFilter(
+                {"search": value},
+                queryset=Employee.objects.all(),
+            ).qs.values_list("id", flat=True)
+        )
+
+    def test_search_finds_by_employee_number_and_name_parts(self):
+        for value in ["MDC-00", "Michelle", "Anne", "Reyes"]:
+            with self.subTest(value=value):
+                self.assertIn(self.target.id, self._search_ids(value))
+
+    def test_search_matches_all_tokens_against_number_or_name(self):
+        self.assertIn(self.target.id, self._search_ids("MDC Michelle"))
+        self.assertIn(self.target.id, self._search_ids("mic rey"))
+        self.assertNotIn(self.target.id, self._search_ids("Michelle Cruz"))
+
+    def test_search_ignores_email_and_branch(self):
+        self.assertNotIn(self.email_only.id, self._search_ids("lookup"))
+        self.assertNotIn(self.branch_only.id, self._search_ids("North"))
 
 
 class EmployeeImportFlowTests(TransactionTestCase):

@@ -31,6 +31,7 @@ from attendance.views.views import (
     build_attendance_tab_context,
     build_my_attendance_activity_meta,
     build_daily_activity_rows,
+    dedupe_querystring,
     get_absent_employees,
     get_current_cut_off_dates,
     group_daily_activity_rows,
@@ -110,7 +111,7 @@ def attendance_activity_search(request):
     """
     This method is used to search attendance activity
     """
-    previous_data = request.GET.urlencode()
+    previous_data = dedupe_querystring(request.GET)
     field = request.GET.get("field")
     attendance_activities = AttendanceActivityFilter(
         request.GET,

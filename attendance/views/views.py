@@ -644,6 +644,22 @@ def attendance_tab_querystring(request, active_tab):
     return data.urlencode()
 
 
+def dedupe_querystring(query_data, keys=("page",)):
+    """
+    Return a query string with only the last value for selected scalar keys.
+    """
+    data = query_data.copy()
+    for key in keys:
+        values = data.getlist(key)
+        if not values:
+            continue
+        value = values[-1]
+        data.pop(key, None)
+        if value:
+            data[key] = value
+    return data.urlencode()
+
+
 def attendance_preload_queryset(queryset):
     if not hasattr(queryset, "select_related"):
         return queryset
@@ -4407,7 +4423,7 @@ def attendance_activity_view(request):
     """
     This method will render a template to view all attendance activities
     """
-    previous_data = request.GET.urlencode()
+    previous_data = dedupe_querystring(request.GET)
     filter_obj = AttendanceActivityFilter(request.GET)
     attendance_activities = filter_obj.qs
     self_attendance_activities = attendance_activities.filter(
@@ -4479,8 +4495,7 @@ def absent_employees_view(request):
 
 @login_required
 def activity_daily_single_view(request, employee_id, attendance_date):
-    request_copy = request.GET.copy()
-    previous_data = request_copy.urlencode()
+    previous_data = dedupe_querystring(request.GET)
     try:
         parsed_attendance_date = datetime.strptime(attendance_date, "%Y-%m-%d").date()
     except ValueError:
@@ -4510,8 +4525,7 @@ def attendance_activity_update(request, employee_id, attendance_date):
     Render and save one day-level work in/out editor for an activity row.
     """
 
-    request_copy = request.GET.copy()
-    previous_data = request_copy.urlencode()
+    previous_data = dedupe_querystring(request.GET)
     try:
         parsed_attendance_date = datetime.strptime(attendance_date, "%Y-%m-%d").date()
     except ValueError:
@@ -4522,6 +4536,8 @@ def attendance_activity_update(request, employee_id, attendance_date):
         .select_related("employee_work_info__shift_id", "employee_work_info__work_type_id")
         .first()
     )
+    if employee is None:
+        return HttpResponseBadRequest(_("Employee not found"))
     attendance = (
         Attendance.objects.filter(
             employee_id_id=employee_id,

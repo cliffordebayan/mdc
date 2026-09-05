@@ -70,6 +70,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
     job_position_id = serializers.CharField(
         source="employee_work_info.job_position_id.id", read_only=True
     )
+    branch_name = serializers.CharField(
+        source="employee_work_info.branch_id.branch", read_only=True
+    )
+    branch_code = serializers.CharField(
+        source="employee_work_info.branch_id.branch_code", read_only=True
+    )
     employee_work_info_id = serializers.CharField(
         source="employee_work_info.id", read_only=True
     )

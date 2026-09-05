@@ -203,6 +203,10 @@ MESSAGE_TAGS = {
 
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 
+# TODO: temporary while the mobile app is under development on a LAN IP that
+# keeps changing - lock this down to specific origins before deploying.
+CORS_ALLOW_ALL_ORIGINS = True
+
 LOGIN_URL = "/login"
 
 

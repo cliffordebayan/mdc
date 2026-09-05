@@ -21,6 +21,24 @@ from horilla.filters import FilterSet, HorillaFilterSet, filter_by_name
 from horilla.horilla_middlewares import _thread_locals
 from horilla_documents.models import Document
 
+EMPLOYEE_NAME_NUMBER_SEARCH_FIELDS = (
+    "employee_no",
+    "employee_first_name",
+    "employee_middle_name",
+    "employee_last_name",
+)
+
+
+def employee_name_number_search_query(value, prefix=""):
+    tokens = [token for token in (value or "").split() if token]
+    search_query = Q()
+    for token in tokens:
+        token_query = Q()
+        for field in EMPLOYEE_NAME_NUMBER_SEARCH_FIELDS:
+            token_query |= Q(**{f"{prefix}{field}__icontains": token})
+        search_query &= token_query
+    return search_query
+
 
 class EmployeeFilter(HorillaFilterSet):
     """
@@ -212,14 +230,7 @@ class EmployeeFilter(HorillaFilterSet):
         if not value:
             return queryset
 
-        return queryset.filter(
-            Q(employee_first_name__icontains=value)
-            | Q(employee_middle_name__icontains=value)
-            | Q(employee_last_name__icontains=value)
-            | Q(employee_no__icontains=value)
-            | Q(email__icontains=value)
-            | Q(employee_work_info__branch_id__branch__icontains=value)
-        )
+        return queryset.filter(employee_name_number_search_query(value))
 
 
 class EmployeeReGroup:
