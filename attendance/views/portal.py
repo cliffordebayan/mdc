@@ -532,16 +532,29 @@ def _geofence_check(employee, work_info, latitude, longitude):
     """
     try:
         assigned_geos = _enforced_assigned_geofences(employee)
-        if not assigned_geos:
-            return None
+    except Exception:
+        return None
 
+    if not assigned_geos:
+        return None
+
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except (TypeError, ValueError):
+        return {
+            "message": "Waiting for location...",
+            "location_pending": True,
+        }
+
+    try:
         inside = False
         nearest_geo = None
         min_distance = float('inf')
         for geo in assigned_geos:
             distance = geodesic(
                 (geo.latitude, geo.longitude),
-                (float(latitude), float(longitude)),
+                (latitude, longitude),
             ).meters
             if distance < min_distance:
                 min_distance = distance
@@ -555,12 +568,19 @@ def _geofence_check(employee, work_info, latitude, longitude):
                 "geo_center_lat": nearest_geo.latitude if nearest_geo else None,
                 "geo_center_lng": nearest_geo.longitude if nearest_geo else None,
                 "geo_radius_meters": nearest_geo.radius_in_meters if nearest_geo else None,
-                "user_lat": float(latitude),
-                "user_lng": float(longitude),
+                "user_lat": latitude,
+                "user_lng": longitude,
             }
     except Exception:
         pass
     return None
+
+
+def _portal_geo_error_response(geo_error):
+    response_data = {"success": False, **geo_error}
+    if not geo_error.get("location_pending"):
+        response_data["geo_fence_violation"] = True
+    return JsonResponse(response_data, status=200)
 
 
 def _ip_is_allowed(request):
@@ -3014,8 +3034,6 @@ def public_clock_in(request):
         if not has_verified_pin:
             return JsonResponse({"success": False, "message": pin_message}, status=200)
 
-        # GPS location is optional: a device that fails/denies geolocation
-        # should still be able to clock in.
         latitude = request.POST.get("latitude")
         longitude = request.POST.get("longitude")
 
@@ -3043,17 +3061,7 @@ def public_clock_in(request):
         # Geofence check
         geo_error = _geofence_check(employee, work_info, latitude, longitude)
         if geo_error:
-            return JsonResponse({"success": False, "geo_fence_violation": True, **geo_error}, status=200)
-
-        # Check if already clocked in
-        if AttendanceActivity.objects.filter(
-            employee_id=employee, clock_out__isnull=True
-        ).exists():
-            logger.info(f"Employee already clocked in: {employee_id}")
-            return JsonResponse(
-                {"success": False, "message": f"{employee.get_full_name()} is already clocked in"},
-                status=200,
-            )
+            return _portal_geo_error_response(geo_error)
 
         # Get shift and schedule info
         shift = work_info.shift_id
@@ -3104,6 +3112,26 @@ def public_clock_in(request):
                     day=day, shift=shift
                 )
                 attendance_date = date_yesterday
+
+        open_activity = AttendanceActivity.objects.filter(
+            employee_id=employee, clock_out__isnull=True
+        ).order_by("attendance_date", "id").last()
+        if open_activity:
+            active_activity_type = _portal_activity_type(open_activity)
+            if active_activity_type != PORTAL_WORK_ACTIVITY:
+                label = _activity_label(active_activity_type).lower()
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "message": f"Please end your {label} before clocking in.",
+                    },
+                    status=200,
+                )
+            open_activity.clock_out = datetime_now
+            open_activity.clock_out_date = date_today
+            open_activity.out_datetime = datetime_now
+            open_activity.save()
+            _update_attendance_worked_hours(employee, open_activity.attendance_date)
 
         # Call the business logic function
         try:
@@ -3221,8 +3249,6 @@ def public_activity_transition(request):
         if not has_verified_pin:
             return JsonResponse({"success": False, "message": pin_message}, status=200)
 
-        # GPS location is optional: a device that fails/denies geolocation
-        # should still be able to clock the activity transition.
         latitude = request.POST.get("latitude")
         longitude = request.POST.get("longitude")
 
@@ -3238,10 +3264,7 @@ def public_activity_transition(request):
         work_info = getattr(employee, "employee_work_info", None)
         geo_error = _geofence_check(employee, work_info, latitude, longitude)
         if geo_error:
-            return JsonResponse(
-                {"success": False, "geo_fence_violation": True, **geo_error},
-                status=200,
-            )
+            return _portal_geo_error_response(geo_error)
 
         datetime_now = get_real_now()
         date_today = datetime_now.date()
@@ -3475,8 +3498,6 @@ def public_clock_out(request):
         if not has_verified_pin:
             return JsonResponse({"success": False, "message": pin_message}, status=200)
 
-        # GPS location is optional: a device that fails/denies geolocation
-        # should still be able to clock out.
         latitude = request.POST.get("latitude")
         longitude = request.POST.get("longitude")
 
@@ -3495,7 +3516,7 @@ def public_clock_out(request):
         work_info_out = getattr(employee, "employee_work_info", None)
         geo_error = _geofence_check(employee, work_info_out, latitude, longitude)
         if geo_error:
-            return JsonResponse({"success": False, "geo_fence_violation": True, **geo_error}, status=200)
+            return _portal_geo_error_response(geo_error)
 
         # Check if employee is clocked in
         open_activity = AttendanceActivity.objects.filter(

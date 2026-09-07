@@ -3252,6 +3252,56 @@
             );
         }
 
+        function selectedEmployeeGeofenceList() {
+            const geo = selectedEmployee && selectedEmployee.geo_fence;
+            if (!geo) {
+                return [];
+            }
+            return Array.isArray(geo) ? geo : [geo];
+        }
+
+        function selectedEmployeeRequiresLocation() {
+            return selectedEmployeeGeofenceList().length > 0;
+        }
+
+        function hasCapturedPortalLocation() {
+            return Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude));
+        }
+
+        function showLocationPendingState(message) {
+            latitude = null;
+            longitude = null;
+            capturedAddress = null;
+            setPortalLocationText(message || '{% trans "Waiting for location..." %}');
+            setPortalCoordinatesText(null, null);
+            $('#location-coordinates').text('');
+            $('#retry-location-btn').show();
+            $('#reload-location-btn').show();
+            $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
+            $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
+            $('#location-status').removeClass('success').addClass('warning');
+            $('#geofence-error-overlay').hide();
+            updateFaceGatedButtons();
+        }
+
+        function ensureLocationReadyForClockAction() {
+            if (selectedEmployeeRequiresLocation() && !hasCapturedPortalLocation()) {
+                showLocationPendingState('{% trans "Waiting for location..." %}');
+                if (!locationCaptureInFlight && navigator.geolocation) {
+                    initializeLocationCapture();
+                }
+                return false;
+            }
+            return true;
+        }
+
+        function handleLocationPendingResponse(data) {
+            showLocationPendingState(data.message || '{% trans "Waiting for location..." %}');
+            if (!locationCaptureInFlight && navigator.geolocation) {
+                initializeLocationCapture();
+            }
+        }
+
         // Get device location
         function initializeLocationCapture() {
             locationCaptureInFlight = true;
@@ -3296,18 +3346,22 @@
 
                 function onFinalError(error) {
                     locationCaptureInFlight = false;
-                    let errorMsg = '{% trans "Location unavailable" %}';
+                    let errorMsg = selectedEmployeeRequiresLocation()
+                        ? '{% trans "Waiting for location..." %}'
+                        : '{% trans "Location unavailable" %}';
 
-                    switch (error.code) {
-                        case error.PERMISSION_DENIED:
-                            errorMsg = '{% trans "Location permission denied. You can still clock in without location, or enable location for this site in Settings and retry." %}';
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            errorMsg = '{% trans "Location position unavailable. You can still clock in without location, or retry." %}';
-                            break;
-                        case error.TIMEOUT:
-                            errorMsg = '{% trans "Location request timed out. You can still clock in without location, or retry." %}';
-                            break;
+                    if (!selectedEmployeeRequiresLocation()) {
+                        switch (error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMsg = '{% trans "Location permission denied. You can still clock without location, or enable location for this site in Settings and retry." %}';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMsg = '{% trans "Location position unavailable. You can still clock without location, or retry." %}';
+                                break;
+                            case error.TIMEOUT:
+                                errorMsg = '{% trans "Location request timed out. You can still clock without location, or retry." %}';
+                                break;
+                        }
                     }
 
                     latitude = null;
@@ -3322,8 +3376,6 @@
                     $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
                     $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
                     $('#location-status').removeClass('success').addClass('warning');
-                    // A missing location no longer blocks clocking in — only the camera
-                    // being ready gates the clock buttons.
                     updateFaceGatedButtons();
 
                     console.warn('Geolocation error:', error);
@@ -3338,7 +3390,11 @@
                 locationCaptureInFlight = false;
                 latitude = null;
                 longitude = null;
-                setPortalLocationText('{% trans "Geolocation not supported by this browser. You can still clock in without location." %}');
+                setPortalLocationText(
+                    selectedEmployeeRequiresLocation()
+                        ? '{% trans "Waiting for location..." %}'
+                        : '{% trans "Geolocation not supported by this browser. You can still clock without location." %}'
+                );
                 setPortalCoordinatesText(null, null);
                 $('#location-coordinates').text('');
                 $('#location-status').removeClass('success').addClass('warning');
@@ -3507,12 +3563,13 @@
             const breakLimitReached = !isOnBreak && !!selectedEmployee.break_limit_reached;
             const breakAction = isOnBreak ? 'break_end' : 'break_start';
             const lunchAction = isOnLunch ? 'lunch_end' : 'lunch_start';
+            const clockInDisabled = isOnBreak || isOnLunch;
             const breakDisabled = !isClockedIn || isOnLunch || breakLimitReached;
             const lunchDisabled = !isClockedIn || isOnBreak || (lunchTaken && !isOnLunch);
             $('#attendance-clock-in-option')
-                .prop('disabled', isClockedIn)
-                .attr('aria-disabled', isClockedIn ? 'true' : 'false')
-                .toggleClass('is-disabled', isClockedIn);
+                .prop('disabled', clockInDisabled)
+                .attr('aria-disabled', clockInDisabled ? 'true' : 'false')
+                .toggleClass('is-disabled', clockInDisabled);
             const clockOutDisabled = isClockedIn && !isWorking;
             $('#attendance-clock-out-option')
                 .prop('disabled', clockOutDisabled)
@@ -3531,7 +3588,7 @@
             $('#attendance-break-title').text(isOnBreak ? '{% trans "End Break" %}' : '{% trans "Break" %}');
             $('#attendance-lunch-title').text(isOnLunch ? '{% trans "End Lunch" %}' : '{% trans "Lunch" %}');
             $('#attendance-clock-in-note').text(
-                isClockedIn ? '{% trans "Already clocked in" %}' : '{% trans "Capture selfie to clock in" %}'
+                isWorking ? '{% trans "Capture selfie to start another session" %}' : (isClockedIn ? '{% trans "End break or lunch first" %}' : '{% trans "Capture selfie to clock in" %}')
             );
             $('#attendance-clock-out-note').text(
                 isWorking ? '{% trans "Capture selfie to clock out" %}' : (isClockedIn ? '{% trans "End break or lunch first" %}' : '{% trans "Capture selfie to clock out" %}')
@@ -3564,8 +3621,8 @@
             }
 
             const activeType = selectedEmployee.active_activity_type || (selectedEmployee.is_clocked_in ? 'work' : null);
-            if (action === 'clock_in' && selectedEmployee.is_clocked_in) {
-                Toast.fire({ icon: 'warning', title: '{% trans "This employee is already clocked in." %}' });
+            if (action === 'clock_in' && selectedEmployee.is_clocked_in && activeType !== 'work') {
+                Toast.fire({ icon: 'warning', title: '{% trans "Please end your break or lunch before clocking in." %}' });
                 return;
             }
             if (action === 'clock_out' && selectedEmployee.is_clocked_in && activeType !== 'work') {
@@ -5761,9 +5818,17 @@
         }
 
         function updateFaceGatedButtons() {
-            // A missing/failed location no longer blocks clocking in — only the
-            // camera being ready gates the clock buttons.
+            // Geofenced employees wait for coordinates; others only need camera readiness.
             if (!cameraReady) { disableClockButtons(); return; }
+            if (selectedEmployeeRequiresLocation() && !hasCapturedPortalLocation()) {
+                disableClockButtons();
+                setPortalLocationText(
+                    locationCaptureInFlight
+                        ? '{% trans "Getting location..." %}'
+                        : '{% trans "Waiting for location..." %}'
+                );
+                return;
+            }
             enableClockButtons();
         }
 
@@ -6457,6 +6522,9 @@
                 Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
                 return;
             }
+            if (!ensureLocationReadyForClockAction()) {
+                return;
+            }
 
             const btn = $('#clock-in-btn');
             const originalText = btn.html();
@@ -6479,6 +6547,8 @@
 
                 if (data.success) {
                     showConfirmation(data, 'success');
+                } else if (data.location_pending) {
+                    handleLocationPendingResponse(data);
                 } else if (data.geo_fence_violation) {
                     showGeofenceError(data);
                 } else {
@@ -6488,7 +6558,8 @@
                 console.error('Clock in error:', error);
                 Toast.fire({ icon: 'error', title: error.message || '{% trans "Clock in failed." %}' });
             } finally {
-                btn.html(originalText).prop('disabled', false);
+                btn.html(originalText);
+                updateFaceGatedButtons();
             }
         }
 
@@ -6496,6 +6567,9 @@
         async function clockOutEmployee() {
             if (!selectedEmployee) {
                 Toast.fire({ icon: 'warning', title: '{% trans "Please select an employee first." %}' });
+                return;
+            }
+            if (!ensureLocationReadyForClockAction()) {
                 return;
             }
 
@@ -6520,6 +6594,8 @@
 
                 if (data.success) {
                     showConfirmation(data, 'success');
+                } else if (data.location_pending) {
+                    handleLocationPendingResponse(data);
                 } else if (data.geo_fence_violation) {
                     showGeofenceError(data);
                 } else {
@@ -6529,7 +6605,8 @@
                 console.error('Clock out error:', error);
                 Toast.fire({ icon: 'error', title: error.message || '{% trans "Clock out failed." %}' });
             } finally {
-                btn.html(originalText).prop('disabled', false);
+                btn.html(originalText);
+                updateFaceGatedButtons();
             }
         }
 
@@ -6543,6 +6620,9 @@
             const config = activityActionConfig(selectedAttendanceAction);
             if (!config) {
                 Toast.fire({ icon: 'warning', title: '{% trans "Please select an attendance action first." %}' });
+                return;
+            }
+            if (!ensureLocationReadyForClockAction()) {
                 return;
             }
 
@@ -6573,6 +6653,8 @@
                     resetForm();
                     showStep('search');
                     Toast.fire({ icon: 'success', title: successMessage });
+                } else if (data.location_pending) {
+                    handleLocationPendingResponse(data);
                 } else if (data.geo_fence_violation) {
                     showGeofenceError(data);
                 } else {
@@ -6582,7 +6664,8 @@
                 console.error('Activity transition error:', error);
                 Toast.fire({ icon: 'error', title: error.message || '{% trans "Attendance action failed." %}' });
             } finally {
-                btn.html(originalText).prop('disabled', false);
+                btn.html(originalText);
+                updateFaceGatedButtons();
             }
         }
 

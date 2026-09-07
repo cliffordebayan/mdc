@@ -899,6 +899,11 @@ class PortalGeofenceCheckTests(SimpleTestCase):
 
         self.assertIsNone(_geofence_check(employee, None, "15.0", "122.0"))
 
+    def test_geofence_check_allows_missing_location_without_assigned_geofence(self):
+        employee = self._employee([])
+
+        self.assertIsNone(_geofence_check(employee, None, "", ""))
+
     def test_geofence_check_allows_employee_with_only_inactive_geofences(self):
         employee = self._employee([self._geofence(start=False)])
 
@@ -921,10 +926,158 @@ class PortalGeofenceCheckTests(SimpleTestCase):
         self.assertEqual(result["user_lat"], 15.0)
         self.assertEqual(result["geo_radius_meters"], 100)
 
+    def test_geofence_check_returns_location_pending_for_missing_location(self):
+        employee = self._employee([self._geofence()])
+
+        result = _geofence_check(employee, None, "", "")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["location_pending"])
+        self.assertEqual(result["message"], "Waiting for location...")
+
+    def test_geofence_check_returns_location_pending_for_invalid_location(self):
+        employee = self._employee([self._geofence()])
+
+        result = _geofence_check(employee, None, "invalid", "invalid")
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["location_pending"])
+        self.assertNotIn("geo_fence_violation", result)
+
     def test_geofence_check_allows_employee_inside_active_geofence(self):
         employee = self._employee([self._geofence()])
 
         self.assertIsNone(_geofence_check(employee, None, "14.6001", "121.0001"))
+
+
+class PortalGeofenceEndpointTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _verified_request(self, path, data):
+        request = self.factory.post(path, data)
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": data["employee_id"],
+            "verified_at": datetime.now().timestamp(),
+        }
+        return request
+
+    def _employee(self):
+        employee = MagicMock()
+        employee.id = 1
+        employee.pk = 1
+        employee.employee_work_info = MagicMock()
+        employee.active_assigned_geofences = [
+            SimpleNamespace(
+                name="HQ",
+                latitude=14.6000,
+                longitude=121.0000,
+                radius_in_meters=100,
+                start=True,
+                excluded_employees=[],
+            )
+        ]
+        employee.get_full_name.return_value = "Test Employee"
+        return employee
+
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_in_with_missing_geofenced_location_returns_pending(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        _auto_checkout_mock,
+    ):
+        request = self._verified_request(
+            "/attendance/portal/clock-in/",
+            {"employee_id": "1", "latitude": "", "longitude": ""},
+        )
+        employee_model.objects.get.return_value = self._employee()
+
+        response = public_clock_in(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload["location_pending"])
+        self.assertNotIn("geo_fence_violation", payload)
+
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_out_with_invalid_geofenced_location_returns_pending(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        _auto_checkout_mock,
+    ):
+        request = self._verified_request(
+            "/attendance/portal/clock-out/",
+            {"employee_id": "1", "latitude": "bad", "longitude": "bad"},
+        )
+        employee_model.objects.get.return_value = self._employee()
+
+        response = public_clock_out(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload["location_pending"])
+        self.assertNotIn("geo_fence_violation", payload)
+
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_activity_transition_with_missing_geofenced_location_returns_pending(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        _auto_checkout_mock,
+    ):
+        request = self._verified_request(
+            "/attendance/portal/activity-transition/",
+            {
+                "employee_id": "1",
+                "activity_type": "break",
+                "transition": "start",
+                "latitude": "",
+                "longitude": "",
+            },
+        )
+        employee_model.objects.get.return_value = self._employee()
+
+        response = public_activity_transition(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload["location_pending"])
+        self.assertNotIn("geo_fence_violation", payload)
+
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_geofenced_clock_in_outside_radius_returns_violation(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        _auto_checkout_mock,
+    ):
+        request = self._verified_request(
+            "/attendance/portal/clock-in/",
+            {"employee_id": "1", "latitude": "15.0", "longitude": "122.0"},
+        )
+        employee_model.objects.get.return_value = self._employee()
+
+        response = public_clock_in(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload["geo_fence_violation"])
+        self.assertNotIn("location_pending", payload)
 
 
 class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
@@ -979,10 +1132,14 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
         shift_day_model.objects.filter.return_value.first.return_value = object()
         activity = MagicMock()
         activity.location_verified = False
-        activity_qs = MagicMock()
-        activity_qs.exists.return_value = False
-        activity_qs.order_by.return_value.last.return_value = activity
-        attendance_activity_model.objects.filter.return_value = activity_qs
+        open_activity_qs = MagicMock()
+        open_activity_qs.order_by.return_value.last.return_value = None
+        created_activity_qs = MagicMock()
+        created_activity_qs.order_by.return_value.last.return_value = activity
+        attendance_activity_model.objects.filter.side_effect = [
+            open_activity_qs,
+            created_activity_qs,
+        ]
 
         response = public_clock_in(request)
         payload = json.loads(response.content)
@@ -990,6 +1147,147 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(activity.clock_in_latitude, 15.0)
         self.assertEqual(activity.clock_in_longitude, 122.0)
+
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.clock_in_attendance_and_activity")
+    @patch("attendance.views.portal.shift_schedule_today", return_value=("08:00", 32400, 61200))
+    @patch("attendance.views.portal.EmployeeShiftDay")
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 6, 5, 9, 0, 0))
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_unrestricted_employee_can_clock_in_without_location(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        _now_mock,
+        shift_day_model,
+        _shift_schedule_mock,
+        _clock_in_helper_mock,
+        _auto_checkout_mock,
+    ):
+        request = self._verified_request(
+            "/attendance/portal/clock-in/",
+            {"employee_id": "1", "latitude": "", "longitude": ""},
+        )
+        employee_model.objects.get.return_value = self._employee()
+        shift_day_model.objects.filter.return_value.first.return_value = object()
+        activity = MagicMock()
+        activity.location_verified = None
+        open_activity_qs = MagicMock()
+        open_activity_qs.order_by.return_value.last.return_value = None
+        created_activity_qs = MagicMock()
+        created_activity_qs.order_by.return_value.last.return_value = activity
+        attendance_activity_model.objects.filter.side_effect = [
+            open_activity_qs,
+            created_activity_qs,
+        ]
+
+        response = public_clock_in(request)
+        payload = json.loads(response.content)
+
+        self.assertTrue(payload["success"])
+        self.assertFalse(activity.location_verified)
+
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal._update_attendance_worked_hours")
+    @patch("attendance.views.portal._reverse_geocode", return_value="Test Address")
+    @patch("attendance.views.portal.clock_in_attendance_and_activity")
+    @patch("attendance.views.portal.shift_schedule_today", return_value=("08:00", 32400, 61200))
+    @patch("attendance.views.portal.EmployeeShiftDay")
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 6, 5, 10, 0, 0))
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_in_while_already_working_closes_open_work_and_starts_new_activity(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        _now_mock,
+        shift_day_model,
+        _shift_schedule_mock,
+        clock_in_helper_mock,
+        _reverse_mock,
+        update_worked_hours_mock,
+        _auto_checkout_mock,
+    ):
+        request = self._verified_request(
+            "/attendance/portal/clock-in/",
+            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
+        )
+        employee = self._employee()
+        employee_model.objects.get.return_value = employee
+        shift_day_model.objects.filter.return_value.first.return_value = object()
+        open_activity = MagicMock()
+        open_activity.activity_type = "work"
+        open_activity.attendance_date = date(2026, 6, 5)
+        new_activity = MagicMock()
+        new_activity.location_verified = False
+        open_activity_qs = MagicMock()
+        open_activity_qs.order_by.return_value.last.return_value = open_activity
+        created_activity_qs = MagicMock()
+        created_activity_qs.order_by.return_value.last.return_value = new_activity
+        attendance_activity_model.objects.filter.side_effect = [
+            open_activity_qs,
+            created_activity_qs,
+        ]
+
+        response = public_clock_in(request)
+        payload = json.loads(response.content)
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(open_activity.clock_out, datetime(2026, 6, 5, 10, 0, 0))
+        self.assertEqual(open_activity.clock_out_date, date(2026, 6, 5))
+        self.assertEqual(open_activity.out_datetime, datetime(2026, 6, 5, 10, 0, 0))
+        open_activity.save.assert_called_once()
+        update_worked_hours_mock.assert_called_once_with(employee, date(2026, 6, 5))
+        clock_in_helper_mock.assert_called_once()
+        self.assertEqual(new_activity.clock_in_latitude, 14.6)
+        self.assertEqual(new_activity.clock_in_longitude, 121.0)
+
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal._update_attendance_worked_hours")
+    @patch("attendance.views.portal.clock_in_attendance_and_activity")
+    @patch("attendance.views.portal.shift_schedule_today", return_value=("08:00", 32400, 61200))
+    @patch("attendance.views.portal.EmployeeShiftDay")
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 6, 5, 10, 0, 0))
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_in_rejects_active_break(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        _now_mock,
+        shift_day_model,
+        _shift_schedule_mock,
+        clock_in_helper_mock,
+        update_worked_hours_mock,
+        _auto_checkout_mock,
+    ):
+        request = self._verified_request(
+            "/attendance/portal/clock-in/",
+            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
+        )
+        employee = self._employee()
+        employee_model.objects.get.return_value = employee
+        shift_day_model.objects.filter.return_value.first.return_value = object()
+        open_activity = MagicMock()
+        open_activity.activity_type = "break"
+        open_activity_qs = MagicMock()
+        open_activity_qs.order_by.return_value.last.return_value = open_activity
+        attendance_activity_model.objects.filter.return_value = open_activity_qs
+
+        response = public_clock_in(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertIn("end your break", payload["message"])
+        clock_in_helper_mock.assert_not_called()
+        update_worked_hours_mock.assert_not_called()
 
     @patch("attendance.views.portal._maybe_auto_checkout_employee")
     @patch("attendance.views.portal._reverse_geocode", return_value="Test Address")
@@ -2867,10 +3165,12 @@ class PortalPinGateTests(SimpleTestCase):
         self.assertFalse(payload["success"])
         self.assertIn("does not match", payload["message"])
 
+    @patch("attendance.views.portal.Employee")
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
     def test_clock_out_allows_old_verified_pin_session(
         self,
         _ip_allowed_mock,
+        employee_model,
     ):
         request = self.factory.post("/attendance/portal/clock-out/", {"employee_id": "1"})
         attach_session(request)
@@ -2878,17 +3178,21 @@ class PortalPinGateTests(SimpleTestCase):
             "employee_id": "1",
             "verified_at": (datetime.now() - timedelta(minutes=5)).timestamp(),
         }
+        employee_model.DoesNotExist = Exception
+        employee_model.objects.get.side_effect = Exception
 
         response = public_clock_out(request)
         payload = json.loads(response.content)
 
         self.assertFalse(payload["success"])
-        self.assertIn("Location is required", payload["message"])
+        self.assertIn("Employee not found", payload["message"])
 
+    @patch("attendance.views.portal.Employee")
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
     def test_clock_out_allows_flow_after_valid_pin_session(
         self,
         _ip_allowed_mock,
+        employee_model,
     ):
         request = self.factory.post("/attendance/portal/clock-out/", {"employee_id": "1"})
         attach_session(request)
@@ -2896,12 +3200,14 @@ class PortalPinGateTests(SimpleTestCase):
             "employee_id": "1",
             "verified_at": datetime.now().timestamp(),
         }
+        employee_model.DoesNotExist = Exception
+        employee_model.objects.get.side_effect = Exception
 
         response = public_clock_out(request)
         payload = json.loads(response.content)
 
         self.assertFalse(payload["success"])
-        self.assertIn("Location is required", payload["message"])
+        self.assertIn("Employee not found", payload["message"])
 
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
     def test_clock_in_requires_verified_pin(
@@ -2917,10 +3223,12 @@ class PortalPinGateTests(SimpleTestCase):
         self.assertFalse(payload["success"])
         self.assertIn("PIN verification required", payload["message"])
 
+    @patch("attendance.views.portal.Employee")
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
     def test_clock_in_allows_flow_after_valid_pin_session(
         self,
         _ip_allowed_mock,
+        employee_model,
     ):
         request = self.factory.post("/attendance/portal/clock-in/", {"employee_id": "1"})
         attach_session(request)
@@ -2928,12 +3236,14 @@ class PortalPinGateTests(SimpleTestCase):
             "employee_id": "1",
             "verified_at": datetime.now().timestamp(),
         }
+        employee_model.DoesNotExist = Exception
+        employee_model.objects.get.side_effect = Exception
 
         response = public_clock_in(request)
         payload = json.loads(response.content)
 
         self.assertFalse(payload["success"])
-        self.assertIn("Location is required", payload["message"])
+        self.assertIn("Employee not found", payload["message"])
 
 
 class PortalUrlRoutingTests(SimpleTestCase):
