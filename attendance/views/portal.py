@@ -50,6 +50,7 @@ from attendance.models import (
     Attendance,
     AttendanceActivity,
     AttendanceGeneralSetting,
+    AttendancePortalMultiPunchEmployee,
     AttendanceRequestComment,
     AttendanceRequestFile,
 )
@@ -71,6 +72,16 @@ logger = logging.getLogger(__name__)
 PORTAL_WORK_ACTIVITY = "work"
 PORTAL_BREAK_ACTIVITY = "break"
 PORTAL_LUNCH_ACTIVITY = "lunch"
+PORTAL_MULTI_MORNING_IN = "morning_in"
+PORTAL_MULTI_MORNING_OUT = "morning_out"
+PORTAL_MULTI_AFTERNOON_IN = "afternoon_in"
+PORTAL_MULTI_AFTERNOON_OUT = "afternoon_out"
+PORTAL_MULTI_COMPLETE = "complete"
+PORTAL_MULTI_MORNING_OUT_START = time(11, 0)
+PORTAL_MULTI_MORNING_OUT_END = time(13, 0)
+PORTAL_MULTI_AFTERNOON_IN_START = time(12, 0)
+PORTAL_MULTI_AFTERNOON_IN_END = time(14, 0)
+PORTAL_MULTI_AFTERNOON_OUT_FALLBACK_START = time(14, 0)
 PORTAL_DEFAULT_BREAK_LIMIT = 2
 PORTAL_DEFAULT_BREAK_MINUTES = 15
 PORTAL_DEFAULT_LUNCH_MINUTES = 60
@@ -88,6 +99,12 @@ PORTAL_HELPDESK_BLOCKED_EXTENSIONS = {
 PORTAL_NON_WORK_ACTIVITY_TYPES = {
     PORTAL_BREAK_ACTIVITY: _("Break"),
     PORTAL_LUNCH_ACTIVITY: _("Lunch"),
+}
+PORTAL_MULTI_PUNCH_LABELS = {
+    PORTAL_MULTI_MORNING_IN: _("Morning Clock In"),
+    PORTAL_MULTI_MORNING_OUT: _("Morning Clock Out"),
+    PORTAL_MULTI_AFTERNOON_IN: _("Afternoon Clock In"),
+    PORTAL_MULTI_AFTERNOON_OUT: _("Afternoon Clock Out"),
 }
 
 
@@ -479,11 +496,22 @@ def _get_client_ip(request):
     return ip
 
 
+def _active_global_geofences(employee=None):
+    if (
+        employee is not None
+        and "active_global_geofences" in getattr(employee, "__dict__", {})
+    ):
+        return employee.active_global_geofences
+
+    try:
+        GeoFencing = apps.get_model("geofencing", "GeoFencing")
+    except LookupError:
+        return []
+    return GeoFencing.objects.filter(start=True).prefetch_related("excluded_employees")
+
+
 def _active_assigned_geofences(employee):
-    prefetched_geofences = getattr(employee, "active_assigned_geofences", None)
-    if prefetched_geofences is not None:
-        return prefetched_geofences
-    return employee.assigned_geofences.filter(start=True)
+    return _active_global_geofences(employee)
 
 
 def _employee_is_excluded_from_geofence(employee, geofence):
@@ -511,11 +539,11 @@ def _employee_is_excluded_from_geofence(employee, geofence):
 
 def _enforced_assigned_geofences(employee):
     """
-    Return the active assigned geofences that should actually restrict this
+    Return the active global geofences that should actually restrict this
     employee. Empty means the employee has no geofence restriction.
     """
     enforced_geofences = []
-    for geofence in _active_assigned_geofences(employee):
+    for geofence in _active_global_geofences(employee):
         if not getattr(geofence, "start", True):
             continue
         if _employee_is_excluded_from_geofence(employee, geofence):
@@ -526,16 +554,16 @@ def _enforced_assigned_geofences(employee):
 
 def _geofence_check(employee, work_info, latitude, longitude):
     """
-    Return a dict with error details if the employee is outside their assigned
-    geofences, or None if the clock action should be allowed.
-    Employees with no enforced assigned geofences are always allowed.
+    Return a dict with error details if the employee is outside every active
+    global geofence, or None if the clock action should be allowed.
+    Employees with no enforced global geofences are always allowed.
     """
     try:
-        assigned_geos = _enforced_assigned_geofences(employee)
+        enforced_geos = _enforced_assigned_geofences(employee)
     except Exception:
         return None
 
-    if not assigned_geos:
+    if not enforced_geos:
         return None
 
     try:
@@ -551,7 +579,7 @@ def _geofence_check(employee, work_info, latitude, longitude):
         inside = False
         nearest_geo = None
         min_distance = float('inf')
-        for geo in assigned_geos:
+        for geo in enforced_geos:
             distance = geodesic(
                 (geo.latitude, geo.longitude),
                 (latitude, longitude),
@@ -564,7 +592,7 @@ def _geofence_check(employee, work_info, latitude, longitude):
                 break
         if not inside:
             return {
-                "message": "You are outside your assigned geofenced locations.",
+                "message": "You are outside the active geofenced locations.",
                 "geo_center_lat": nearest_geo.latitude if nearest_geo else None,
                 "geo_center_lng": nearest_geo.longitude if nearest_geo else None,
                 "geo_radius_meters": nearest_geo.radius_in_meters if nearest_geo else None,
@@ -797,6 +825,293 @@ def _latest_portal_activity_for_date(employee, attendance_date):
         .order_by("-clock_out_date", "-clock_out", "-clock_in_date", "-clock_in", "-id")
         .first()
     )
+
+
+def _portal_multi_punch_enabled(employee):
+    try:
+        return AttendancePortalMultiPunchEmployee.objects.filter(
+            employee_id=employee,
+            is_active=True,
+        ).exists()
+    except Exception:
+        return False
+
+
+def _portal_work_activities_for_date(employee, attendance_date):
+    if not attendance_date:
+        return []
+    return list(
+        AttendanceActivity.objects.filter(
+            employee_id=employee,
+            attendance_date=attendance_date,
+            activity_type=PORTAL_WORK_ACTIVITY,
+        ).order_by("clock_in_date", "clock_in", "id")
+    )
+
+
+def _portal_multi_punch_time_in_window(current_clock, start, end):
+    return bool(current_clock and start <= current_clock < end)
+
+
+def _portal_current_attendance_context(work_info, current_time, require_shift=False):
+    current_time = _make_naive_datetime(current_time)
+    date_today = current_time.date()
+    now_str = current_time.strftime("%H:%M")
+    context = {
+        "date_today": date_today,
+        "attendance_date": date_today,
+        "day": None,
+        "shift": None,
+        "now_str": now_str,
+        "minimum_hour": None,
+        "start_time_sec": None,
+        "end_time_sec": None,
+        "error": "",
+    }
+
+    shift = getattr(work_info, "shift_id", None) if work_info else None
+    if not shift:
+        if require_shift:
+            context["error"] = "Employee shift not configured"
+        return context
+
+    context["shift"] = shift
+    day_name = date_today.strftime("%A").lower()
+    day = EmployeeShiftDay.objects.filter(day=day_name).first()
+    if not day:
+        if require_shift:
+            context["error"] = "Shift day configuration error"
+        return context
+
+    now_sec = strtime_seconds(now_str)
+    mid_day_sec = strtime_seconds("12:00")
+    minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
+        day=day,
+        shift=shift,
+    )
+
+    attendance_date = date_today
+    if start_time_sec > end_time_sec and mid_day_sec > now_sec:
+        date_yesterday = date_today - timedelta(days=1)
+        day_yesterday = date_yesterday.strftime("%A").lower()
+        day = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
+        if not day:
+            if require_shift:
+                context["error"] = "Shift day configuration error"
+            return context
+        minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
+            day=day,
+            shift=shift,
+        )
+        attendance_date = date_yesterday
+
+    context.update(
+        {
+            "attendance_date": attendance_date,
+            "day": day,
+            "minimum_hour": minimum_hour,
+            "start_time_sec": start_time_sec,
+            "end_time_sec": end_time_sec,
+        }
+    )
+    return context
+
+
+def _portal_multi_punch_state_from_activities(
+    activities,
+    current_time=None,
+    enabled=True,
+):
+    current_time = _make_naive_datetime(current_time or get_real_now())
+    current_clock = current_time.time() if isinstance(current_time, datetime) else None
+    work_activities = [
+        activity
+        for activity in activities
+        if _portal_activity_type(activity) == PORTAL_WORK_ACTIVITY
+    ]
+    open_activities = [
+        activity for activity in work_activities if getattr(activity, "clock_out", None) is None
+    ]
+
+    state = {
+        "multi_punch_enabled": bool(enabled),
+        "multi_punch_step": PORTAL_MULTI_COMPLETE,
+        "multi_punch_message": _("All work punches are complete for this attendance day."),
+        "multi_punch_can_morning_in": False,
+        "multi_punch_can_morning_out": False,
+        "multi_punch_can_afternoon_in": False,
+        "multi_punch_can_afternoon_out": False,
+        "multi_punch_work_segments": len(work_activities),
+    }
+
+    if not enabled:
+        state["multi_punch_step"] = ""
+        state["multi_punch_message"] = ""
+        return state
+
+    if not work_activities:
+        state.update(
+            {
+                "multi_punch_step": PORTAL_MULTI_MORNING_IN,
+                "multi_punch_message": _("Morning Clock In is available."),
+                "multi_punch_can_morning_in": True,
+            }
+        )
+        return state
+
+    open_activity = open_activities[-1] if open_activities else None
+    if open_activity:
+        try:
+            open_index = work_activities.index(open_activity)
+        except ValueError:
+            open_index = len(work_activities) - 1
+
+        if open_index % 2 == 1:
+            state.update(
+                {
+                    "multi_punch_step": PORTAL_MULTI_AFTERNOON_OUT,
+                    "multi_punch_message": _("Afternoon Clock Out is available."),
+                    "multi_punch_can_afternoon_out": True,
+                }
+            )
+            return state
+
+        # The first segment of the current cycle is open. During the overlap
+        # between the two daytime windows, either the regular Morning Out or
+        # the recovery Afternoon In can be selected.
+        morning_out_available = _portal_multi_punch_time_in_window(
+            current_clock,
+            PORTAL_MULTI_MORNING_OUT_START,
+            PORTAL_MULTI_MORNING_OUT_END,
+        )
+        afternoon_in_available = _portal_multi_punch_time_in_window(
+            current_clock,
+            PORTAL_MULTI_AFTERNOON_IN_START,
+            PORTAL_MULTI_AFTERNOON_IN_END,
+        )
+        afternoon_out_fallback = bool(
+            current_clock
+            and current_clock >= PORTAL_MULTI_AFTERNOON_OUT_FALLBACK_START
+        )
+        state.update(
+            {
+                "multi_punch_can_morning_out": morning_out_available,
+                "multi_punch_can_afternoon_in": afternoon_in_available,
+                "multi_punch_can_afternoon_out": afternoon_out_fallback,
+            }
+        )
+
+        if afternoon_out_fallback:
+            state.update(
+                {
+                    "multi_punch_step": PORTAL_MULTI_AFTERNOON_OUT,
+                    "multi_punch_message": _(
+                        "Afternoon Clock Out is available."
+                    ),
+                }
+            )
+        elif afternoon_in_available:
+            state.update(
+                {
+                    "multi_punch_step": PORTAL_MULTI_AFTERNOON_IN,
+                    "multi_punch_message": _(
+                        "Afternoon Clock In is available."
+                    ),
+                }
+            )
+        else:
+            state.update(
+                {
+                    "multi_punch_step": PORTAL_MULTI_MORNING_OUT,
+                    "multi_punch_message": (
+                        _("Morning Clock Out is available.")
+                        if morning_out_available
+                        else _("Morning Clock Out opens at 11:00 AM.")
+                    ),
+                }
+            )
+        return state
+
+    if len(work_activities) % 2 == 1:
+        afternoon_in_available = _portal_multi_punch_time_in_window(
+            current_clock,
+            PORTAL_MULTI_AFTERNOON_IN_START,
+            PORTAL_MULTI_AFTERNOON_IN_END,
+        )
+        afternoon_out_fallback = bool(
+            current_clock
+            and current_clock >= PORTAL_MULTI_AFTERNOON_OUT_FALLBACK_START
+        )
+        state.update(
+            {
+                "multi_punch_can_afternoon_in": afternoon_in_available,
+                "multi_punch_can_afternoon_out": afternoon_out_fallback,
+            }
+        )
+        if afternoon_out_fallback:
+            state.update(
+                {
+                    "multi_punch_step": PORTAL_MULTI_AFTERNOON_OUT,
+                    "multi_punch_message": _(
+                        "Afternoon Clock Out is available."
+                    ),
+                }
+            )
+        else:
+            state.update(
+                {
+                    "multi_punch_step": PORTAL_MULTI_AFTERNOON_IN,
+                    "multi_punch_message": (
+                        _("Afternoon Clock In is available.")
+                        if afternoon_in_available
+                        else _("Afternoon Clock In opens at 12:00 PM.")
+                    ),
+                }
+            )
+        return state
+
+    state.update(
+        {
+            "multi_punch_step": PORTAL_MULTI_MORNING_IN,
+            "multi_punch_message": _("Morning Clock In is available."),
+            "multi_punch_can_morning_in": True,
+        }
+    )
+    return state
+
+
+def _portal_multi_punch_state(employee, attendance_date, current_time=None):
+    enabled = _portal_multi_punch_enabled(employee)
+    activities = (
+        _portal_work_activities_for_date(employee, attendance_date) if enabled else []
+    )
+    return _portal_multi_punch_state_from_activities(
+        activities,
+        current_time=current_time,
+        enabled=enabled,
+    )
+
+
+def _portal_multi_punch_action_error(state, requested_action, allowed_actions):
+    if requested_action not in allowed_actions:
+        return _("Invalid multiple clock in/out action.")
+
+    can_key = f"multi_punch_can_{requested_action}"
+    if state.get(can_key):
+        return ""
+
+    if state.get("multi_punch_step") == PORTAL_MULTI_COMPLETE:
+        return _("All work punches are complete for this attendance day.")
+
+    message = state.get("multi_punch_message")
+    if message:
+        return message
+
+    next_label = PORTAL_MULTI_PUNCH_LABELS.get(state.get("multi_punch_step"))
+    if next_label:
+        return _("Next available action is %(action)s.") % {"action": next_label}
+
+    return _("This attendance action is not available yet.")
 
 
 def _make_naive_datetime(value):
@@ -1680,14 +1995,25 @@ def employee_lookup(request):
             is_active=True,
         )[:10]
 
-        today = date.today()
+        lookup_now = get_real_now()
+        active_global_geofences = None
         results = []
         for emp in employees:
-            _maybe_auto_checkout_employee(emp)
+            if "active_global_geofences" not in getattr(emp, "__dict__", {}):
+                if active_global_geofences is None:
+                    active_global_geofences = list(_active_global_geofences())
+                emp.active_global_geofences = active_global_geofences
+            _maybe_auto_checkout_employee(emp, lookup_now)
             active_activity = _open_portal_activity(emp)
+            work_info = getattr(emp, "employee_work_info", None)
+            attendance_context = _portal_current_attendance_context(work_info, lookup_now)
+            current_attendance_date = attendance_context["attendance_date"]
             # When not clocked in, only use today's activities so the summary strip
             # shows --:-- instead of the previous day's times.
-            latest_activity = active_activity or _latest_portal_activity_for_date(emp, today)
+            latest_activity = active_activity or _latest_portal_activity_for_date(
+                emp,
+                current_attendance_date,
+            )
             attendance_date = getattr(latest_activity, "attendance_date", None)
             attendance = None
             if attendance_date:
@@ -1695,6 +2021,9 @@ def employee_lookup(request):
                     employee_id=emp,
                     attendance_date=attendance_date,
                 ).first()
+            portal_attendance_date = (
+                attendance_date if active_activity else current_attendance_date
+            )
 
             is_clocked_in = active_activity is not None
             active_activity_type = (
@@ -1711,6 +2040,11 @@ def employee_lookup(request):
                 attendance_date,
             )
             break_metadata = _portal_break_metadata(emp, attendance_date)
+            multi_punch_state = _portal_multi_punch_state(
+                emp,
+                portal_attendance_date,
+                lookup_now,
+            )
             clock_in_datetime = _attendance_datetime_iso(
                 attendance,
                 "attendance_clock_in_date",
@@ -1735,14 +2069,13 @@ def employee_lookup(request):
             geo_data = []
             branch_name = ""
             try:
-                work_info = getattr(emp, "employee_work_info", None)
                 branch = work_info.branch_id if work_info else None
                 if branch:
                     branch_name = branch.branch or ""
                 
                 # Fetch geofences that actively restrict this employee.
-                assigned_geos = _enforced_assigned_geofences(emp)
-                for geo in assigned_geos:
+                enforced_geos = _enforced_assigned_geofences(emp)
+                for geo in enforced_geos:
                     geo_data.append({
                         "name": geo.name or "",
                         "geo_center_lat": geo.latitude,
@@ -1762,8 +2095,9 @@ def employee_lookup(request):
                 "active_activity_started_at": active_activity_started_at,
                 "lunch_taken": lunch_taken,
                 **break_metadata,
-                **_portal_activity_duration_metadata(emp, attendance_date),
-                **_portal_worked_duration_metadata(emp, attendance_date),
+                **_portal_activity_duration_metadata(emp, attendance_date, lookup_now),
+                **_portal_worked_duration_metadata(emp, attendance_date, lookup_now),
+                **multi_punch_state,
                 "clock_in_datetime": clock_in_datetime,
                 "clock_out_datetime": clock_out_datetime,
                 "geo_fence": geo_data,
@@ -3074,44 +3408,47 @@ def public_clock_in(request):
 
         # Get current date and time from NTP (tamper-proof)
         datetime_now = get_real_now()
-        date_today = datetime_now.date()
-        day_name = date_today.strftime("%A").lower()
-
-        day = EmployeeShiftDay.objects.filter(day=day_name).first()
-        if not day:
-            logger.error(f"Shift day configuration error for {day_name}")
-            return JsonResponse(
-                {"success": False, "message": "Shift day configuration error"}, status=200
-            )
-
-        # Get shift schedule
-        now_str = datetime_now.strftime("%H:%M")
-        now_sec = strtime_seconds(now_str)
-        mid_day_sec = strtime_seconds("12:00")
-        minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
-            day=day, shift=shift
+        attendance_context = _portal_current_attendance_context(
+            work_info,
+            datetime_now,
+            require_shift=True,
         )
+        if attendance_context["error"]:
+            logger.error(
+                "Clock in attendance date resolution failed for employee %s: %s",
+                employee_id,
+                attendance_context["error"],
+            )
+            return JsonResponse(
+                {"success": False, "message": attendance_context["error"]},
+                status=200,
+            )
+        date_today = attendance_context["date_today"]
+        day = attendance_context["day"]
+        now_str = attendance_context["now_str"]
+        minimum_hour = attendance_context["minimum_hour"]
+        start_time_sec = attendance_context["start_time_sec"]
+        end_time_sec = attendance_context["end_time_sec"]
+        attendance_date = attendance_context["attendance_date"]
 
-        # Handle night shift
-        attendance_date = date_today
-        if start_time_sec > end_time_sec:  # Night shift
-            if mid_day_sec > now_sec:
-                # Before noon - belongs to yesterday's shift
-                date_yesterday = date_today - timedelta(days=1)
-                day_yesterday = date_yesterday.strftime("%A").lower()
-
-                day = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
-                if not day:
-                    logger.error(f"Shift day configuration error for {day_yesterday}")
-                    return JsonResponse(
-                        {"success": False, "message": "Shift day configuration error"},
-                        status=200,
-                    )
-
-                minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
-                    day=day, shift=shift
+        multi_punch_enabled = _portal_multi_punch_enabled(employee)
+        if multi_punch_enabled:
+            punch_type = request.POST.get("punch_type", "").strip()
+            multi_punch_state = _portal_multi_punch_state(
+                employee,
+                attendance_date,
+                datetime_now,
+            )
+            action_error = _portal_multi_punch_action_error(
+                multi_punch_state,
+                punch_type,
+                {PORTAL_MULTI_MORNING_IN, PORTAL_MULTI_AFTERNOON_IN},
+            )
+            if action_error:
+                return JsonResponse(
+                    {"success": False, "message": action_error, **multi_punch_state},
+                    status=200,
                 )
-                attendance_date = date_yesterday
 
         open_activity = AttendanceActivity.objects.filter(
             employee_id=employee, clock_out__isnull=True
@@ -3260,6 +3597,15 @@ def public_activity_transition(request):
             )
 
         _maybe_auto_checkout_employee(employee)
+
+        if _portal_multi_punch_enabled(employee):
+            return JsonResponse(
+                {
+                    "success": False,
+                    "message": "Break and lunch are disabled for multiple clock in/out portal mode.",
+                },
+                status=200,
+            )
 
         work_info = getattr(employee, "employee_work_info", None)
         geo_error = _geofence_check(employee, work_info, latitude, longitude)
@@ -3518,63 +3864,143 @@ def public_clock_out(request):
         if geo_error:
             return _portal_geo_error_response(geo_error)
 
+        # Get current date and time from NTP (tamper-proof)
+        datetime_now = get_real_now()
+        date_today = datetime_now.date()
+        now_str = datetime_now.strftime("%H:%M")
+        multi_punch_enabled = _portal_multi_punch_enabled(employee)
+
         # Check if employee is clocked in
         open_activity = AttendanceActivity.objects.filter(
             employee_id=employee, clock_out__isnull=True
         ).order_by("attendance_date", "id").last()
 
-        if not open_activity:
-            # Auto clock-in with the current time so clock-in == clock-out
-            work_info_ci = getattr(employee, "employee_work_info", None)
-            shift_ci = getattr(work_info_ci, "shift_id", None)
-            if not shift_ci:
-                return JsonResponse(
-                    {"success": False, "message": "Employee shift not configured"}, status=200
+        multi_punch_state = None
+        multi_punch_context = None
+        if multi_punch_enabled:
+            punch_type = request.POST.get("punch_type", "").strip()
+            if open_activity:
+                multi_punch_attendance_date = open_activity.attendance_date
+            else:
+                multi_punch_context = _portal_current_attendance_context(
+                    work_info_out,
+                    datetime_now,
+                    require_shift=True,
                 )
-            datetime_now_ci = get_real_now()
-            date_today_ci = datetime_now_ci.date()
-            day_name_ci = date_today_ci.strftime("%A").lower()
-            day_ci = EmployeeShiftDay.objects.filter(day=day_name_ci).first()
-            if not day_ci:
-                return JsonResponse(
-                    {"success": False, "message": "Shift day configuration error"}, status=200
-                )
-            now_str_ci = datetime_now_ci.strftime("%H:%M")
-            now_sec_ci = strtime_seconds(now_str_ci)
-            mid_day_sec_ci = strtime_seconds("12:00")
-            minimum_hour_ci, start_time_sec_ci, end_time_sec_ci = shift_schedule_today(
-                day=day_ci, shift=shift_ci
+                if multi_punch_context["error"]:
+                    return JsonResponse(
+                        {"success": False, "message": multi_punch_context["error"]},
+                        status=200,
+                    )
+                multi_punch_attendance_date = multi_punch_context["attendance_date"]
+
+            multi_punch_state = _portal_multi_punch_state(
+                employee,
+                multi_punch_attendance_date,
+                datetime_now,
             )
-            attendance_date_ci = date_today_ci
-            if start_time_sec_ci > end_time_sec_ci and mid_day_sec_ci > now_sec_ci:
-                attendance_date_ci = date_today_ci - timedelta(days=1)
-                day_name_ci = attendance_date_ci.strftime("%A").lower()
-                day_ci = EmployeeShiftDay.objects.filter(day=day_name_ci).first() or day_ci
-            try:
-                clock_in_attendance_and_activity(
-                    employee=employee,
-                    date_today=date_today_ci,
-                    attendance_date=attendance_date_ci,
-                    day=day_ci,
-                    now=now_str_ci,
-                    shift=shift_ci,
-                    minimum_hour=minimum_hour_ci,
-                    start_time=start_time_sec_ci,
-                    end_time=end_time_sec_ci,
-                    in_datetime=datetime_now_ci,
-                )
-            except Exception as e:
-                logger.error(f"Auto clock-in during clock-out failed for {employee.id}: {e}", exc_info=True)
+            action_error = _portal_multi_punch_action_error(
+                multi_punch_state,
+                punch_type,
+                {PORTAL_MULTI_MORNING_OUT, PORTAL_MULTI_AFTERNOON_OUT},
+            )
+            if action_error:
                 return JsonResponse(
-                    {"success": False, "message": f"Clock out failed: {str(e)}"}, status=200
+                    {"success": False, "message": action_error, **multi_punch_state},
+                    status=200,
                 )
-            open_activity = AttendanceActivity.objects.filter(
-                employee_id=employee, clock_out__isnull=True
-            ).order_by("attendance_date", "id").last()
-            if not open_activity:
-                return JsonResponse(
-                    {"success": False, "message": "Failed to create attendance record"}, status=200
+
+        if not open_activity:
+            if multi_punch_enabled:
+                # A missed Afternoon In leaves no open segment. Start a
+                # temporary afternoon segment so the fallback Afternoon Out
+                # can still complete the attendance record.
+                try:
+                    clock_in_attendance_and_activity(
+                        employee=employee,
+                        date_today=multi_punch_context["date_today"],
+                        attendance_date=multi_punch_context["attendance_date"],
+                        day=multi_punch_context["day"],
+                        now=multi_punch_context["now_str"],
+                        shift=multi_punch_context["shift"],
+                        minimum_hour=multi_punch_context["minimum_hour"],
+                        start_time=multi_punch_context["start_time_sec"],
+                        end_time=multi_punch_context["end_time_sec"],
+                        in_datetime=datetime_now,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Fallback afternoon clock-in during clock-out failed for %s: %s",
+                        employee.id,
+                        e,
+                        exc_info=True,
+                    )
+                    return JsonResponse(
+                        {"success": False, "message": f"Clock out failed: {str(e)}"},
+                        status=200,
+                    )
+
+                open_activity = AttendanceActivity.objects.filter(
+                    employee_id=employee, clock_out__isnull=True
+                ).order_by("attendance_date", "id").last()
+                if not open_activity:
+                    return JsonResponse(
+                        {"success": False, "message": "Failed to create attendance record"},
+                        status=200,
+                    )
+
+            # Auto clock-in with the current time so clock-in == clock-out
+            if not multi_punch_enabled:
+                work_info_ci = getattr(employee, "employee_work_info", None)
+                shift_ci = getattr(work_info_ci, "shift_id", None)
+                if not shift_ci:
+                    return JsonResponse(
+                        {"success": False, "message": "Employee shift not configured"}, status=200
+                    )
+                datetime_now_ci = get_real_now()
+                date_today_ci = datetime_now_ci.date()
+                day_name_ci = date_today_ci.strftime("%A").lower()
+                day_ci = EmployeeShiftDay.objects.filter(day=day_name_ci).first()
+                if not day_ci:
+                    return JsonResponse(
+                        {"success": False, "message": "Shift day configuration error"}, status=200
+                    )
+                now_str_ci = datetime_now_ci.strftime("%H:%M")
+                now_sec_ci = strtime_seconds(now_str_ci)
+                mid_day_sec_ci = strtime_seconds("12:00")
+                minimum_hour_ci, start_time_sec_ci, end_time_sec_ci = shift_schedule_today(
+                    day=day_ci, shift=shift_ci
                 )
+                attendance_date_ci = date_today_ci
+                if start_time_sec_ci > end_time_sec_ci and mid_day_sec_ci > now_sec_ci:
+                    attendance_date_ci = date_today_ci - timedelta(days=1)
+                    day_name_ci = attendance_date_ci.strftime("%A").lower()
+                    day_ci = EmployeeShiftDay.objects.filter(day=day_name_ci).first() or day_ci
+                try:
+                    clock_in_attendance_and_activity(
+                        employee=employee,
+                        date_today=date_today_ci,
+                        attendance_date=attendance_date_ci,
+                        day=day_ci,
+                        now=now_str_ci,
+                        shift=shift_ci,
+                        minimum_hour=minimum_hour_ci,
+                        start_time=start_time_sec_ci,
+                        end_time=end_time_sec_ci,
+                        in_datetime=datetime_now_ci,
+                    )
+                except Exception as e:
+                    logger.error(f"Auto clock-in during clock-out failed for {employee.id}: {e}", exc_info=True)
+                    return JsonResponse(
+                        {"success": False, "message": f"Clock out failed: {str(e)}"}, status=200
+                    )
+                open_activity = AttendanceActivity.objects.filter(
+                    employee_id=employee, clock_out__isnull=True
+                ).order_by("attendance_date", "id").last()
+                if not open_activity:
+                    return JsonResponse(
+                        {"success": False, "message": "Failed to create attendance record"}, status=200
+                    )
 
         active_activity_type = _portal_activity_type(open_activity)
         if active_activity_type != PORTAL_WORK_ACTIVITY:
@@ -3586,11 +4012,6 @@ def public_clock_out(request):
                 },
                 status=200,
             )
-
-        # Get current date and time from NTP (tamper-proof)
-        datetime_now = get_real_now()
-        date_today = datetime_now.date()
-        now_str = datetime_now.strftime("%H:%M")
 
         # Call the business logic function
         try:

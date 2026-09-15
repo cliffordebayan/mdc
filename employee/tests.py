@@ -8,10 +8,92 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 
-from base.models import Branch, Company, PayrollGroup
+from base.models import Branch, BusinessUnit, Company, PayrollGroup
 from employee.filters import EmployeeFilter
-from employee.models import Employee, EmployeeBankDetails, EmployeeWorkInformation
+from employee.models import (
+    Employee,
+    EmployeeBankDetails,
+    EmployeeOnboardingPortal,
+    EmployeeWorkInformation,
+)
 from horilla.horilla_middlewares import _thread_locals
+
+
+class EmployeeWorkInfoExportTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        self.user = User.objects.create_superuser(
+            username="export-admin@example.com",
+            email="export-admin@example.com",
+            password="password123",
+        )
+        self.client.force_login(self.user)
+        self.business_unit = BusinessUnit.objects.create(
+            name="Operations",
+            code="OPS-001",
+        )
+        self.employee = Employee.objects.create(
+            employee_user_id=self.user,
+            employee_first_name="Export",
+            employee_last_name="Employee",
+            email="export-employee@example.com",
+            phone="09170000001",
+            is_active=True,
+        )
+        EmployeeWorkInformation.objects.filter(employee_id=self.employee).update(
+            business_unit_id=self.business_unit,
+        )
+        self.employee_without_business_unit = Employee.objects.create(
+            employee_first_name="No Unit",
+            email="export-no-unit@example.com",
+            phone="09170000002",
+            is_active=True,
+        )
+
+    def test_export_includes_business_unit_name_and_code_as_separate_columns(self):
+        response = self.client.get(
+            reverse("work-info-export"),
+            {
+                "selected_fields": [
+                    "get_full_name",
+                    "employee_work_info__business_unit_id",
+                    "employee_work_info__business_unit_id__code",
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data_frame = pd.read_excel(BytesIO(response.content))
+
+        self.assertEqual(
+            data_frame.columns.tolist(),
+            ["Complete Name", "Business Unit", "Business Unit Code"],
+        )
+        employee_row = data_frame.loc[
+            data_frame["Complete Name"] == "Export Employee"
+        ].iloc[0]
+        self.assertEqual(employee_row["Business Unit"], "Operations")
+        self.assertEqual(employee_row["Business Unit Code"], "OPS-001")
+
+    def test_export_leaves_business_unit_code_blank_when_not_set(self):
+        response = self.client.get(
+            reverse("work-info-export"),
+            {
+                "selected_fields": [
+                    "get_full_name",
+                    "employee_work_info__business_unit_id__code",
+                ]
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data_frame = pd.read_excel(BytesIO(response.content))
+
+        self.assertIn("Business Unit Code", data_frame.columns)
+        employee_row = data_frame.loc[
+            data_frame["Complete Name"] == "No Unit"
+        ].iloc[0]
+        self.assertTrue(pd.isna(employee_row["Business Unit Code"]))
 
 
 class EmployeeSearchFilterTests(TestCase):
@@ -87,6 +169,100 @@ class EmployeeSearchFilterTests(TestCase):
     def test_search_ignores_email_and_branch(self):
         self.assertNotIn(self.email_only.id, self._search_ids("lookup"))
         self.assertNotIn(self.branch_only.id, self._search_ids("North"))
+
+
+class EmployeePortalFlowTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        unique_id = uuid.uuid4().hex[:8]
+        self.user = User.objects.create_user(
+            username=f"portal-{unique_id}@example.com",
+            email=f"portal-{unique_id}@example.com",
+            password="password123",
+        )
+        self.employee = Employee.objects.create(
+            employee_user_id=self.user,
+            employee_first_name="Portal",
+            employee_last_name="Employee",
+            email=f"portal-employee-{unique_id}@example.com",
+            phone=f"0917{unique_id[:4]}001",
+            gender="male",
+            is_active=True,
+        )
+        self.work_info = getattr(self.employee, "employee_work_info", None)
+        if not self.work_info:
+            self.work_info = EmployeeWorkInformation.objects.create(
+                employee_id=self.employee
+            )
+        self.token = uuid.uuid4().hex
+        self.portal = EmployeeOnboardingPortal.objects.create(
+            employee_id=self.employee,
+            token=self.token,
+            count=2,
+        )
+
+    def _valid_personal_payload(self):
+        return {
+            "employee_first_name": "Portal",
+            "employee_middle_name": "",
+            "employee_last_name": "Employee",
+            "employee_extension": "",
+            "phone": "09171234567",
+            "dob": "1990-01-01",
+            "gender": "male",
+            "address": "123 Test Street",
+            "country": "Philippines",
+            "state": "Metro Manila",
+            "city": "Manila",
+            "zip": "1000",
+            "emergency_contact": "09176543210",
+            "emergency_contact_name": "Emergency Contact",
+            "emergency_contact_relation": "Sibling",
+        }
+
+    def test_personal_details_redirects_directly_to_pin_step(self):
+        response = self.client.post(
+            reverse("employee-portal-personal", args=[self.token]),
+            self._valid_personal_payload(),
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("employee-portal-pin", args=[self.token]),
+            fetch_redirect_response=False,
+        )
+        self.portal.refresh_from_db()
+        self.assertEqual(self.portal.count, 3)
+
+    def test_pin_page_is_accessible_after_personal_details_step(self):
+        self.portal.count = 3
+        self.portal.save(update_fields=["count"])
+
+        response = self.client.get(reverse("employee-portal-pin", args=[self.token]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Portal PIN")
+
+    def test_old_bank_step_url_redirects_to_pin_step(self):
+        self.portal.count = 3
+        self.portal.save(update_fields=["count"])
+
+        response = self.client.get(reverse("employee-portal-bank", args=[self.token]))
+
+        self.assertRedirects(
+            response,
+            reverse("employee-portal-pin", args=[self.token]),
+            fetch_redirect_response=False,
+        )
+
+    def test_portal_steps_no_longer_show_bank_details(self):
+        response = self.client.get(
+            reverse("employee-portal-personal", args=[self.token])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Bank Details")
+        self.assertContains(response, "Portal PIN")
 
 
 class EmployeeImportFlowTests(TransactionTestCase):

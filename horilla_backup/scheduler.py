@@ -290,7 +290,7 @@ def stop_gdrive_backup_job():
 
 if not any(
     cmd in sys.argv
-    for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell"]
+    for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell", "test"]
 ):
     """
     Resume the Google Drive backup job on server startup if it was left active.

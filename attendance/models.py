@@ -1203,7 +1203,6 @@ class AttendanceLateComeEarlyOut(HorillaModel):
         return duration + ":00"
 
     def save(self, *args, **kwargs) -> None:
-        super().save(*args, **kwargs)
         self.employee_id = self.attendance_id.employee_id
         super().save(*args, **kwargs)
 
@@ -1354,6 +1353,29 @@ class AttendanceGeneralSetting(HorillaModel):
     )
     company_id = models.ForeignKey(Company, on_delete=models.CASCADE, null=True)
     objects = HorillaCompanyManager()
+
+
+class AttendancePortalMultiPunchEmployee(HorillaModel):
+    """
+    Employees assigned here use the portal four-punch work sequence.
+    """
+
+    employee_id = models.OneToOneField(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="portal_multi_punch_setting",
+        verbose_name=_("Employee"),
+    )
+    objects = HorillaCompanyManager(
+        related_company_field="employee_id__employee_work_info__company_id"
+    )
+
+    class Meta:
+        verbose_name = _("Portal Multiple Clock In/Out Employee")
+        verbose_name_plural = _("Portal Multiple Clock In/Out Employees")
+
+    def __str__(self):
+        return str(self.employee_id)
 
 
 class WorkRecords(models.Model):

@@ -650,6 +650,10 @@ excel_columns = [
     # Org
     ("employee_work_info__cost_center_id", trans("Cost Center")),
     ("employee_work_info__business_unit_id", trans("Business Unit")),
+    (
+        "employee_work_info__business_unit_id__code",
+        trans("Business Unit Code"),
+    ),
     # Work contact
     ("employee_work_info__email", trans("Work Email")),
     ("employee_work_info__mobile", trans("Work Phone")),
@@ -669,6 +673,7 @@ fields_to_remove = [
     "email",
     "phone",
     "employee_bank_details__account_number",
+    "employee_work_info__business_unit_id__code",
 ]
 
 

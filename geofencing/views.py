@@ -5,17 +5,22 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
-from geopy.distance import geodesic
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from base.models import Branch
-from attendance.views.portal import _enforced_assigned_geofences
+from attendance.models import AttendancePortalMultiPunchEmployee
+from attendance.views.portal import _enforced_assigned_geofences, _geofence_check
 from employee.models import Employee
 
-from .forms import GeoFencingSetupForm, EmployeeGeofenceForm, QuickGeoFenceForm
+from .forms import (
+    GeoFencingSetupForm,
+    EmployeeGeofenceForm,
+    PortalMultiPunchEmployeeForm,
+    QuickGeoFenceForm,
+)
 from .models import GeoFencing
 from .serializers import EmployeeLocationSerializer, GeoFencingSetupSerializer
 
@@ -93,20 +98,21 @@ class GeoFencingEmployeeLocationCheckAPIView(APIView):
         lat = serializer.validated_data["latitude"]
         lng = serializer.validated_data["longitude"]
 
-        # Check assigned geofences
-        assigned_geos = employee.assigned_geofences.filter(start=True)
-        if assigned_geos.exists():
-            inside = False
-            for geo in assigned_geos:
-                distance = geodesic((geo.latitude, geo.longitude), (lat, lng)).meters
-                if distance <= geo.radius_in_meters:
-                    inside = True
-                    break
-            if inside:
-                return Response({"message": "Inside the geofence"}, status=status.HTTP_200_OK)
-            return Response({"message": "Outside the geofence"}, status=status.HTTP_400_BAD_REQUEST)
+        enforced_geofences = _enforced_assigned_geofences(employee)
+        if not enforced_geofences:
+            return Response(
+                {"message": "No active geofence restriction"},
+                status=status.HTTP_200_OK,
+            )
 
-        return Response({"message": "No geofence assigned"}, status=status.HTTP_200_OK)
+        geo_error = _geofence_check(employee, None, lat, lng)
+        if geo_error:
+            return Response(
+                {**geo_error, "message": "Outside the geofence"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response({"message": "Inside the geofence"}, status=status.HTTP_200_OK)
 
 
 class GeoFencingSetUpPermissionCheck(APIView):
@@ -122,6 +128,9 @@ class GeoFencingSetUpPermissionCheck(APIView):
 
 def _geo_config_context():
     geofences = GeoFencing.objects.all()
+    active_geofences = list(
+        GeoFencing.objects.filter(start=True).prefetch_related("excluded_employees")
+    )
     add_form = GeoFencingSetupForm()
     employees = Employee.objects.filter(is_active=True).prefetch_related(
         "assigned_geofences",
@@ -129,13 +138,48 @@ def _geo_config_context():
         "employee_work_info__department_id"
     )
     for employee in employees:
+        employee.active_global_geofences = active_geofences
         employee.enforced_geofences = _enforced_assigned_geofences(employee)
+
+    multi_punch_assignments = (
+        AttendancePortalMultiPunchEmployee.objects.filter(is_active=True)
+        .select_related(
+            "employee_id",
+            "employee_id__employee_work_info",
+            "employee_id__employee_work_info__department_id",
+        )
+        .order_by("employee_id__employee_first_name", "employee_id__employee_last_name")
+    )
 
     return {
         "geofences": geofences,
         "add_form": add_form,
         "employees": employees,
+        "multi_punch_form": PortalMultiPunchEmployeeForm(),
+        "multi_punch_assignments": multi_punch_assignments,
     }
+
+
+def _active_geofences():
+    return GeoFencing.objects.filter(start=True)
+
+
+def _sync_employee_geofence_coverage(employee, selected_geofences):
+    active_geofences = list(_active_geofences())
+    selected_ids = {geofence.id for geofence in selected_geofences}
+
+    employee.assigned_geofences.set(selected_geofences)
+    for geofence in active_geofences:
+        if geofence.id in selected_ids:
+            geofence.excluded_employees.remove(employee)
+        else:
+            geofence.excluded_employees.add(employee)
+
+
+def _clear_employee_geofence_coverage(employee):
+    employee.assigned_geofences.clear()
+    for geofence in _active_geofences():
+        geofence.excluded_employees.add(employee)
 
 
 @login_required
@@ -200,9 +244,9 @@ def geo_assign_save(request):
         emp_id = request.POST.get("employee")
         employee = get_object_or_404(Employee, pk=emp_id)
         geofence_ids = request.POST.getlist("geofences")
-        
-        geofences = GeoFencing.objects.filter(id__in=geofence_ids)
-        employee.assigned_geofences.set(geofences)
+
+        geofences = list(_active_geofences().filter(id__in=geofence_ids))
+        _sync_employee_geofence_coverage(employee, geofences)
         messages.success(request, _("Employee geofences assigned successfully."))
     return render(request, "geo_config.html", _geo_config_context())
 
@@ -211,7 +255,9 @@ def geo_assign_save(request):
 @permission_required("geofencing.change_geofencing")
 def geo_assign_edit(request, emp_id):
     employee = get_object_or_404(Employee, pk=emp_id)
-    current_geos = employee.assigned_geofences.all()
+    active_geofences = list(_active_geofences().prefetch_related("excluded_employees"))
+    employee.active_global_geofences = active_geofences
+    current_geos = _enforced_assigned_geofences(employee)
     form = EmployeeGeofenceForm(initial={
         "employee": employee.id,
         "geofences": current_geos
@@ -228,8 +274,51 @@ def geo_assign_edit(request, emp_id):
 def geo_assign_delete(request, emp_id):
     if request.method == "POST":
         employee = get_object_or_404(Employee, pk=emp_id)
-        employee.assigned_geofences.clear()
+        _clear_employee_geofence_coverage(employee)
         messages.success(request, _("Geofence assignments cleared successfully."))
+    return render(request, "geo_config.html", _geo_config_context())
+
+
+@login_required
+@permission_required("geofencing.change_geofencing")
+def geo_multi_punch_add(request):
+    form = PortalMultiPunchEmployeeForm()
+    return render(request, "geo_multi_punch_form.html", {"form": form})
+
+
+@login_required
+@permission_required("geofencing.change_geofencing")
+def geo_multi_punch_save(request):
+    if request.method == "POST":
+        form = PortalMultiPunchEmployeeForm(request.POST)
+        if form.is_valid():
+            employee = form.cleaned_data["employee"]
+            assignment, _created = AttendancePortalMultiPunchEmployee.objects.get_or_create(
+                employee_id=employee,
+                defaults={"is_active": True},
+            )
+            if not assignment.is_active:
+                assignment.is_active = True
+                assignment.save(update_fields=["is_active"])
+            messages.success(
+                request,
+                _("Employee enabled for multiple clock in/out portal mode."),
+            )
+        else:
+            messages.error(request, str(form.errors))
+    return render(request, "geo_config.html", _geo_config_context())
+
+
+@login_required
+@permission_required("geofencing.change_geofencing")
+def geo_multi_punch_delete(request, pk):
+    if request.method == "POST":
+        assignment = get_object_or_404(AttendancePortalMultiPunchEmployee, pk=pk)
+        assignment.delete()
+        messages.success(
+            request,
+            _("Employee removed from multiple clock in/out portal mode."),
+        )
     return render(request, "geo_config.html", _geo_config_context())
 
 

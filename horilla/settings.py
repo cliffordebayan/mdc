@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.1/ref/settings/
 """
 
 import os
+import sys
 from os.path import join
 from pathlib import Path
 
@@ -25,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.1/howto/deployment/checklist/
 
 env = environ.Env(
-    DEBUG=(bool, True),
+    DEBUG=(bool, False),
     SECRET_KEY=(
         str,
         "django-insecure-j8op9)1q8$1&0^s&p*_0%d#pr@w9qj@1o=3#@d=a(^@9@zd@%j",
@@ -257,7 +258,11 @@ USE_TZ = True
 # Production settings
 if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
-    SECURE_SSL_REDIRECT = True
+    # Django's development server is HTTP-only. Keep it and test clients on
+    # HTTP while retaining the redirect for real production traffic.
+    SECURE_SSL_REDIRECT = not any(
+        command in sys.argv for command in ("test", "runserver")
+    )
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True

@@ -1,5 +1,6 @@
 import contextlib
 import importlib
+from functools import lru_cache
 
 from django.contrib import messages
 from django.contrib.auth.models import User
@@ -11,6 +12,7 @@ from django.utils.translation import gettext_lazy as _
 from horilla.horilla_settings import APP_URLS, DYNAMIC_URL_PATTERNS
 
 
+@lru_cache(maxsize=None)
 def get_horilla_model_class(app_label, model):
     """
     Retrieves the model class for the given app label and model name using Django's ContentType framework.

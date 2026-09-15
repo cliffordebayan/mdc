@@ -8,6 +8,7 @@ This page is used to register filter for employee models
 import django
 import django_filters
 from django import forms
+from django.contrib.auth.models import Permission
 from django.db.models import Q
 from django.utils.translation import gettext as _
 from django_filters import CharFilter
@@ -151,6 +152,18 @@ class EmployeeFilter(HorillaFilterSet):
             "employee_user_id__groups",
             "employee_user_id__user_permissions",
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        permission_field = self.form.fields.get("employee_user_id__user_permissions")
+        if permission_field is not None:
+            permission_field.queryset = Permission.objects.select_related(
+                "content_type"
+            ).order_by(
+                "content_type__app_label",
+                "content_type__model",
+                "codename",
+            )
 
     def not_in_yet_func(self, queryset, _, value):
         """

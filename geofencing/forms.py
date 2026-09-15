@@ -2,6 +2,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from base.forms import ModelForm
+from attendance.models import AttendancePortalMultiPunchEmployee
 from employee.models import Employee
 
 from .models import GeoFencing
@@ -30,6 +31,28 @@ class EmployeeGeofenceForm(forms.Form):
         widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100", "data-placeholder": _("Select Geofences")}),
         label=_("Select Geofences"),
     )
+
+
+class PortalMultiPunchEmployeeForm(forms.Form):
+    employee = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        widget=forms.Select(
+            attrs={
+                "class": "oh-select oh-select-2 w-100",
+                "data-placeholder": _("Select Employee"),
+            }
+        ),
+        label=_("Select Employee"),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        assigned_ids = AttendancePortalMultiPunchEmployee.objects.filter(
+            is_active=True
+        ).values_list("employee_id", flat=True)
+        self.fields["employee"].queryset = Employee.objects.filter(
+            is_active=True
+        ).exclude(id__in=assigned_ids)
 
 
 class QuickGeoFenceForm(forms.ModelForm):

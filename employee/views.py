@@ -5392,7 +5392,7 @@ def employee_portal_personal(request, token):
             portal.count = 3
             portal.save()
             messages.success(request, _("Personal details saved successfully."))
-            return redirect("employee-portal-bank", token)
+            return redirect("employee-portal-pin", token)
 
     company = work_info.company_id
 
@@ -5413,28 +5413,7 @@ def employee_portal_bank(request, token):
     if portal.count < 3:
         return redirect("employee-portal-personal", token)
 
-    employee = portal.employee_id
-    work_info, _created = EmployeeWorkInformation.objects.get_or_create(employee_id=employee)
-    existing_bank = EmployeeBankDetails.objects.filter(employee_id=employee).first()
-    form = EmployeeBankDetailsForm(instance=existing_bank)
-
-    if request.method == "POST":
-        form = EmployeeBankDetailsForm(request.POST, instance=existing_bank)
-        if form.is_valid():
-            instance = form.save(commit=False)
-            instance.employee_id = employee
-            instance.is_primary = True
-            instance.save()
-            portal.count = 4
-            portal.save()
-            messages.success(request, _("Bank details saved successfully."))
-            return redirect("employee-portal-pin", token)
-
-    return render(
-        request,
-        "employee/portal/bank_details.html",
-        {"form": form, "employee": employee, "company": work_info.company_id, "token": token},
-    )
+    return redirect("employee-portal-pin", token)
 
 
 @csrf_exempt
@@ -5444,8 +5423,8 @@ def employee_portal_pin(request, token):
     if portal is None or portal.used:
         return render(request, "404.html")
 
-    if portal.count < 4:
-        return redirect("employee-portal-bank", token)
+    if portal.count < 3:
+        return redirect("employee-portal-personal", token)
 
     employee = portal.employee_id
     work_info, _created = EmployeeWorkInformation.objects.entire().get_or_create(employee_id=employee)

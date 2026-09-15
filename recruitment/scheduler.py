@@ -49,7 +49,7 @@ def candidate_convert():
 
 if not any(
     cmd in sys.argv
-    for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell"]
+    for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell", "test"]
 ):
     """
     Initializes and starts background tasks using APScheduler when the server is running.

@@ -1,0 +1,42 @@
+{% load i18n %}
+<div class="oh-modal__dialog-header pb-0 mb-3">
+  <span class="oh-modal__dialog-title">
+    {% trans "Assign Multiple Clock In/Out" %}
+  </span>
+  <button class="oh-modal__close" aria-label="Close">
+    <ion-icon name="close-outline"></ion-icon>
+  </button>
+</div>
+
+<div class="oh-modal__dialog-body">
+  <form id="geoMultiPunchForm"
+        hx-post="{% url 'geo-multi-punch-save' %}"
+        hx-target="#geo"
+        hx-swap="innerHTML"
+        hx-on::after-request="if(event.detail.successful) { $('#objectCreateModal').removeClass('oh-modal--show'); $('#reloadMessagesButton').click(); switchGeoTab('multi-punch'); }"
+        class="oh-profile-section pt-0">
+    {% csrf_token %}
+
+    <div class="oh-input__group mb-3">
+      <label class="oh-input__label" for="id_employee">{% trans "Employee" %}</label>
+      {{ form.employee }}
+      {% if form.employee.errors %}<div class="text-danger small mt-1">{{ form.employee.errors }}</div>{% endif %}
+    </div>
+  </form>
+</div>
+
+<div class="oh-modal__dialog-footer">
+  <button type="submit" form="geoMultiPunchForm" class="oh-btn oh-btn--secondary oh-btn--shadow">
+    {% trans "Save Assignment" %}
+  </button>
+</div>
+
+<script>
+$(document).ready(function() {
+  if (typeof $.fn.select2 !== 'undefined') {
+    $('#id_employee').select2({
+      dropdownParent: $('#objectCreateModal')
+    });
+  }
+});
+</script>

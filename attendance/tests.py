@@ -6,8 +6,9 @@ import tempfile
 import uuid
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from django.core.signing import SignatureExpired
 from django.contrib.auth.models import AnonymousUser, Permission, User
@@ -25,6 +26,7 @@ from attendance.filters import AttendanceActivityFilter
 from attendance.forms import AttendanceActivityExportForm, AttendanceExportForm
 from attendance.export_jobs import create_export_job, file_path, update_job
 from attendance.methods import utils as attendance_utils
+from attendance.scheduler import auto_checkout_attendance
 from attendance.models import (
     Attendance,
     AttendanceActivity,
@@ -41,6 +43,8 @@ from attendance.views.portal import (
     _make_portal_pin_reset_token,
     _portal_activity_total_seconds,
     _portal_break_policy,
+    _portal_multi_punch_action_error,
+    _portal_multi_punch_state_from_activities,
     _portal_worked_duration_metadata,
     _send_portal_pin_reset_email,
     attendance_history,
@@ -880,26 +884,587 @@ class PortalClockOutTests(SimpleTestCase):
         self.assertTrue(open_activity.location_verified)
 
 
+class PortalMultiPunchStateTests(SimpleTestCase):
+    def _work_activity(self, clock_out=None):
+        return SimpleNamespace(activity_type="work", clock_out=clock_out)
+
+    def test_no_segment_only_morning_in_enabled(self):
+        state = _portal_multi_punch_state_from_activities(
+            [],
+            current_time=datetime(2026, 9, 14, 8, 0),
+        )
+
+        self.assertTrue(state["multi_punch_can_morning_in"])
+        self.assertFalse(state["multi_punch_can_morning_out"])
+        self.assertFalse(state["multi_punch_can_afternoon_in"])
+        self.assertFalse(state["multi_punch_can_afternoon_out"])
+
+    def test_first_open_segment_before_1100_keeps_morning_out_disabled(self):
+        state = _portal_multi_punch_state_from_activities(
+            [self._work_activity()],
+            current_time=datetime(2026, 9, 14, 10, 59),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "morning_out")
+        self.assertFalse(state["multi_punch_can_morning_out"])
+
+    def test_first_open_segment_at_1100_enables_morning_out(self):
+        state = _portal_multi_punch_state_from_activities(
+            [self._work_activity()],
+            current_time=datetime(2026, 9, 14, 11, 0),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "morning_out")
+        self.assertTrue(state["multi_punch_can_morning_out"])
+
+    def test_first_closed_segment_before_1200_keeps_afternoon_in_disabled(self):
+        state = _portal_multi_punch_state_from_activities(
+            [self._work_activity(clock_out=time(12, 0))],
+            current_time=datetime(2026, 9, 14, 11, 59),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "afternoon_in")
+        self.assertFalse(state["multi_punch_can_afternoon_in"])
+
+    def test_first_closed_segment_at_1200_enables_afternoon_in(self):
+        state = _portal_multi_punch_state_from_activities(
+            [self._work_activity(clock_out=time(12, 0))],
+            current_time=datetime(2026, 9, 14, 12, 0),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "afternoon_in")
+        self.assertTrue(state["multi_punch_can_afternoon_in"])
+
+    def test_morning_out_is_available_through_1259_only(self):
+        at_end = _portal_multi_punch_state_from_activities(
+            [self._work_activity()],
+            current_time=datetime(2026, 9, 14, 12, 59, 59),
+        )
+        after_end = _portal_multi_punch_state_from_activities(
+            [self._work_activity()],
+            current_time=datetime(2026, 9, 14, 13, 0),
+        )
+
+        self.assertTrue(at_end["multi_punch_can_morning_out"])
+        self.assertFalse(after_end["multi_punch_can_morning_out"])
+        self.assertTrue(after_end["multi_punch_can_afternoon_in"])
+
+    def test_afternoon_in_is_available_through_159_only(self):
+        at_end = _portal_multi_punch_state_from_activities(
+            [self._work_activity(clock_out=time(12, 0))],
+            current_time=datetime(2026, 9, 14, 13, 59, 59),
+        )
+        after_end = _portal_multi_punch_state_from_activities(
+            [self._work_activity(clock_out=time(12, 0))],
+            current_time=datetime(2026, 9, 14, 14, 0),
+        )
+
+        self.assertTrue(at_end["multi_punch_can_afternoon_in"])
+        self.assertFalse(after_end["multi_punch_can_afternoon_in"])
+        self.assertTrue(after_end["multi_punch_can_afternoon_out"])
+
+    def test_afternoon_in_can_recover_an_open_morning_segment(self):
+        state = _portal_multi_punch_state_from_activities(
+            [self._work_activity()],
+            current_time=datetime(2026, 9, 14, 12, 30),
+        )
+
+        self.assertTrue(state["multi_punch_can_morning_out"])
+        self.assertTrue(state["multi_punch_can_afternoon_in"])
+        self.assertFalse(state["multi_punch_can_afternoon_out"])
+
+    def test_action_validation_allows_any_enabled_action_not_only_primary_step(self):
+        state = {
+            "multi_punch_step": "morning_out",
+            "multi_punch_can_afternoon_in": True,
+        }
+
+        self.assertEqual(
+            _portal_multi_punch_action_error(
+                state,
+                "afternoon_in",
+                {"morning_out", "afternoon_in"},
+            ),
+            "",
+        )
+
+    def test_fallback_afternoon_out_works_after_missed_morning_out(self):
+        state = _portal_multi_punch_state_from_activities(
+            [self._work_activity()],
+            current_time=datetime(2026, 9, 14, 14, 0),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "afternoon_out")
+        self.assertTrue(state["multi_punch_can_afternoon_out"])
+
+    def test_fallback_afternoon_out_works_after_missed_afternoon_in(self):
+        state = _portal_multi_punch_state_from_activities(
+            [self._work_activity(clock_out=time(12, 0))],
+            current_time=datetime(2026, 9, 14, 14, 0),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "afternoon_out")
+        self.assertTrue(state["multi_punch_can_afternoon_out"])
+
+    def test_fallback_afternoon_out_is_not_available_without_morning_in(self):
+        state = _portal_multi_punch_state_from_activities(
+            [
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(clock_out=time(17, 0)),
+            ],
+            current_time=datetime(2026, 9, 14, 14, 0),
+        )
+
+        self.assertFalse(state["multi_punch_can_afternoon_out"])
+        self.assertTrue(state["multi_punch_can_morning_in"])
+
+    def test_second_open_segment_enables_afternoon_out(self):
+        state = _portal_multi_punch_state_from_activities(
+            [
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(),
+            ],
+            current_time=datetime(2026, 9, 14, 13, 30),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "afternoon_out")
+        self.assertTrue(state["multi_punch_can_afternoon_out"])
+
+    def test_two_closed_segments_reset_to_morning_in(self):
+        state = _portal_multi_punch_state_from_activities(
+            [
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(clock_out=time(17, 0)),
+            ],
+            current_time=datetime(2026, 9, 14, 17, 30),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "morning_in")
+        self.assertTrue(state["multi_punch_can_morning_in"])
+        self.assertFalse(state["multi_punch_can_morning_out"])
+        self.assertFalse(state["multi_punch_can_afternoon_in"])
+        self.assertFalse(state["multi_punch_can_afternoon_out"])
+
+    def test_four_closed_segments_reset_to_morning_in_for_next_cycle(self):
+        state = _portal_multi_punch_state_from_activities(
+            [
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(clock_out=time(17, 0)),
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(clock_out=time(17, 0)),
+            ],
+            current_time=datetime(2026, 9, 14, 17, 30),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "morning_in")
+        self.assertTrue(state["multi_punch_can_morning_in"])
+        self.assertFalse(state["multi_punch_can_morning_out"])
+        self.assertFalse(state["multi_punch_can_afternoon_in"])
+        self.assertFalse(state["multi_punch_can_afternoon_out"])
+
+    def test_new_cycle_open_first_segment_enables_morning_out(self):
+        state = _portal_multi_punch_state_from_activities(
+            [
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(clock_out=time(17, 0)),
+                self._work_activity(),
+            ],
+            current_time=datetime(2026, 9, 14, 11, 30),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "morning_out")
+        self.assertTrue(state["multi_punch_can_morning_out"])
+
+    def test_new_cycle_closed_first_segment_keeps_afternoon_in_time_gate(self):
+        before_gate = _portal_multi_punch_state_from_activities(
+            [
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(clock_out=time(17, 0)),
+                self._work_activity(clock_out=time(12, 0)),
+            ],
+            current_time=datetime(2026, 9, 14, 11, 59),
+        )
+        at_gate = _portal_multi_punch_state_from_activities(
+            [
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(clock_out=time(17, 0)),
+                self._work_activity(clock_out=time(12, 0)),
+            ],
+            current_time=datetime(2026, 9, 14, 12, 0),
+        )
+
+        self.assertEqual(before_gate["multi_punch_step"], "afternoon_in")
+        self.assertFalse(before_gate["multi_punch_can_afternoon_in"])
+        self.assertTrue(at_gate["multi_punch_can_afternoon_in"])
+
+    def test_new_cycle_open_second_segment_enables_afternoon_out(self):
+        state = _portal_multi_punch_state_from_activities(
+            [
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(clock_out=time(17, 0)),
+                self._work_activity(clock_out=time(12, 0)),
+                self._work_activity(),
+            ],
+            current_time=datetime(2026, 9, 14, 13, 30),
+        )
+
+        self.assertEqual(state["multi_punch_step"], "afternoon_out")
+        self.assertTrue(state["multi_punch_can_afternoon_out"])
+
+
+class PortalMultiPunchEndpointTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _request(self, url, data):
+        request = self.factory.post(url, data)
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": str(data.get("employee_id", "1")),
+            "verified_at": datetime.now().timestamp(),
+        }
+        return request
+
+    def _employee(self):
+        employee = MagicMock()
+        employee.id = 1
+        employee.get_full_name.return_value = "Test Employee"
+        employee.employee_work_info = SimpleNamespace(shift_id=SimpleNamespace())
+        return employee
+
+    @patch("attendance.views.portal.clock_in_attendance_and_activity")
+    @patch("attendance.views.portal.shift_schedule_today", return_value=(0, 32400, 61200))
+    @patch("attendance.views.portal.EmployeeShiftDay")
+    @patch("attendance.views.portal._portal_multi_punch_state")
+    @patch("attendance.views.portal._portal_multi_punch_enabled", return_value=True)
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 14, 13, 0))
+    @patch("attendance.views.portal._geofence_check", return_value=None)
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_in_rejects_out_of_sequence_request(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        _auto_checkout_mock,
+        _geofence_mock,
+        _now_mock,
+        _multi_enabled_mock,
+        multi_state_mock,
+        shift_day_model,
+        _shift_schedule_mock,
+        clock_in_helper_mock,
+    ):
+        request = self._request(
+            "/attendance/portal/clock-in/",
+            {
+                "employee_id": "1",
+                "latitude": "14.6",
+                "longitude": "121.0",
+                "punch_type": "afternoon_in",
+            },
+        )
+        employee_model.objects.get.return_value = self._employee()
+        shift_day_model.objects.filter.return_value.first.return_value = SimpleNamespace()
+        multi_state_mock.return_value = {
+            "multi_punch_enabled": True,
+            "multi_punch_step": "morning_in",
+            "multi_punch_message": "Morning Clock In is available.",
+            "multi_punch_can_morning_in": True,
+            "multi_punch_can_morning_out": False,
+            "multi_punch_can_afternoon_in": False,
+            "multi_punch_can_afternoon_out": False,
+        }
+
+        response = public_clock_in(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["message"], "Morning Clock In is available.")
+        clock_in_helper_mock.assert_not_called()
+
+    @patch("attendance.views.portal.clock_out_attendance_and_activity")
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal._portal_multi_punch_state")
+    @patch("attendance.views.portal._portal_multi_punch_enabled", return_value=True)
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 14, 10, 0))
+    @patch("attendance.views.portal._geofence_check", return_value=None)
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_clock_out_rejects_morning_out_before_1100(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        _auto_checkout_mock,
+        _geofence_mock,
+        _now_mock,
+        _multi_enabled_mock,
+        multi_state_mock,
+        attendance_activity_model,
+        clock_out_helper_mock,
+    ):
+        request = self._request(
+            "/attendance/portal/clock-out/",
+            {
+                "employee_id": "1",
+                "latitude": "14.6",
+                "longitude": "121.0",
+                "punch_type": "morning_out",
+            },
+        )
+        employee_model.objects.get.return_value = self._employee()
+        open_activity = SimpleNamespace(
+            activity_type="work",
+            attendance_date=date(2026, 9, 14),
+            clock_out=None,
+        )
+        attendance_activity_model.objects.filter.return_value.order_by.return_value.last.return_value = open_activity
+        multi_state_mock.return_value = {
+            "multi_punch_enabled": True,
+            "multi_punch_step": "morning_out",
+            "multi_punch_message": "Morning Clock Out opens at 11:00 AM.",
+            "multi_punch_can_morning_in": False,
+            "multi_punch_can_morning_out": False,
+            "multi_punch_can_afternoon_in": False,
+            "multi_punch_can_afternoon_out": False,
+        }
+
+        response = public_clock_out(request)
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["message"], "Morning Clock Out opens at 11:00 AM.")
+        clock_out_helper_mock.assert_not_called()
+
+    @patch("attendance.views.portal.clock_out_attendance_and_activity")
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal._portal_multi_punch_state")
+    @patch("attendance.views.portal._portal_multi_punch_enabled", return_value=True)
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 14, 17, 0))
+    @patch("attendance.views.portal._geofence_check", return_value=None)
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_afternoon_clock_out_succeeds_for_completed_cycle(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        _auto_checkout_mock,
+        _geofence_mock,
+        _now_mock,
+        _multi_enabled_mock,
+        multi_state_mock,
+        attendance_activity_model,
+        clock_out_helper_mock,
+    ):
+        request = self._request(
+            "/attendance/portal/clock-out/",
+            {
+                "employee_id": "1",
+                "latitude": "14.6",
+                "longitude": "121.0",
+                "punch_type": "afternoon_out",
+            },
+        )
+        employee = self._employee()
+        employee_model.objects.get.return_value = employee
+        open_activity = SimpleNamespace(
+            activity_type="work",
+            attendance_date=date(2026, 9, 14),
+            clock_out=time(17, 0),
+            location_verified=None,
+            refresh_from_db=MagicMock(),
+            save=MagicMock(),
+        )
+        attendance_activity_model.objects.filter.return_value.order_by.return_value.last.return_value = open_activity
+        multi_state_mock.return_value = {
+            "multi_punch_enabled": True,
+            "multi_punch_step": "afternoon_out",
+            "multi_punch_message": "Afternoon Clock Out is available.",
+            "multi_punch_can_morning_in": False,
+            "multi_punch_can_morning_out": False,
+            "multi_punch_can_afternoon_in": False,
+            "multi_punch_can_afternoon_out": True,
+        }
+        attendance = SimpleNamespace(attendance_worked_hour="08:00")
+        clock_out_helper_mock.return_value = attendance
+
+        response = public_clock_out(request)
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["success"])
+        clock_out_helper_mock.assert_called_once()
+
+    def test_fallback_afternoon_clock_out_closes_open_morning_segment(self):
+        request = self._request(
+            "/attendance/portal/clock-out/",
+            {
+                "employee_id": "1",
+                "latitude": "14.6",
+                "longitude": "121.0",
+                "punch_type": "afternoon_out",
+            },
+        )
+        employee = self._employee()
+        open_activity = SimpleNamespace(
+            activity_type="work",
+            attendance_date=date(2026, 9, 14),
+            clock_out=None,
+            location_verified=None,
+            refresh_from_db=MagicMock(),
+            save=MagicMock(),
+        )
+        attendance = SimpleNamespace(attendance_worked_hour="08:00")
+
+        with patch("attendance.views.portal._ip_is_allowed", return_value=True), patch(
+            "attendance.views.portal.Employee"
+        ) as employee_model, patch(
+            "attendance.views.portal._maybe_auto_checkout_employee"
+        ), patch(
+            "attendance.views.portal._geofence_check", return_value=None
+        ), patch(
+            "attendance.views.portal.get_real_now",
+            return_value=datetime(2026, 9, 14, 14, 0),
+        ), patch(
+            "attendance.views.portal._portal_multi_punch_enabled", return_value=True
+        ), patch(
+            "attendance.views.portal._portal_multi_punch_state",
+            return_value={
+                "multi_punch_step": "afternoon_out",
+                "multi_punch_can_afternoon_out": True,
+            },
+        ), patch(
+            "attendance.views.portal.AttendanceActivity"
+        ) as attendance_activity_model, patch(
+            "attendance.views.portal.clock_out_attendance_and_activity",
+            return_value=attendance,
+        ) as clock_out_helper_mock:
+            employee_model.objects.get.return_value = employee
+            activity_qs = MagicMock()
+            activity_qs.order_by.return_value.last.return_value = open_activity
+            attendance_activity_model.objects.filter.return_value = activity_qs
+
+            response = public_clock_out(request)
+
+        payload = json.loads(response.content)
+        self.assertTrue(payload["success"])
+        clock_out_helper_mock.assert_called_once()
+
+    def test_fallback_afternoon_clock_out_creates_missing_afternoon_segment(self):
+        request = self._request(
+            "/attendance/portal/clock-out/",
+            {
+                "employee_id": "1",
+                "latitude": "14.6",
+                "longitude": "121.0",
+                "punch_type": "afternoon_out",
+            },
+        )
+        employee = self._employee()
+        open_activity = SimpleNamespace(
+            activity_type="work",
+            attendance_date=date(2026, 9, 14),
+            clock_out=None,
+            location_verified=None,
+            refresh_from_db=MagicMock(),
+            save=MagicMock(),
+        )
+        attendance = SimpleNamespace(attendance_worked_hour="08:00")
+        attendance_context = {
+            "error": "",
+            "date_today": date(2026, 9, 14),
+            "attendance_date": date(2026, 9, 14),
+            "day": SimpleNamespace(),
+            "now_str": "14:00",
+            "minimum_hour": 0,
+            "start_time_sec": 0,
+            "end_time_sec": 61200,
+            "shift": SimpleNamespace(),
+        }
+
+        with patch("attendance.views.portal._ip_is_allowed", return_value=True), patch(
+            "attendance.views.portal.Employee"
+        ) as employee_model, patch(
+            "attendance.views.portal._maybe_auto_checkout_employee"
+        ), patch(
+            "attendance.views.portal._geofence_check", return_value=None
+        ), patch(
+            "attendance.views.portal.get_real_now",
+            return_value=datetime(2026, 9, 14, 14, 0),
+        ), patch(
+            "attendance.views.portal._portal_multi_punch_enabled", return_value=True
+        ), patch(
+            "attendance.views.portal._portal_current_attendance_context",
+            return_value=attendance_context,
+        ), patch(
+            "attendance.views.portal._portal_multi_punch_state",
+            return_value={
+                "multi_punch_step": "afternoon_out",
+                "multi_punch_can_afternoon_out": True,
+            },
+        ), patch(
+            "attendance.views.portal.AttendanceActivity"
+        ) as attendance_activity_model, patch(
+            "attendance.views.portal.clock_in_attendance_and_activity"
+        ) as clock_in_helper_mock, patch(
+            "attendance.views.portal.clock_out_attendance_and_activity",
+            return_value=attendance,
+        ) as clock_out_helper_mock:
+            employee_model.objects.get.return_value = employee
+            activity_qs = MagicMock()
+            activity_qs.order_by.return_value.last.side_effect = [None, open_activity]
+            attendance_activity_model.objects.filter.return_value = activity_qs
+
+            response = public_clock_out(request)
+
+        payload = json.loads(response.content)
+        self.assertTrue(payload["success"])
+        clock_in_helper_mock.assert_called_once_with(
+            employee=employee,
+            date_today=date(2026, 9, 14),
+            attendance_date=date(2026, 9, 14),
+            day=attendance_context["day"],
+            now="14:00",
+            shift=attendance_context["shift"],
+            minimum_hour=0,
+            start_time=0,
+            end_time=61200,
+            in_datetime=datetime(2026, 9, 14, 14, 0),
+        )
+        clock_out_helper_mock.assert_called_once()
+
+
 class PortalGeofenceCheckTests(SimpleTestCase):
     def _employee(self, geofences):
-        return SimpleNamespace(id=1, pk=1, active_assigned_geofences=geofences)
+        return SimpleNamespace(id=1, pk=1, active_global_geofences=geofences)
 
-    def _geofence(self, *, start=True, excluded_employees=None, radius=100):
+    def _geofence(
+        self,
+        *,
+        name="HQ",
+        latitude=14.6000,
+        longitude=121.0000,
+        start=True,
+        excluded_employees=None,
+        radius=100,
+    ):
         return SimpleNamespace(
-            name="HQ",
-            latitude=14.6000,
-            longitude=121.0000,
+            name=name,
+            latitude=latitude,
+            longitude=longitude,
             radius_in_meters=radius,
             start=start,
             excluded_employees=excluded_employees or [],
         )
 
-    def test_geofence_check_allows_employee_with_no_assigned_geofences(self):
+    def test_geofence_check_allows_employee_with_no_active_global_geofences(self):
         employee = self._employee([])
 
         self.assertIsNone(_geofence_check(employee, None, "15.0", "122.0"))
 
-    def test_geofence_check_allows_missing_location_without_assigned_geofence(self):
+    def test_geofence_check_allows_missing_location_without_global_geofence(self):
         employee = self._employee([])
 
         self.assertIsNone(_geofence_check(employee, None, "", ""))
@@ -911,7 +1476,7 @@ class PortalGeofenceCheckTests(SimpleTestCase):
 
     def test_geofence_check_allows_employee_excluded_from_active_geofence(self):
         employee = self._employee([])
-        employee.active_assigned_geofences = [
+        employee.active_global_geofences = [
             self._geofence(excluded_employees=[SimpleNamespace(id=1, pk=1)])
         ]
 
@@ -949,6 +1514,26 @@ class PortalGeofenceCheckTests(SimpleTestCase):
 
         self.assertIsNone(_geofence_check(employee, None, "14.6001", "121.0001"))
 
+    def test_geofence_check_allows_when_radius_is_increased(self):
+        geofence = self._geofence(radius=100)
+        employee = self._employee([geofence])
+
+        result = _geofence_check(employee, None, "14.6020", "121.0000")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["geo_radius_meters"], 100)
+
+        geofence.radius_in_meters = 300
+
+        self.assertIsNone(_geofence_check(employee, None, "14.6020", "121.0000"))
+
+    def test_geofence_check_allows_inside_any_active_geofence(self):
+        employee = self._employee([
+            self._geofence(name="HQ", latitude=14.6000, longitude=121.0000),
+            self._geofence(name="Satellite", latitude=15.0000, longitude=122.0000),
+        ])
+
+        self.assertIsNone(_geofence_check(employee, None, "15.0001", "122.0001"))
+
 
 class PortalGeofenceEndpointTests(SimpleTestCase):
     def setUp(self):
@@ -968,7 +1553,7 @@ class PortalGeofenceEndpointTests(SimpleTestCase):
         employee.id = 1
         employee.pk = 1
         employee.employee_work_info = MagicMock()
-        employee.active_assigned_geofences = [
+        employee.active_global_geofences = [
             SimpleNamespace(
                 name="HQ",
                 latitude=14.6000,
@@ -1097,7 +1682,7 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
         employee = MagicMock()
         employee.id = 1
         employee.pk = 1
-        employee.active_assigned_geofences = []
+        employee.active_global_geofences = []
         employee.employee_work_info = MagicMock()
         employee.employee_work_info.shift_id = object()
         employee.get_full_name.return_value = "Test Employee"
@@ -1189,6 +1774,7 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
 
         self.assertTrue(payload["success"])
         self.assertFalse(activity.location_verified)
+
 
     @patch("attendance.views.portal._maybe_auto_checkout_employee")
     @patch("attendance.views.portal._update_attendance_worked_hours")
@@ -1429,6 +2015,49 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
         self.assertEqual(payload["transition"], "end")
 
 
+class PortalTemplateRegressionTests(SimpleTestCase):
+    """Guard the inline portal JavaScript behavior that has no JS test runner."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        template_path = (
+            Path(__file__).resolve().parent
+            / "templates"
+            / "attendance"
+            / "portal"
+            / "portal.html"
+        )
+        cls.portal_template = template_path.read_text(encoding="utf-8")
+
+    def test_location_requirement_is_limited_to_active_geofences(self):
+        self.assertIn(
+            "if (!selectedEmployeeRequiresLocation()) {\n                return true;",
+            self.portal_template,
+        )
+        self.assertIn(
+            "if (selectedEmployeeRequiresLocation() && !hasCapturedPortalLocation()) return;",
+            self.portal_template,
+        )
+        self.assertIn(
+            "if (selectedEmployeeRequiresLocation()) {\n                disableClockButtons();",
+            self.portal_template,
+        )
+        self.assertIn("You can continue without GPS.", self.portal_template)
+
+    def test_saved_map_fits_user_and_full_geofence_bounds(self):
+        self.assertIn("L.latLng(pointLatitude, pointLongitude).toBounds(radius)", self.portal_template)
+        self.assertIn("savedSelfieMapView(boundsPoints, w, h)", self.portal_template)
+        self.assertIn("const fitScale = Math.min(availableWidth / xSpan, availableHeight / ySpan);", self.portal_template)
+        self.assertIn("radius: 0", self.portal_template)
+        self.assertIn("radius: radius", self.portal_template)
+
+    def test_saved_map_keeps_tile_failure_fallback(self):
+        self.assertIn("const renderedTiles = await drawSavedSelfieMapTiles(ctx, mapX, mapY, mapW, mapH);", self.portal_template)
+        self.assertIn("if (!renderedTiles) {", self.portal_template)
+        self.assertIn("drawSavedSelfieMap(ctx, mapX, mapY, mapW, mapH);", self.portal_template)
+
+
 class PortalAutoCheckoutTests(SimpleTestCase):
     def setUp(self):
         self.factory = RequestFactory()
@@ -1634,19 +2263,23 @@ class PortalAutoCheckoutTests(SimpleTestCase):
     @patch("attendance.views.portal._portal_activity_duration_metadata", return_value={"break_total_seconds": 0, "break_total_time": "00:00", "lunch_total_seconds": 0, "lunch_total_time": "00:00"})
     @patch("attendance.views.portal._portal_break_metadata", return_value={"breaks_taken": 0, "breaks_allowed": 2, "break_minutes_allowed": 15, "lunch_minutes_allowed": 60, "break_limit_reached": False})
     @patch("attendance.views.portal._lunch_taken", return_value=False)
+    @patch("attendance.views.portal._latest_portal_activity_for_date")
     @patch("attendance.views.portal._latest_portal_activity")
     @patch("attendance.views.portal._open_portal_activity", return_value=None)
     @patch("attendance.views.portal._maybe_auto_checkout_employee")
     @patch("attendance.views.portal.Attendance")
     @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._active_global_geofences", return_value=[])
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
     def test_employee_lookup_reflects_auto_closed_attendance(
         self,
         _ip_allowed_mock,
+        _active_global_geofences_mock,
         employee_model,
         attendance_model,
         auto_checkout_mock,
         _open_activity_mock,
+        latest_activity_for_date_mock,
         latest_activity_mock,
         _lunch_taken_mock,
         _break_metadata_mock,
@@ -1676,6 +2309,7 @@ class PortalAutoCheckoutTests(SimpleTestCase):
             clock_out=time(17, 30),
             out_datetime=datetime(2026, 6, 5, 17, 30, 0),
         )
+        latest_activity_for_date_mock.return_value = latest_activity_mock.return_value
         attendance_model.objects.filter.return_value.first.return_value = SimpleNamespace(
             attendance_clock_in_date=date(2026, 6, 5),
             attendance_clock_in=time(9, 0),
@@ -1689,7 +2323,154 @@ class PortalAutoCheckoutTests(SimpleTestCase):
         self.assertTrue(payload["success"])
         self.assertFalse(payload["results"][0]["is_clocked_in"])
         self.assertEqual(payload["results"][0]["clock_out_datetime"], "2026-06-05T17:30:00")
-        auto_checkout_mock.assert_called_once_with(employee)
+        auto_checkout_mock.assert_called_once_with(employee, ANY)
+
+
+class AttendanceSchedulerAutoCheckoutTests(SimpleTestCase):
+    def _run_scheduler(
+        self,
+        current_time,
+        *,
+        is_night_shift=False,
+        auto_punch_out_time=time(17, 30),
+        activities=(),
+        locked_activity=None,
+        attendance=None,
+    ):
+        with (
+            patch("attendance.scheduler.transaction.atomic") as atomic_mock,
+            patch("attendance.views.clock_in_out.clock_out") as clock_out_mock,
+            patch("attendance.models.Attendance") as attendance_model,
+            patch("attendance.models.AttendanceActivity") as activity_model,
+            patch("base.models.EmployeeShiftSchedule") as schedule_model,
+            patch("attendance.scheduler.timezone.now") as now_mock,
+        ):
+            now_mock.return_value = timezone.make_aware(current_time)
+            atomic_mock.return_value = nullcontext()
+
+            employee = SimpleNamespace(employee_user_id=SimpleNamespace())
+            schedule = SimpleNamespace(
+                day=SimpleNamespace(),
+                shift_id=SimpleNamespace(),
+                is_night_shift=is_night_shift,
+                auto_punch_out_time=auto_punch_out_time,
+            )
+            schedule_model.objects.filter.return_value.select_related.return_value.iterator.return_value = iter(
+                [schedule]
+            )
+            activity_model.objects.filter.return_value.select_related.return_value.order_by.return_value.iterator.return_value = iter(
+                activities
+            )
+            activity_model.objects.select_for_update.return_value.select_related.return_value.filter.return_value.order_by.return_value.first.return_value = locked_activity
+            attendance_model.objects.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = attendance
+
+            auto_checkout_attendance()
+            return clock_out_mock, employee
+
+    @patch("attendance.scheduler.transaction.atomic")
+    @patch("attendance.views.clock_in_out.clock_out")
+    @patch("attendance.models.Attendance")
+    @patch("attendance.models.AttendanceActivity")
+    @patch("base.models.EmployeeShiftSchedule")
+    @patch("attendance.scheduler.timezone.now")
+    def test_expired_schedule_clocks_out_open_activity(
+        self,
+        now_mock,
+        schedule_model,
+        activity_model,
+        attendance_model,
+        clock_out_mock,
+        atomic_mock,
+    ):
+        now_mock.return_value = timezone.make_aware(datetime(2026, 6, 5, 18, 0))
+        atomic_mock.return_value = nullcontext()
+
+        employee = SimpleNamespace(employee_user_id=SimpleNamespace())
+        schedule = SimpleNamespace(
+            day=SimpleNamespace(),
+            shift_id=SimpleNamespace(),
+            is_night_shift=False,
+            auto_punch_out_time=time(17, 30),
+        )
+        activity = SimpleNamespace(
+            pk=1,
+            employee_id=employee,
+            attendance_date=date(2026, 6, 5),
+        )
+        attendance = SimpleNamespace(employee_id=employee)
+
+        schedule_model.objects.filter.return_value.select_related.return_value.iterator.return_value = iter(
+            [schedule]
+        )
+        activity_model.objects.filter.return_value.select_related.return_value.order_by.return_value.iterator.return_value = iter(
+            [activity]
+        )
+        activity_model.objects.select_for_update.return_value.select_related.return_value.filter.return_value.order_by.return_value.first.return_value = activity
+        attendance_model.objects.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = attendance
+
+        auto_checkout_attendance()
+
+        clock_out_mock.assert_called_once()
+        request = clock_out_mock.call_args.args[0]
+        self.assertEqual(request.date, date(2026, 6, 5))
+        self.assertEqual(request.time, time(17, 30))
+        self.assertEqual(
+            request.datetime,
+            timezone.make_aware(datetime(2026, 6, 5, 17, 30)),
+        )
+
+    def test_night_shift_uses_next_day_checkout_date(self):
+        activity = SimpleNamespace(
+            pk=1,
+            employee_id=SimpleNamespace(employee_user_id=SimpleNamespace()),
+            attendance_date=date(2026, 6, 5),
+        )
+        attendance = SimpleNamespace(employee_id=activity.employee_id)
+
+        clock_out_mock, _ = self._run_scheduler(
+            datetime(2026, 6, 6, 8, 0),
+            is_night_shift=True,
+            auto_punch_out_time=time(7, 30),
+            activities=[activity],
+            locked_activity=activity,
+            attendance=attendance,
+        )
+
+        request = clock_out_mock.call_args.args[0]
+        self.assertEqual(request.date, date(2026, 6, 6))
+        self.assertEqual(request.time, time(7, 30))
+
+    def test_future_checkout_is_left_open(self):
+        activity = SimpleNamespace(
+            pk=1,
+            employee_id=SimpleNamespace(employee_user_id=SimpleNamespace()),
+            attendance_date=date(2026, 6, 5),
+        )
+
+        clock_out_mock, _ = self._run_scheduler(
+            datetime(2026, 6, 5, 17, 0),
+            activities=[activity],
+            locked_activity=activity,
+            attendance=SimpleNamespace(employee_id=activity.employee_id),
+        )
+
+        clock_out_mock.assert_not_called()
+
+    def test_activity_closed_by_another_run_is_skipped(self):
+        activity = SimpleNamespace(
+            pk=1,
+            employee_id=SimpleNamespace(employee_user_id=SimpleNamespace()),
+            attendance_date=date(2026, 6, 5),
+        )
+
+        clock_out_mock, _ = self._run_scheduler(
+            datetime(2026, 6, 5, 18, 0),
+            activities=[activity],
+            locked_activity=None,
+            attendance=SimpleNamespace(employee_id=activity.employee_id),
+        )
+
+        clock_out_mock.assert_not_called()
 
 
 class PortalActivityDurationTests(SimpleTestCase):
@@ -1848,6 +2629,7 @@ class PortalEmployeeLookupTests(SimpleTestCase):
         employee.employee_no = "0000001"
         employee.is_active = True
         employee.employee_work_info = None
+        employee.active_global_geofences = []
         employee.get_full_name.return_value = "Test Employee"
         employee.get_avatar.return_value = "/avatar.png"
         return employee
@@ -1856,8 +2638,15 @@ class PortalEmployeeLookupTests(SimpleTestCase):
         if activities is None:
             activities = [activity] if activity else []
         first_activity = activity if activity is not None else (activities[0] if activities else None)
+        last_activity = activity if activity is not None else (activities[-1] if activities else None)
+        ordered_qs = MagicMock()
+        ordered_qs.first.return_value = first_activity
+        ordered_qs.last.return_value = last_activity
+        ordered_qs.__iter__.return_value = iter(activities)
         qs = MagicMock()
-        qs.order_by.return_value.first.return_value = first_activity
+        qs.order_by.return_value = ordered_qs
+        qs.first.return_value = first_activity
+        qs.last.return_value = last_activity
         qs.exists.return_value = bool(activities)
         qs.count.return_value = len(activities)
         qs.__iter__.return_value = iter(activities)
@@ -1997,7 +2786,7 @@ class PortalEmployeeLookupTests(SimpleTestCase):
     @patch("attendance.views.portal.AttendanceActivity")
     @patch("attendance.views.portal.Employee")
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    @patch("attendance.views.portal.timezone.now", return_value=datetime(2026, 6, 5, 12, 30, 0))
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 6, 5, 12, 30, 0))
     def test_employee_lookup_uses_attendance_clock_in_while_on_lunch(
         self,
         _now_mock,
@@ -2147,7 +2936,7 @@ class PortalEmployeeLookupTests(SimpleTestCase):
         attach_session(request)
         employee = self._employee()
         employee.pk = 1
-        employee.active_assigned_geofences = [
+        employee.active_global_geofences = [
             SimpleNamespace(
                 name="HQ",
                 latitude=14.6,
@@ -2166,6 +2955,166 @@ class PortalEmployeeLookupTests(SimpleTestCase):
 
         self.assertTrue(payload["success"])
         self.assertEqual(payload["results"][0]["geo_fence"], [])
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 6, 6, 8, 0, 0))
+    @patch("attendance.views.portal._portal_multi_punch_enabled", return_value=True)
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Attendance")
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_employee_lookup_resets_multi_punch_after_completed_previous_day(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        attendance_model,
+        _auto_checkout_mock,
+        _multi_punch_enabled_mock,
+        _now_mock,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/employee-lookup/",
+            {"query": "0000001"},
+        )
+        attach_session(request)
+        employee = self._employee()
+        employee_model.objects.filter.return_value = [employee]
+        attendance_model.objects.filter.return_value.first.return_value = None
+
+        current_date = date(2026, 6, 6)
+
+        def filter_side_effect(*args, **kwargs):
+            if kwargs.get("clock_out__isnull") is True:
+                return self._activity_qs()
+            if kwargs.get("attendance_date") == current_date:
+                return self._activity_qs()
+            return self._activity_qs()
+
+        attendance_activity_model.objects.filter.side_effect = filter_side_effect
+
+        response = employee_lookup(request)
+        payload = json.loads(response.content)
+        result = payload["results"][0]
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(result["multi_punch_step"], "morning_in")
+        self.assertTrue(result["multi_punch_can_morning_in"])
+        self.assertFalse(result["multi_punch_can_morning_out"])
+        self.assertFalse(result["multi_punch_can_afternoon_in"])
+        self.assertFalse(result["multi_punch_can_afternoon_out"])
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 6, 5, 18, 0, 0))
+    @patch("attendance.views.portal._portal_multi_punch_enabled", return_value=True)
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Attendance")
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_employee_lookup_resets_multi_punch_after_manual_afternoon_out(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        attendance_model,
+        _auto_checkout_mock,
+        _multi_punch_enabled_mock,
+        _now_mock,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/employee-lookup/",
+            {"query": "0000001"},
+        )
+        attach_session(request)
+        employee = self._employee()
+        employee_model.objects.filter.return_value = [employee]
+        attendance_model.objects.filter.return_value.first.return_value = self._attendance(
+            datetime(2026, 6, 5, 8, 0, 0),
+            datetime(2026, 6, 5, 17, 0, 0),
+        )
+
+        current_date = date(2026, 6, 5)
+        first_segment = SimpleNamespace(
+            in_datetime=datetime(2026, 6, 5, 8, 0, 0),
+            out_datetime=datetime(2026, 6, 5, 12, 0, 0),
+            clock_in_date=current_date,
+            clock_in=time(8, 0),
+            clock_out_date=current_date,
+            clock_out=time(12, 0),
+            attendance_date=current_date,
+            activity_type="work",
+        )
+        second_segment = SimpleNamespace(
+            in_datetime=datetime(2026, 6, 5, 13, 0, 0),
+            out_datetime=datetime(2026, 6, 5, 17, 0, 0),
+            clock_in_date=current_date,
+            clock_in=time(13, 0),
+            clock_out_date=current_date,
+            clock_out=time(17, 0),
+            attendance_date=current_date,
+            activity_type="work",
+        )
+
+        def filter_side_effect(*args, **kwargs):
+            if kwargs.get("clock_out__isnull") is True:
+                return self._activity_qs()
+            if kwargs.get("activity_type") == "work":
+                return self._activity_qs(activities=[first_segment, second_segment])
+            if kwargs.get("activity_type") in {"break", "lunch"}:
+                return self._activity_qs()
+            return self._activity_qs(second_segment)
+
+        attendance_activity_model.objects.filter.side_effect = filter_side_effect
+
+        response = employee_lookup(request)
+        payload = json.loads(response.content)
+        result = payload["results"][0]
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(result["multi_punch_step"], "morning_in")
+        self.assertTrue(result["multi_punch_can_morning_in"])
+        self.assertFalse(result["multi_punch_can_morning_out"])
+        self.assertFalse(result["multi_punch_can_afternoon_in"])
+        self.assertFalse(result["multi_punch_can_afternoon_out"])
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 6, 6, 8, 0, 0))
+    @patch("attendance.views.portal._portal_multi_punch_enabled", return_value=True)
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Attendance")
+    @patch("attendance.views.portal.AttendanceActivity")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_employee_lookup_resets_multi_punch_after_auto_checkout_previous_day(
+        self,
+        _ip_allowed_mock,
+        employee_model,
+        attendance_activity_model,
+        attendance_model,
+        auto_checkout_mock,
+        _multi_punch_enabled_mock,
+        _now_mock,
+    ):
+        request = self.factory.post(
+            "/attendance/portal/employee-lookup/",
+            {"query": "0000001"},
+        )
+        attach_session(request)
+        employee = self._employee()
+        employee_model.objects.filter.return_value = [employee]
+        attendance_model.objects.filter.return_value.first.return_value = None
+        attendance_activity_model.objects.filter.return_value = self._activity_qs()
+
+        response = employee_lookup(request)
+        payload = json.loads(response.content)
+        result = payload["results"][0]
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(result["multi_punch_step"], "morning_in")
+        self.assertTrue(result["multi_punch_can_morning_in"])
+        auto_checkout_mock.assert_called_once_with(
+            employee,
+            datetime(2026, 6, 6, 8, 0, 0),
+        )
 
 
 class PortalAttendanceHistoryTests(SimpleTestCase):
@@ -3551,6 +4500,25 @@ class AttendanceLocationMigrationTests(SimpleTestCase):
         activity.save.assert_called_once()
 
 
+class AttendanceLateComeEarlyOutSaveTests(SimpleTestCase):
+    @patch("attendance.models.HorillaModel.save")
+    def test_save_sets_employee_before_persisting_once(self, parent_save):
+        employee = Employee()
+        attendance = Attendance(
+            employee_id=employee,
+            attendance_date=date(2026, 6, 1),
+        )
+        late_early = AttendanceLateComeEarlyOut(
+            attendance_id=attendance,
+            type="late_come",
+        )
+
+        late_early.save(force_insert=True)
+
+        self.assertIs(late_early.employee_id, employee)
+        parent_save.assert_called_once_with(force_insert=True)
+
+
 class AttendanceActivityUpdateViewTests(TestCase):
     def setUp(self):
         _thread_locals.request = None
@@ -3569,7 +4537,8 @@ class AttendanceActivityUpdateViewTests(TestCase):
             start_time=time(8, 0),
             end_time=time(17, 0),
         )
-        self.work_type = WorkType.objects.create(work_type="Office")
+        self.work_type = WorkType(work_type="Office")
+        self.work_type.save_base(force_insert=True)
         self.employee = Employee.objects.create(
             employee_first_name="Activity",
             employee_last_name="Editor",
@@ -3686,6 +4655,25 @@ class AttendanceActivityUpdateViewTests(TestCase):
         self.assertEqual(self.work_activity.clock_out, time(13, 0))
         self.assertEqual(self.break_activity.activity_type, "break")
         recalculate_mock.assert_called_once_with(self.shift)
+
+    def test_repeated_post_recalculates_late_and_early_records_without_duplicates(self):
+        self.client.force_login(self.user)
+
+        for _ in range(2):
+            response = self.client.post(
+                self.url,
+                data=self._post_data(),
+                HTTP_HX_REQUEST="true",
+                secure=True,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, "Attendance activity updated.")
+
+        reports = AttendanceLateComeEarlyOut.objects.filter(
+            attendance_id=self.attendance,
+        )
+        self.assertEqual(reports.filter(type="late_come").count(), 1)
+        self.assertEqual(reports.filter(type="early_out").count(), 1)
 
     @patch("attendance.views.views.recalculate_attendance_for_shift")
     def test_post_dedupes_duplicate_page_querystring(self, recalculate_mock):

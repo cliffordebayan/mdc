@@ -1,7 +1,7 @@
 <div class="oh-inner-sidebar-content">
   <div class="oh-inner-sidebar-content__header d-flex justify-content-between align-items-center mb-3">
     <h2 class="oh-inner-sidebar-content__title">Employee Geofences</h2>
-    
+
     <div class="d-flex align-items-center">
       {% if perms.geofencing.add_geofencing %}
       <button class="oh-btn oh-btn--secondary oh-btn--shadow d-none"
@@ -13,6 +13,8 @@
               id="add-geofence-btn">
         <ion-icon name="add-outline" class="me-1"></ion-icon>Add Geofence
       </button>
+      {% endif %}
+      {% if perms.geofencing.change_geofencing %}
       <button class="oh-btn oh-btn--secondary oh-btn--shadow"
               data-toggle="oh-modal-toggle"
               data-target="#objectCreateModal"
@@ -21,6 +23,15 @@
               hx-swap="innerHTML"
               id="assign-geofence-btn">
         <ion-icon name="person-add-outline" class="me-1"></ion-icon>Assign Geofences
+      </button>
+      <button class="oh-btn oh-btn--secondary oh-btn--shadow d-none"
+              data-toggle="oh-modal-toggle"
+              data-target="#objectCreateModal"
+              hx-get="{% url 'geo-multi-punch-add' %}"
+              hx-target="#objectCreateModalTarget"
+              hx-swap="innerHTML"
+              id="assign-multi-punch-btn">
+        <ion-icon name="person-add-outline" class="me-1"></ion-icon>Assign Multiple Clock In/Out
       </button>
       {% endif %}
     </div>
@@ -35,6 +46,9 @@
           </li>
           <li class="oh-general__tab">
             <a href="#" class="oh-general__tab-link" id="btn-tab-geofences" onclick="switchGeoTab('geofences'); return false;">Manage Geofences</a>
+          </li>
+          <li class="oh-general__tab">
+            <a href="#" class="oh-general__tab-link" id="btn-tab-multi-punch" onclick="switchGeoTab('multi-punch'); return false;">Multiple Clock In/Out</a>
           </li>
         </ul>
       </div>
@@ -66,7 +80,7 @@
               </div>
             </div>
             <div class="oh-sticky-table__td">
-              {{ employee.employee_work_info.department_id.department|default:"—" }}
+              {{ employee.employee_work_info.department_id.department|default:"-" }}
             </div>
             <div class="oh-sticky-table__td">
               {% for geo in employee.enforced_geofences %}
@@ -171,26 +185,100 @@
     </div>
     {% endif %}
   </div>
+
+  <!-- Tab 3: Multiple Clock In/Out Portal Mode -->
+  <div id="tab-content-multi-punch" class="oh-general__tab-target oh-profile__info-tab mt-4 mb-4 d-none">
+    {% if multi_punch_assignments %}
+    <div class="oh-sticky-table">
+      <div class="oh-sticky-table__table oh-table--sortable">
+        <div class="oh-sticky-table__thead">
+          <div class="oh-sticky-table__tr">
+            <div class="oh-sticky-table__th">Employee</div>
+            <div class="oh-sticky-table__th">Department</div>
+            <div class="oh-sticky-table__th">Portal Mode</div>
+            <div class="oh-sticky-table__th oh-sticky-table__right">Actions</div>
+          </div>
+        </div>
+        <div class="oh-sticky-table__tbody">
+          {% for assignment in multi_punch_assignments %}
+          <div class="oh-sticky-table__tr">
+            <div class="oh-sticky-table__sd">
+              <div class="d-flex align-items-center">
+                <div class="oh-avatar oh-avatar--small me-2" style="margin-right: 8px;">
+                  <img src="{{ assignment.employee_id.get_avatar }}" class="oh-avatar__img" alt="" style="width: 32px; height: 32px; border-radius: 50%;">
+                </div>
+                <span>{{ assignment.employee_id.get_full_name }}</span>
+              </div>
+            </div>
+            <div class="oh-sticky-table__td">
+              {{ assignment.employee_id.employee_work_info.department_id.department|default:"-" }}
+            </div>
+            <div class="oh-sticky-table__td">
+              <span class="oh-badge oh-badge--info">Morning/Afternoon Punches</span>
+            </div>
+            <div class="oh-sticky-table__td oh-sticky-table__right">
+              {% if perms.geofencing.change_geofencing %}
+              <form hx-post="{% url 'geo-multi-punch-delete' assignment.pk %}"
+                    hx-target="#geo"
+                    hx-swap="innerHTML"
+                    hx-confirm="Remove this employee from multiple clock in/out mode?"
+                    onsubmit="localStorage.setItem('geoActiveTab', 'multi-punch');">
+                {% csrf_token %}
+                <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg" title="Remove">
+                  <ion-icon name="trash-outline"></ion-icon>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:200px;">
+      <h5 class="oh-404__subtitle">No employees are enabled for multiple clock in/out yet.</h5>
+    </div>
+    {% endif %}
+  </div>
+
 </div>
 
 <script>
 function switchGeoTab(tabName) {
-  if (tabName === 'assignments') {
-    $('#btn-tab-assignments').addClass('oh-general__tab-link--active');
-    $('#btn-tab-geofences').removeClass('oh-general__tab-link--active');
-    $('#tab-content-assignments').removeClass('d-none');
-    $('#tab-content-geofences').addClass('d-none');
-    $('#assign-geofence-btn').removeClass('d-none');
-    $('#add-geofence-btn').addClass('d-none');
-    localStorage.setItem('geoActiveTab', 'assignments');
-  } else {
+  if (tabName === 'geofences') {
     $('#btn-tab-geofences').addClass('oh-general__tab-link--active');
     $('#btn-tab-assignments').removeClass('oh-general__tab-link--active');
+    $('#btn-tab-multi-punch').removeClass('oh-general__tab-link--active');
     $('#tab-content-geofences').removeClass('d-none');
     $('#tab-content-assignments').addClass('d-none');
+    $('#tab-content-multi-punch').addClass('d-none');
     $('#add-geofence-btn').removeClass('d-none');
     $('#assign-geofence-btn').addClass('d-none');
+    $('#assign-multi-punch-btn').addClass('d-none');
     localStorage.setItem('geoActiveTab', 'geofences');
+  } else if (tabName === 'multi-punch') {
+    $('#btn-tab-multi-punch').addClass('oh-general__tab-link--active');
+    $('#btn-tab-geofences').removeClass('oh-general__tab-link--active');
+    $('#btn-tab-assignments').removeClass('oh-general__tab-link--active');
+    $('#tab-content-multi-punch').removeClass('d-none');
+    $('#tab-content-geofences').addClass('d-none');
+    $('#tab-content-assignments').addClass('d-none');
+    $('#add-geofence-btn').addClass('d-none');
+    $('#assign-geofence-btn').addClass('d-none');
+    $('#assign-multi-punch-btn').removeClass('d-none');
+    localStorage.setItem('geoActiveTab', 'multi-punch');
+  } else {
+    $('#btn-tab-assignments').addClass('oh-general__tab-link--active');
+    $('#btn-tab-geofences').removeClass('oh-general__tab-link--active');
+    $('#btn-tab-multi-punch').removeClass('oh-general__tab-link--active');
+    $('#tab-content-assignments').removeClass('d-none');
+    $('#tab-content-geofences').addClass('d-none');
+    $('#tab-content-multi-punch').addClass('d-none');
+    $('#assign-geofence-btn').removeClass('d-none');
+    $('#add-geofence-btn').addClass('d-none');
+    $('#assign-multi-punch-btn').addClass('d-none');
+    localStorage.setItem('geoActiveTab', 'assignments');
   }
 }
 
@@ -199,6 +287,8 @@ $(document).ready(function() {
   var activeTab = localStorage.getItem('geoActiveTab');
   if (activeTab === 'geofences') {
     switchGeoTab('geofences');
+  } else if (activeTab === 'multi-punch') {
+    switchGeoTab('multi-punch');
   } else {
     switchGeoTab('assignments');
   }

@@ -61,40 +61,25 @@ class HorillaCompanyManager(models.Manager):
             )
         except Exception as e:
             logger.error(e)
-        try:
-            has_duplicates = queryset.count() != queryset.distinct().count()
-            if has_duplicates:
-                queryset = queryset.distinct()
-        except:
-            pass
         return queryset
 
     def all(self):
         """
         Override the all() method
         """
-        queryset = []
+        queryset = self.get_queryset()
         try:
-            queryset = self.get_queryset()
-            if queryset.exists():
-                try:
-                    model_name = queryset.model._meta.model_name
-                    if model_name == "employee":
-                        request = getattr(_thread_locals, "request", None)
-                        if not getattr(request, "is_filtering", None):
-                            queryset = queryset.filter(is_active=True)
-                    else:
-                        for field in queryset.model._meta.fields:
-                            if isinstance(field, models.ForeignKey):
-                                if field.name in self.check_fields:
-                                    related_model_is_active_filter = {
-                                        f"{field.name}__is_active": True
-                                    }
-                                    queryset = queryset.filter(
-                                        **related_model_is_active_filter
-                                    )
-                except:
-                    pass
+            model_name = queryset.model._meta.model_name
+            if model_name == "employee":
+                request = getattr(_thread_locals, "request", None)
+                if not getattr(request, "is_filtering", None):
+                    queryset = queryset.filter(is_active=True)
+            else:
+                for field in queryset.model._meta.fields:
+                    if isinstance(field, models.ForeignKey) and field.name in self.check_fields:
+                        queryset = queryset.filter(
+                            **{f"{field.name}__is_active": True}
+                        )
         except:
             pass
         return queryset

@@ -12,6 +12,9 @@ from .views import (
     geo_assign_save,
     geo_assign_edit,
     geo_assign_delete,
+    geo_multi_punch_add,
+    geo_multi_punch_save,
+    geo_multi_punch_delete,
     geo_quick_add,
 )
 
@@ -27,5 +30,8 @@ urlpatterns = [
     path("config/assign/save/", geo_assign_save, name="geo-assign-save"),
     path("config/assign/<int:emp_id>/edit/", geo_assign_edit, name="geo-assign-edit"),
     path("config/assign/<int:emp_id>/delete/", geo_assign_delete, name="geo-assign-delete"),
+    path("config/multi-punch/add/", geo_multi_punch_add, name="geo-multi-punch-add"),
+    path("config/multi-punch/save/", geo_multi_punch_save, name="geo-multi-punch-save"),
+    path("config/multi-punch/<int:pk>/delete/", geo_multi_punch_delete, name="geo-multi-punch-delete"),
     path("config/quick-add/", geo_quick_add, name="geo-quick-add"),
 ]

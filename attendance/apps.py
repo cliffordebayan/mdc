@@ -11,8 +11,8 @@ class AttendanceConfig(AppConfig):
     """
     Configures the 'attendance' app and performs additional setup during the app's
     initialization. This includes appending the 'attendance' URL patterns to the
-    project's main urlpatterns and dynamically adding the 'AttendanceMiddleware'
-    to the middleware stack if it's not already present.
+    project's main urlpatterns. Automatic punch-out is handled by the background
+    scheduler instead of running on every web request.
     """
 
     default_auto_field = "django.db.models.BigAutoField"
@@ -23,17 +23,12 @@ class AttendanceConfig(AppConfig):
 
         from attendance import scheduler, signals
         from horilla.horilla_settings import APPS
-        from horilla.settings import MIDDLEWARE
         from horilla.urls import urlpatterns
 
         APPS.append("attendance")
         urlpatterns.append(
             path("attendance/", include("attendance.urls")),
         )
-        middleware_path = "attendance.middleware.AttendanceMiddleware"
-        if middleware_path not in MIDDLEWARE:
-            MIDDLEWARE.append(middleware_path)
-
         APP_URLS.append("attendance.urls")
 
         super().ready()

@@ -7,6 +7,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>{% trans "Employee Portal" %} - Clock In/Out</title>
     <link rel="apple-touch-icon" sizes="180x180"
         href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}">
@@ -2734,6 +2735,26 @@
                                     <strong>{% trans "Clock Out" %}</strong>
                                     <span id="attendance-clock-out-note"></span>
                                 </button>
+                                <button type="button" class="selection-option btn-clock-in-option d-none" id="attendance-morning-in-option" data-attendance-action="morning_in">
+                                    <ion-icon name="log-in-outline"></ion-icon>
+                                    <strong>{% trans "Morning Clock In" %}</strong>
+                                    <span id="attendance-morning-in-note"></span>
+                                </button>
+                                <button type="button" class="selection-option btn-clock-out-option d-none" id="attendance-morning-out-option" data-attendance-action="morning_out">
+                                    <ion-icon name="log-out-outline"></ion-icon>
+                                    <strong>{% trans "Morning Clock Out" %}</strong>
+                                    <span id="attendance-morning-out-note"></span>
+                                </button>
+                                <button type="button" class="selection-option btn-clock-in-option d-none" id="attendance-afternoon-in-option" data-attendance-action="afternoon_in">
+                                    <ion-icon name="log-in-outline"></ion-icon>
+                                    <strong>{% trans "Afternoon Clock In" %}</strong>
+                                    <span id="attendance-afternoon-in-note"></span>
+                                </button>
+                                <button type="button" class="selection-option btn-clock-out-option d-none" id="attendance-afternoon-out-option" data-attendance-action="afternoon_out">
+                                    <ion-icon name="log-out-outline"></ion-icon>
+                                    <strong>{% trans "Afternoon Clock Out" %}</strong>
+                                    <span id="attendance-afternoon-out-note"></span>
+                                </button>
                                 <button type="button" class="selection-option" id="attendance-break-option" data-attendance-action="break_start">
                                     <ion-icon name="pause-circle-outline"></ion-icon>
                                     <strong id="attendance-break-title">{% trans "Break" %}</strong>
@@ -3033,6 +3054,22 @@
             selectedTypeId: null
         };
         const EMPLOYEE_LOCATION_MARKER_COLOR = '#dc3545';
+        const PORTAL_MAP_TILE_TEMPLATE = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+        const PORTAL_MAP_TILE_ATTRIBUTION = '';
+        const SAVED_MAP_TILE_TIMEOUT_MS = 10000;
+
+        function addPortalMapTiles(map) {
+            return L.tileLayer(PORTAL_MAP_TILE_TEMPLATE, {
+                attribution: PORTAL_MAP_TILE_ATTRIBUTION,
+                maxZoom: 19,
+                detectRetina: true,
+                crossOrigin: true,
+                referrerPolicy: 'strict-origin-when-cross-origin',
+                updateWhenIdle: true,
+                updateInterval: 500,
+                keepBuffer: 1
+            }).addTo(map);
+        }
 
         function isMobilePortalView() {
             return window.matchMedia && window.matchMedia('(max-width: 600px)').matches;
@@ -3245,11 +3282,17 @@
             $('#mobile-location-text').text(text);
         }
 
+        function portalCoordinateText(lat, lng) {
+            const latNum = Number(lat);
+            const lngNum = Number(lng);
+            if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+                return null;
+            }
+            return `Lat: ${latNum.toFixed(6)}, Long: ${lngNum.toFixed(6)}`;
+        }
+
         function setPortalCoordinatesText(lat, lng) {
-            const hasCoordinates = lat !== null && lat !== undefined && lng !== null && lng !== undefined;
-            $('#mobile-location-coordinates').text(
-                hasCoordinates ? `Lat: ${Number(lat).toFixed(6)}, Long: ${Number(lng).toFixed(6)}` : ''
-            );
+            $('#mobile-location-coordinates').text(portalCoordinateText(lat, lng) || '');
         }
 
         function selectedEmployeeGeofenceList() {
@@ -3265,13 +3308,14 @@
         }
 
         function hasCapturedPortalLocation() {
-            return Number.isFinite(Number(latitude)) && Number.isFinite(Number(longitude));
+            return !!portalCoordinateText(latitude, longitude);
         }
 
         function showLocationPendingState(message) {
             latitude = null;
             longitude = null;
             capturedAddress = null;
+            disableClockButtons();
             setPortalLocationText(message || '{% trans "Waiting for location..." %}');
             setPortalCoordinatesText(null, null);
             $('#location-coordinates').text('');
@@ -3285,7 +3329,14 @@
         }
 
         function ensureLocationReadyForClockAction() {
-            if (selectedEmployeeRequiresLocation() && !hasCapturedPortalLocation()) {
+            // GPS is mandatory only when the employee is restricted by an active
+            // geofence. Unrestricted employees can still clock in/out when the
+            // browser denies or does not support geolocation.
+            if (!selectedEmployeeRequiresLocation()) {
+                return true;
+            }
+
+            if (!hasCapturedPortalLocation()) {
                 showLocationPendingState('{% trans "Waiting for location..." %}');
                 if (!locationCaptureInFlight && navigator.geolocation) {
                     initializeLocationCapture();
@@ -3305,13 +3356,15 @@
         // Get device location
         function initializeLocationCapture() {
             locationCaptureInFlight = true;
+            if (selectedEmployeeRequiresLocation()) {
+                disableClockButtons();
+            }
             if (navigator.geolocation) {
                 setPortalLocationText('{% trans "Getting location..." %}');
                 setPortalCoordinatesText(null, null);
                 $('#reload-location-btn').hide();
-                // Location capture can fail or take a while, and a failure no longer
-                // blocks clocking in — show the manual retry options immediately instead
-                // of waiting for an error.
+                // Location can take a while; keep actions disabled and give users
+                // retry controls while the browser resolves coordinates.
                 $('#retry-location-btn').show();
                 $('#refresh-location-fab').addClass('fab-visible');
 
@@ -3347,21 +3400,25 @@
                 function onFinalError(error) {
                     locationCaptureInFlight = false;
                     let errorMsg = selectedEmployeeRequiresLocation()
-                        ? '{% trans "Waiting for location..." %}'
-                        : '{% trans "Location unavailable" %}';
+                        ? '{% trans "Location unavailable. Please retry before continuing." %}'
+                        : '{% trans "Location unavailable. You can continue without GPS." %}';
 
-                    if (!selectedEmployeeRequiresLocation()) {
-                        switch (error.code) {
-                            case error.PERMISSION_DENIED:
-                                errorMsg = '{% trans "Location permission denied. You can still clock without location, or enable location for this site in Settings and retry." %}';
-                                break;
-                            case error.POSITION_UNAVAILABLE:
-                                errorMsg = '{% trans "Location position unavailable. You can still clock without location, or retry." %}';
-                                break;
-                            case error.TIMEOUT:
-                                errorMsg = '{% trans "Location request timed out. You can still clock without location, or retry." %}';
-                                break;
-                        }
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMsg = selectedEmployeeRequiresLocation()
+                                ? '{% trans "Location permission denied. Enable location for this site in Settings, then retry." %}'
+                                : '{% trans "Location permission denied. You can continue without GPS, or enable location and retry." %}';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMsg = selectedEmployeeRequiresLocation()
+                                ? '{% trans "Location position unavailable. Please retry before continuing." %}'
+                                : '{% trans "Location position unavailable. You can continue without GPS, or retry." %}';
+                            break;
+                        case error.TIMEOUT:
+                            errorMsg = selectedEmployeeRequiresLocation()
+                                ? '{% trans "Location request timed out. Please retry before continuing." %}'
+                                : '{% trans "Location request timed out. You can continue without GPS, or retry." %}';
+                            break;
                     }
 
                     latitude = null;
@@ -3392,11 +3449,15 @@
                 longitude = null;
                 setPortalLocationText(
                     selectedEmployeeRequiresLocation()
-                        ? '{% trans "Waiting for location..." %}'
-                        : '{% trans "Geolocation not supported by this browser. You can still clock without location." %}'
+                        ? '{% trans "Geolocation is not supported by this browser. Attendance actions require location." %}'
+                        : '{% trans "Geolocation is not supported by this browser. You can continue without GPS." %}'
                 );
                 setPortalCoordinatesText(null, null);
                 $('#location-coordinates').text('');
+                $('#retry-location-btn').show();
+                $('#reload-location-btn').show();
+                $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
+                $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
                 $('#location-status').removeClass('success').addClass('warning');
                 updateFaceGatedButtons();
             }
@@ -3442,6 +3503,7 @@
 
         function enableClockButtons() {
             if (!cameraReady) return;
+            if (selectedEmployeeRequiresLocation() && !hasCapturedPortalLocation()) return;
             const $button = getSelectedClockButton();
             if ($button.length) {
                 $button.prop('disabled', false).removeAttr('title');
@@ -3545,6 +3607,55 @@
             showStep('service-menu');
         }
 
+        function multiPunchActionConfig(action) {
+            const configs = {
+                morning_in: {
+                    punch_type: 'morning_in',
+                    endpoint: 'clock_in',
+                    can_key: 'multi_punch_can_morning_in',
+                    label: '{% trans "Morning Clock In" %}',
+                    note_ready: '{% trans "Capture selfie to clock in" %}',
+                    note_wait: '{% trans "Completed or unavailable" %}',
+                    icon: 'log-in-outline'
+                },
+                morning_out: {
+                    punch_type: 'morning_out',
+                    endpoint: 'clock_out',
+                    can_key: 'multi_punch_can_morning_out',
+                    label: '{% trans "Morning Clock Out" %}',
+                    note_ready: '{% trans "Capture selfie to clock out" %}',
+                    note_wait: '{% trans "Available 11:00 AM - 12:59 PM" %}',
+                    icon: 'log-out-outline'
+                },
+                afternoon_in: {
+                    punch_type: 'afternoon_in',
+                    endpoint: 'clock_in',
+                    can_key: 'multi_punch_can_afternoon_in',
+                    label: '{% trans "Afternoon Clock In" %}',
+                    note_ready: '{% trans "Capture selfie to clock in" %}',
+                    note_wait: '{% trans "Available 12:00 PM - 1:59 PM" %}',
+                    icon: 'log-in-outline'
+                },
+                afternoon_out: {
+                    punch_type: 'afternoon_out',
+                    endpoint: 'clock_out',
+                    can_key: 'multi_punch_can_afternoon_out',
+                    label: '{% trans "Afternoon Clock Out" %}',
+                    note_ready: '{% trans "Capture selfie to clock out" %}',
+                    note_wait: '{% trans "Available from 2:00 PM" %}',
+                    icon: 'log-out-outline'
+                }
+            };
+            return configs[action] || null;
+        }
+
+        function setSelectionButtonState(selector, disabled) {
+            $(selector)
+                .prop('disabled', disabled)
+                .attr('aria-disabled', disabled ? 'true' : 'false')
+                .toggleClass('is-disabled', disabled);
+        }
+
         function updateAttendanceActionSelection() {
             if (!selectedEmployee) {
                 return;
@@ -3552,6 +3663,41 @@
 
             syncSelectionEmployeeSummary('attendance');
             updateAttendanceSummaryStrip();
+            const isMultiPunch = !!selectedEmployee.multi_punch_enabled;
+            const multiActions = ['morning_in', 'morning_out', 'afternoon_in', 'afternoon_out'];
+
+            $('#attendance-clock-in-option, #attendance-clock-out-option').toggleClass('d-none', isMultiPunch);
+            $('#attendance-morning-in-option, #attendance-morning-out-option, #attendance-afternoon-in-option, #attendance-afternoon-out-option').toggleClass('d-none', !isMultiPunch);
+
+            if (isMultiPunch) {
+                setSelectionButtonState('#attendance-clock-in-option', true);
+                setSelectionButtonState('#attendance-clock-out-option', true);
+
+                multiActions.forEach(function (action) {
+                    const config = multiPunchActionConfig(action);
+                    const isEnabled = !!selectedEmployee[config.can_key];
+                    const noteSelector = '#attendance-' + action.replace('_', '-') + '-note';
+                    setSelectionButtonState('#attendance-' + action.replace('_', '-') + '-option', !isEnabled);
+                    $(noteSelector).text(isEnabled ? config.note_ready : config.note_wait);
+                });
+
+                $('#attendance-break-option')
+                    .attr('data-attendance-action', 'break_start');
+                $('#attendance-lunch-option')
+                    .attr('data-attendance-action', 'lunch_start');
+                setSelectionButtonState('#attendance-break-option', true);
+                setSelectionButtonState('#attendance-lunch-option', true);
+                $('#attendance-break-title').text('{% trans "Break" %}');
+                $('#attendance-lunch-title').text('{% trans "Lunch" %}');
+                $('#attendance-break-note').text('{% trans "Disabled for multiple clock in/out" %}');
+                $('#attendance-lunch-note').text('{% trans "Disabled for multiple clock in/out" %}');
+                return;
+            }
+
+            $('#attendance-morning-in-option, #attendance-morning-out-option, #attendance-afternoon-in-option, #attendance-afternoon-out-option').each(function () {
+                setSelectionButtonState(this, true);
+            });
+
             const isClockedIn = !!selectedEmployee.is_clocked_in;
             const activeType = selectedEmployee.active_activity_type || (isClockedIn ? 'work' : null);
             const isWorking = isClockedIn && activeType === 'work';
@@ -3566,25 +3712,15 @@
             const clockInDisabled = isOnBreak || isOnLunch;
             const breakDisabled = !isClockedIn || isOnLunch || breakLimitReached;
             const lunchDisabled = !isClockedIn || isOnBreak || (lunchTaken && !isOnLunch);
-            $('#attendance-clock-in-option')
-                .prop('disabled', clockInDisabled)
-                .attr('aria-disabled', clockInDisabled ? 'true' : 'false')
-                .toggleClass('is-disabled', clockInDisabled);
+            setSelectionButtonState('#attendance-clock-in-option', clockInDisabled);
             const clockOutDisabled = isClockedIn && !isWorking;
-            $('#attendance-clock-out-option')
-                .prop('disabled', clockOutDisabled)
-                .attr('aria-disabled', clockOutDisabled ? 'true' : 'false')
-                .toggleClass('is-disabled', clockOutDisabled);
+            setSelectionButtonState('#attendance-clock-out-option', clockOutDisabled);
             $('#attendance-break-option')
-                .attr('data-attendance-action', breakAction)
-                .prop('disabled', breakDisabled)
-                .attr('aria-disabled', breakDisabled ? 'true' : 'false')
-                .toggleClass('is-disabled', breakDisabled);
+                .attr('data-attendance-action', breakAction);
+            setSelectionButtonState('#attendance-break-option', breakDisabled);
             $('#attendance-lunch-option')
-                .attr('data-attendance-action', lunchAction)
-                .prop('disabled', lunchDisabled)
-                .attr('aria-disabled', lunchDisabled ? 'true' : 'false')
-                .toggleClass('is-disabled', lunchDisabled);
+                .attr('data-attendance-action', lunchAction);
+            setSelectionButtonState('#attendance-lunch-option', lunchDisabled);
             $('#attendance-break-title').text(isOnBreak ? '{% trans "End Break" %}' : '{% trans "Break" %}');
             $('#attendance-lunch-title').text(isOnLunch ? '{% trans "End Lunch" %}' : '{% trans "Lunch" %}');
             $('#attendance-clock-in-note').text(
@@ -3621,6 +3757,21 @@
             }
 
             const activeType = selectedEmployee.active_activity_type || (selectedEmployee.is_clocked_in ? 'work' : null);
+            const multiConfig = multiPunchActionConfig(action);
+            if (selectedEmployee.multi_punch_enabled) {
+                if (multiConfig) {
+                    if (!selectedEmployee[multiConfig.can_key]) {
+                        Toast.fire({ icon: 'warning', title: selectedEmployee.multi_punch_message || '{% trans "This attendance action is not available yet." %}' });
+                        return;
+                    }
+                    selectedAttendanceAction = action;
+                    openClockStep();
+                    return;
+                }
+                Toast.fire({ icon: 'warning', title: '{% trans "Break and lunch are disabled for multiple clock in/out." %}' });
+                return;
+            }
+
             if (action === 'clock_in' && selectedEmployee.is_clocked_in && activeType !== 'work') {
                 Toast.fire({ icon: 'warning', title: '{% trans "Please end your break or lunch before clocking in." %}' });
                 return;
@@ -5231,6 +5382,13 @@
         }
 
         function getSelectedClockButton() {
+            const multiConfig = multiPunchActionConfig(selectedAttendanceAction);
+            if (multiConfig && multiConfig.endpoint === 'clock_in') {
+                return $('#clock-in-btn');
+            }
+            if (multiConfig && multiConfig.endpoint === 'clock_out') {
+                return $('#clock-out-btn');
+            }
             if (selectedAttendanceAction === 'clock_in') {
                 return $('#clock-in-btn');
             }
@@ -5245,6 +5403,13 @@
 
         function applySelectedClockActionVisibility() {
             $(clockActionButtonSelector()).css('display', 'none').prop('disabled', true);
+            $('#clock-in-btn').html('<ion-icon name="log-in-outline"></ion-icon> {% trans "Clock In" %}');
+            $('#clock-out-btn').html('<ion-icon name="log-out-outline"></ion-icon> {% trans "Clock Out" %}');
+            const multiConfig = multiPunchActionConfig(selectedAttendanceAction);
+            if (multiConfig) {
+                const $multiButton = multiConfig.endpoint === 'clock_in' ? $('#clock-in-btn') : $('#clock-out-btn');
+                $multiButton.html(`<ion-icon name="${multiConfig.icon}"></ion-icon> ${multiConfig.label}`);
+            }
             const config = activityActionConfig(selectedAttendanceAction);
             if (config) {
                 $('#activity-transition-btn ion-icon').attr('name', config.icon);
@@ -5423,14 +5588,17 @@
 
             // Clock in/out buttons
             $('#clock-in-btn').on('click', function () {
+                if ($(this).prop('disabled')) { return; }
                 clockInEmployee();
             });
 
             $('#clock-out-btn').on('click', function () {
+                if ($(this).prop('disabled')) { return; }
                 clockOutEmployee();
             });
 
             $('#activity-transition-btn').on('click', function () {
+                if ($(this).prop('disabled')) { return; }
                 transitionAttendanceActivity();
             });
 
@@ -5623,6 +5791,14 @@
                 activity_totals_updated_at_ms: Date.now() + serverTimeOffset,
                 geo_fence: cached.geo_fence || null,
                 branch: cached.branch || "",
+                multi_punch_enabled: !!cached.multi_punch_enabled,
+                multi_punch_step: cached.multi_punch_step || '',
+                multi_punch_message: cached.multi_punch_message || '',
+                multi_punch_can_morning_in: !!cached.multi_punch_can_morning_in,
+                multi_punch_can_morning_out: !!cached.multi_punch_can_morning_out,
+                multi_punch_can_afternoon_in: !!cached.multi_punch_can_afternoon_in,
+                multi_punch_can_afternoon_out: !!cached.multi_punch_can_afternoon_out,
+                multi_punch_work_segments: Number(cached.multi_punch_work_segments || 0),
             };
 
             clearInterval(searchLiveHoursInterval);
@@ -5742,7 +5918,7 @@
         }
 
         function openClockStep() {
-            if (!selectedEmployee || (selectedAttendanceAction !== 'clock_in' && selectedAttendanceAction !== 'clock_out' && !activityActionConfig(selectedAttendanceAction))) {
+            if (!selectedEmployee || (selectedAttendanceAction !== 'clock_in' && selectedAttendanceAction !== 'clock_out' && !activityActionConfig(selectedAttendanceAction) && !multiPunchActionConfig(selectedAttendanceAction))) {
                 return;
             }
 
@@ -5797,6 +5973,10 @@
             latitude = null;
             longitude = null;
             locationAccuracy = null;
+            disableClockButtons();
+            setPortalLocationText('{% trans "Getting location..." %}');
+            setPortalCoordinatesText(null, null);
+            $('#location-coordinates').text('');
 
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
@@ -5818,15 +5998,13 @@
         }
 
         function updateFaceGatedButtons() {
-            // Geofenced employees wait for coordinates; others only need camera readiness.
+            // All portal attendance actions require both camera and coordinates.
             if (!cameraReady) { disableClockButtons(); return; }
-            if (selectedEmployeeRequiresLocation() && !hasCapturedPortalLocation()) {
+            if (!hasCapturedPortalLocation()) {
                 disableClockButtons();
-                setPortalLocationText(
-                    locationCaptureInFlight
-                        ? '{% trans "Getting location..." %}'
-                        : '{% trans "Waiting for location..." %}'
-                );
+                if (locationCaptureInFlight) {
+                    setPortalLocationText('{% trans "Getting location..." %}');
+                }
                 return;
             }
             enableClockButtons();
@@ -5978,13 +6156,14 @@
             if (!capturedAddress) {
                 if (geocodingPromise) {
                     try { await geocodingPromise; } catch (e) {}
-                } else if (latitude && longitude) {
+                } else if (hasCapturedPortalLocation()) {
                     try { capturedAddress = await reverseGeocode(latitude, longitude); } catch (e) {}
                 }
             }
 
             const addressToStamp = capturedAddress
-                || (latitude && longitude ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : '{% trans "Location unavailable" %}');
+                || portalCoordinateText(latitude, longitude)
+                || '{% trans "Location unavailable" %}';
             await stampEmployeeCardOnCanvas(canvas, context, addressToStamp);
 
             return new Promise(function (resolve, reject) {
@@ -6003,6 +6182,10 @@
 
         // Reverse geocode lat/lng → address string using Nominatim
         function reverseGeocode(lat, lng) {
+            const fallbackCoordinates = portalCoordinateText(lat, lng);
+            if (!fallbackCoordinates) {
+                return Promise.resolve('{% trans "Location unavailable" %}');
+            }
             const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
             const timeoutId = controller
                 ? setTimeout(function () { controller.abort(); }, REVERSE_GEOCODE_TIMEOUT_MS)
@@ -6013,8 +6196,8 @@
                 signal: controller ? controller.signal : undefined
             })
                 .then(r => r.json())
-                .then(data => data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`)
-                .catch(() => `${lat.toFixed(6)}, ${lng.toFixed(6)}`)
+                .then(data => data.display_name || fallbackCoordinates)
+                .catch(() => fallbackCoordinates)
                 .finally(function () {
                     if (timeoutId) { clearTimeout(timeoutId); }
                 });
@@ -6069,7 +6252,7 @@
                     geoList = [geo];
                 }
             }
-            const hasUserLocation = latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined;
+            const hasUserLocation = hasCapturedPortalLocation();
 
             let closestGeo = null;
             let minDistance = Infinity;
@@ -6173,146 +6356,266 @@
             ctx.restore();
         }
 
-        function lonToTileX(lon, zoom) {
-            return ((Number(lon) + 180) / 360) * Math.pow(2, zoom);
+        async function loadCanvasMapTile(src) {
+            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timeoutId = setTimeout(function () {
+                if (controller) {
+                    controller.abort();
+                }
+            }, SAVED_MAP_TILE_TIMEOUT_MS);
+
+            try {
+                const response = await fetch(src, {
+                    mode: 'cors',
+                    credentials: 'omit',
+                    signal: controller ? controller.signal : undefined
+                });
+                if (!response.ok) {
+                    return null;
+                }
+
+                const blob = await response.blob();
+                if (typeof createImageBitmap === 'function') {
+                    return await createImageBitmap(blob);
+                }
+
+                return await new Promise(function (resolve) {
+                    const image = new Image();
+                    const objectUrl = URL.createObjectURL(blob);
+                    image.onload = function () {
+                        URL.revokeObjectURL(objectUrl);
+                        resolve(image);
+                    };
+                    image.onerror = function () {
+                        URL.revokeObjectURL(objectUrl);
+                        resolve(null);
+                    };
+                    image.src = objectUrl;
+                });
+            } catch (error) {
+                return null;
+            } finally {
+                clearTimeout(timeoutId);
+            }
         }
 
-        function latToTileY(lat, zoom) {
-            const latRad = Number(lat) * Math.PI / 180;
-            return ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * Math.pow(2, zoom);
+        function releaseCanvasMapTile(image) {
+            if (image && typeof image.close === 'function') {
+                image.close();
+            }
         }
 
-        async function loadMapTile(url) {
-            return new Promise(function (resolve) {
-                const img = new Image();
-                let settled = false;
-                const finish = function (tile) {
-                    if (settled) {
-                        return;
-                    }
-                    settled = true;
-                    clearTimeout(timeoutId);
-                    resolve(tile);
-                };
-                const timeoutId = setTimeout(function () { finish(null); }, 3500);
-                img.crossOrigin = 'anonymous';
-                img.onload = function () { finish(img); };
-                img.onerror = function () { finish(null); };
-                img.src = url;
+        function canvasCanReadImage(image) {
+            const probe = document.createElement('canvas');
+            probe.width = 1;
+            probe.height = 1;
+            const probeContext = probe.getContext('2d');
+            if (!probeContext) {
+                return false;
+            }
+
+            try {
+                probeContext.drawImage(image, 0, 0, 1, 1);
+                probeContext.getImageData(0, 0, 1, 1);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function savedSelfieMapView(points, width, height) {
+            if (!points.length || typeof L === 'undefined') {
+                return null;
+            }
+
+            const bounds = L.latLngBounds([]);
+            points.forEach(function (point) {
+                const pointLatitude = Number(point.latitude);
+                const pointLongitude = Number(point.longitude);
+                const radius = Math.max(0, Number(point.radius) || 0);
+                if (!Number.isFinite(pointLatitude) || !Number.isFinite(pointLongitude)) {
+                    return;
+                }
+
+                if (radius > 0) {
+                    bounds.extend(L.latLng(pointLatitude, pointLongitude).toBounds(radius));
+                } else {
+                    bounds.extend([pointLatitude, pointLongitude]);
+                }
             });
+
+            if (!bounds.isValid()) {
+                return null;
+            }
+
+            // Add room around the outermost marker/circle so the saved image is
+            // useful at the small size of the employee-card map.
+            const paddedBounds = bounds.pad(0.18);
+            const north = savedSelfieMapProject(paddedBounds.getNorth(), 0, 0);
+            const south = savedSelfieMapProject(paddedBounds.getSouth(), 0, 0);
+            const west = savedSelfieMapProject(paddedBounds.getCenter().lat, paddedBounds.getWest(), 0);
+            const east = savedSelfieMapProject(paddedBounds.getCenter().lat, paddedBounds.getEast(), 0);
+            const rawXSpan = Math.abs(east.x - west.x);
+            const rawYSpan = Math.abs(south.y - north.y);
+            const xSpan = Math.max(1, rawXSpan);
+            const ySpan = Math.max(1, rawYSpan);
+            const horizontalPadding = Math.max(12, Math.round(width * 0.12));
+            const verticalPadding = Math.max(12, Math.round(height * 0.12));
+            const availableWidth = Math.max(1, width - horizontalPadding * 2);
+            const availableHeight = Math.max(1, height - verticalPadding * 2);
+            const fitScale = Math.min(availableWidth / xSpan, availableHeight / ySpan);
+            const fitZoom = rawXSpan < 1 && rawYSpan < 1
+                ? 15
+                : (Number.isFinite(fitScale) && fitScale > 0
+                    ? Math.floor(Math.log(fitScale) / Math.LN2)
+                    : 1);
+            const center = paddedBounds.getCenter();
+
+            return {
+                latitude: center.lat,
+                longitude: center.lng,
+                zoom: Math.max(1, Math.min(19, fitZoom))
+            };
+        }
+
+        function savedSelfieMapProject(latitudeValue, longitudeValue, zoom) {
+            const clampedLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitudeValue));
+            const scale = 256 * Math.pow(2, zoom);
+            return {
+                x: (longitudeValue + 180) / 360 * scale,
+                y: (1 - Math.log(Math.tan(clampedLatitude * Math.PI / 180) + 1 / Math.cos(clampedLatitude * Math.PI / 180)) / Math.PI) / 2 * scale
+            };
         }
 
         async function drawSavedSelfieMapTiles(ctx, x, y, w, h) {
-            const hasUserLocation = latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined;
-            if (!hasUserLocation) {
+            const geo = selectedEmployee && selectedEmployee.geo_fence;
+            const geoList = Array.isArray(geo) ? geo : (geo ? [geo] : []);
+            const hasUserLocation = hasCapturedPortalLocation();
+            const boundsPoints = [];
+            if (hasUserLocation) {
+                boundsPoints.push({
+                    latitude: Number(latitude),
+                    longitude: Number(longitude),
+                    radius: 0
+                });
+            }
+
+            const validGeofences = geoList.map(function (geofence) {
+                const centerLatitude = Number(geofence.geo_center_lat);
+                const centerLongitude = Number(geofence.geo_center_lng);
+                const radius = Number(geofence.geo_radius_meters);
+                if (!Number.isFinite(centerLatitude) || !Number.isFinite(centerLongitude) || !Number.isFinite(radius)) {
+                    return null;
+                }
+                boundsPoints.push({
+                    latitude: centerLatitude,
+                    longitude: centerLongitude,
+                    radius: radius
+                });
+                return {
+                    latitude: centerLatitude,
+                    longitude: centerLongitude,
+                    radius: radius
+                };
+            }).filter(Boolean);
+
+            const view = savedSelfieMapView(boundsPoints, w, h);
+            if (!view) {
                 return false;
             }
 
             const tileSize = 256;
-            const zoom = 16;
-            const centerTileX = lonToTileX(longitude, zoom);
-            const centerTileY = latToTileY(latitude, zoom);
-            const startPixelX = centerTileX * tileSize - w / 2;
-            const startPixelY = centerTileY * tileSize - h / 2;
-            const startTileX = Math.floor(startPixelX / tileSize);
-            const startTileY = Math.floor(startPixelY / tileSize);
-            const endTileX = Math.floor((startPixelX + w) / tileSize);
-            const endTileY = Math.floor((startPixelY + h) / tileSize);
-            const maxTile = Math.pow(2, zoom);
+            const worldSize = tileSize * Math.pow(2, view.zoom);
+            const centerPoint = savedSelfieMapProject(view.latitude, view.longitude, view.zoom);
+            const topLeftX = centerPoint.x - w / 2;
+            const topLeftY = centerPoint.y - h / 2;
+            const firstTileX = Math.floor(topLeftX / tileSize);
+            const lastTileX = Math.floor((topLeftX + w) / tileSize);
+            const firstTileY = Math.floor(topLeftY / tileSize);
+            const lastTileY = Math.floor((topLeftY + h) / tileSize);
+            const tileRequests = [];
 
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(x, y, w, h);
-            ctx.clip();
-            ctx.fillStyle = '#d3f7dd';
-            ctx.fillRect(x, y, w, h);
-
-            let loadedAnyTile = false;
-            for (let ty = startTileY; ty <= endTileY; ty++) {
-                if (ty < 0 || ty >= maxTile) {
+            for (let tileY = firstTileY; tileY <= lastTileY; tileY += 1) {
+                if (tileY < 0 || tileY >= Math.pow(2, view.zoom)) {
                     continue;
                 }
-                for (let tx = startTileX; tx <= endTileX; tx++) {
-                    const wrappedX = ((tx % maxTile) + maxTile) % maxTile;
-                    const tileUrl = `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${ty}.png`;
-                    const tile = await loadMapTile(tileUrl);
-                    if (!tile) {
-                        ctx.restore();
-                        return false;
-                    }
-                    const drawX = x + tx * tileSize - startPixelX;
-                    const drawY = y + ty * tileSize - startPixelY;
-                    ctx.drawImage(tile, drawX, drawY, tileSize, tileSize);
-                    loadedAnyTile = true;
+                for (let tileX = firstTileX; tileX <= lastTileX; tileX += 1) {
+                    const wrappedTileX = ((tileX % Math.pow(2, view.zoom)) + Math.pow(2, view.zoom)) % Math.pow(2, view.zoom);
+                    const tileUrl = PORTAL_MAP_TILE_TEMPLATE
+                        .replace('{s}', 'a')
+                        .replace('{z}', String(view.zoom))
+                        .replace('{x}', String(wrappedTileX))
+                        .replace('{y}', String(tileY));
+                    tileRequests.push(loadCanvasMapTile(tileUrl).then(function (image) {
+                        return { image: image, tileX: tileX, tileY: tileY };
+                    }));
                 }
             }
 
-            ctx.restore();
-            if (!loadedAnyTile) {
+            const tiles = await Promise.all(tileRequests);
+            if (!tiles.length || tiles.some(function (tile) { return !tile.image || !canvasCanReadImage(tile.image); })) {
+                tiles.forEach(function (tile) { releaseCanvasMapTile(tile.image); });
                 return false;
             }
 
-            drawSavedSelfieMapMarkers(ctx, x, y, w, h, startPixelX, startPixelY, zoom);
-            return true;
-        }
-
-        function drawSavedSelfieMapMarkers(ctx, x, y, w, h, startPixelX, startPixelY, zoom) {
-            const geo = selectedEmployee && selectedEmployee.geo_fence;
-            let geoList = [];
-            if (geo) {
-                if (Array.isArray(geo)) {
-                    geoList = geo;
-                } else {
-                    geoList = [geo];
-                }
-            }
-            const tileSize = 256;
-
-            function projectPoint(lat, lon) {
-                return {
-                    x: x + lonToTileX(lon, zoom) * tileSize - startPixelX,
-                    y: y + latToTileY(lat, zoom) * tileSize - startPixelY,
-                };
-            }
-
             ctx.save();
-            ctx.beginPath();
-            ctx.rect(x, y, w, h);
-            ctx.clip();
+            try {
+                ctx.beginPath();
+                ctx.rect(x, y, w, h);
+                ctx.clip();
+                ctx.fillStyle = '#e5e5e5';
+                ctx.fillRect(x, y, w, h);
 
-            geoList.forEach(function(g) {
-                const geoCenterLat = Number(g.geo_center_lat);
-                const geoCenterLng = Number(g.geo_center_lng);
-                const geoRadius = Number(g.geo_radius_meters);
-                if (Number.isFinite(geoCenterLat) && Number.isFinite(geoCenterLng) && Number.isFinite(geoRadius)) {
-                    const center = projectPoint(geoCenterLat, geoCenterLng);
-                    const metersPerPixel = 156543.03392 * Math.cos(geoCenterLat * Math.PI / 180) / Math.pow(2, zoom);
-                    const radiusPx = Math.max(4, geoRadius / Math.max(1, metersPerPixel));
+                tiles.forEach(function (tile) {
+                    const tilePixelX = tile.tileX * tileSize - topLeftX + x;
+                    const tilePixelY = tile.tileY * tileSize - topLeftY + y;
+                    ctx.drawImage(tile.image, tilePixelX, tilePixelY, tileSize, tileSize);
+                });
+
+                function pointOnMap(latitudeValue, longitudeValue) {
+                    const point = savedSelfieMapProject(latitudeValue, longitudeValue, view.zoom);
+                    return {
+                        x: x + point.x - topLeftX,
+                        y: y + point.y - topLeftY
+                    };
+                }
+
+                validGeofences.forEach(function (geofence) {
+                    const center = pointOnMap(geofence.latitude, geofence.longitude);
+                    const metersPerPixel = 40075016.686 * Math.cos(geofence.latitude * Math.PI / 180) / worldSize;
+                    const radiusPixels = Math.max(4, geofence.radius / Math.max(1, metersPerPixel));
                     ctx.fillStyle = 'rgba(40, 167, 69, 0.16)';
                     ctx.strokeStyle = '#28a745';
-                    ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
+                    ctx.lineWidth = Math.max(1, Math.round(w * 0.018));
                     ctx.beginPath();
-                    ctx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2);
+                    ctx.arc(center.x, center.y, radiusPixels, 0, Math.PI * 2);
                     ctx.fill();
                     ctx.stroke();
 
                     ctx.fillStyle = '#28a745';
                     ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = Math.max(2, Math.round(w * 0.018));
+                    ctx.lineWidth = Math.max(1, Math.round(w * 0.018));
                     ctx.beginPath();
-                    ctx.arc(center.x, center.y, Math.max(5, w * 0.055), 0, Math.PI * 2);
+                    ctx.arc(center.x, center.y, Math.max(3, w * 0.055), 0, Math.PI * 2);
                     ctx.fill();
                     ctx.stroke();
+                });
+
+                if (hasUserLocation) {
+                    const userPoint = pointOnMap(Number(latitude), Number(longitude));
+                    drawCanvasEmployeeLocationMarker(ctx, userPoint.x, userPoint.y, Math.max(16, w * 0.18));
                 }
-            });
 
-            const user = projectPoint(latitude, longitude);
-            drawCanvasEmployeeLocationMarker(ctx, user.x, user.y, Math.max(16, w * 0.18));
-
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-            ctx.lineWidth = Math.max(1, Math.round(w * 0.012));
-            ctx.strokeRect(x, y, w, h);
-            ctx.restore();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+                ctx.lineWidth = Math.max(1, Math.round(w * 0.012));
+                ctx.strokeRect(x, y, w, h);
+                return true;
+            } catch (error) {
+                return false;
+            } finally {
+                ctx.restore();
+                tiles.forEach(function (tile) { releaseCanvasMapTile(tile.image); });
+            }
         }
 
         // Burn employee card + location + timestamp onto the saved selfie canvas.
@@ -6324,7 +6627,7 @@
                 timeZone: SERVER_TZ
             });
 
-            const coordLine = `Lat: ${latitude.toFixed(6)}, Long: ${longitude.toFixed(6)}`;
+            const coordLine = portalCoordinateText(latitude, longitude) || '{% trans "Location unavailable" %}';
             const employeeName = selectedEmployee && selectedEmployee.name ? selectedEmployee.name : '';
             const metaParts = [];
             if (selectedEmployee && selectedEmployee.badge) {
@@ -6509,8 +6812,8 @@
 
             if (capturedAddress) {
                 locationText = capturedAddress;
-            } else if (latitude && longitude) {
-                locationText = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+            } else {
+                locationText = portalCoordinateText(latitude, longitude) || locationText;
             }
 
             $('#location-overlay-text').html(locationText);
@@ -6538,6 +6841,10 @@
                 formData.append('selfie', selfieBlob, 'selfie.jpg');
                 formData.append('latitude', latitude || '');
                 formData.append('longitude', longitude || '');
+                const multiConfig = multiPunchActionConfig(selectedAttendanceAction);
+                if (multiConfig) {
+                    formData.append('punch_type', multiConfig.punch_type);
+                }
 
                 const response = await fetch('{% url "portal-clock-in" %}', {
                     method: 'POST',
@@ -6585,6 +6892,10 @@
                 formData.append('selfie', selfieBlob, 'selfie.jpg');
                 formData.append('latitude', latitude || '');
                 formData.append('longitude', longitude || '');
+                const multiConfig = multiPunchActionConfig(selectedAttendanceAction);
+                if (multiConfig) {
+                    formData.append('punch_type', multiConfig.punch_type);
+                }
 
                 const response = await fetch('{% url "portal-clock-out" %}', {
                     method: 'POST',
@@ -6699,7 +7010,7 @@
 
             setTimeout(function () {
                 clockPreviewMap = L.map('clock-preview-map', { zoomControl: false, attributionControl: false });
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(clockPreviewMap);
+                addPortalMapTiles(clockPreviewMap);
 
                 const isMobileMap = isMobilePortalView();
                 const userPos = hasUserLocation ? [latitude, longitude] : null;
@@ -6770,10 +7081,8 @@
             if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
 
             setTimeout(function () {
-                geofenceMap = L.map('geofence-error-map');
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '© OpenStreetMap contributors'
-                }).addTo(geofenceMap);
+                geofenceMap = L.map('geofence-error-map', { attributionControl: false });
+                addPortalMapTiles(geofenceMap);
 
                 var center = [data.geo_center_lat, data.geo_center_lng];
                 var userPos = [data.user_lat, data.user_lng];

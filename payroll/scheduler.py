@@ -140,7 +140,7 @@ def auto_payslip_generate():
 
 if not any(
     cmd in sys.argv
-    for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell"]
+    for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell", "test"]
 ):
     scheduler = BackgroundScheduler()
     scheduler.add_job(expire_contract, "interval", hours=4)

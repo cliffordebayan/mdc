@@ -11,6 +11,7 @@ from .models import (
     AttendanceActivity,
     AttendanceLateComeEarlyOut,
     AttendanceOverTime,
+    AttendancePortalMultiPunchEmployee,
     AttendanceRequestComment,
     AttendanceValidationCondition,
     GraceTime,
@@ -22,6 +23,7 @@ admin.site.register(Attendance)
 admin.site.register(AttendanceActivity)
 admin.site.register(AttendanceOverTime)
 admin.site.register(AttendanceLateComeEarlyOut)
+admin.site.register(AttendancePortalMultiPunchEmployee)
 admin.site.register(AttendanceValidationCondition)
 admin.site.register(GraceTime)
 admin.site.register(AttendanceRequestComment)
