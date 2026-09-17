@@ -57,68 +57,9 @@
 
   <!-- Tab 1: Employee Assignments List -->
   <div id="tab-content-assignments" class="oh-general__tab-target oh-profile__info-tab mt-4 mb-4">
-    {% if employees %}
-    <div class="oh-sticky-table">
-      <div class="oh-sticky-table__table oh-table--sortable">
-        <div class="oh-sticky-table__thead">
-          <div class="oh-sticky-table__tr">
-            <div class="oh-sticky-table__th">Employee</div>
-            <div class="oh-sticky-table__th">Department</div>
-            <div class="oh-sticky-table__th">Assigned Geofences</div>
-            <div class="oh-sticky-table__th oh-sticky-table__right">Actions</div>
-          </div>
-        </div>
-        <div class="oh-sticky-table__tbody">
-          {% for employee in employees %}
-          <div class="oh-sticky-table__tr">
-            <div class="oh-sticky-table__sd">
-              <div class="d-flex align-items-center">
-                <div class="oh-avatar oh-avatar--small me-2" style="margin-right: 8px;">
-                  <img src="{{ employee.get_avatar }}" class="oh-avatar__img" alt="" style="width: 32px; height: 32px; border-radius: 50%;">
-                </div>
-                <span>{{ employee.get_full_name }}</span>
-              </div>
-            </div>
-            <div class="oh-sticky-table__td">
-              {{ employee.employee_work_info.department_id.department|default:"-" }}
-            </div>
-            <div class="oh-sticky-table__td">
-              {% for geo in employee.enforced_geofences %}
-                <span class="oh-badge oh-badge--info me-1">{{ geo }}</span>
-              {% empty %}
-                <span class="oh-badge oh-badge--success-light" style="color: #2e7d32; background-color: #e8f5e9;">No Restrictions</span>
-              {% endfor %}
-            </div>
-            <div class="oh-sticky-table__td oh-sticky-table__right">
-              <div class="oh-btn-group">
-                {% if perms.geofencing.change_geofencing %}
-                <button class="oh-btn oh-btn--light-bkg w-50"
-                        data-toggle="oh-modal-toggle"
-                        data-target="#objectCreateModal"
-                        hx-get="{% url 'geo-assign-edit' employee.pk %}"
-                        hx-target="#objectCreateModalTarget"
-                        hx-swap="innerHTML"
-                        title="Edit">
-                  <ion-icon name="create-outline"></ion-icon>
-                </button>
-                <button class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-50"
-                        onclick="geoAssignDeleteConfirm({{ employee.pk }}, '{{ employee.get_full_name|escapejs }}')"
-                        title="Remove">
-                  <ion-icon name="trash-outline"></ion-icon>
-                </button>
-                {% endif %}
-              </div>
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
+    <div id="geo-assignment-content">
+      {% include "geo_assignment_list.html" %}
     </div>
-    {% else %}
-    <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:200px;">
-      <h5 class="oh-404__subtitle">No active employees found.</h5>
-    </div>
-    {% endif %}
   </div>
 
   <!-- Tab 2: Geofences List -->

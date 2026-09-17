@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
+from django.db.models import Q
 from django.http import JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
@@ -10,9 +11,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from base.methods import paginator_qry
 from base.models import Branch
 from attendance.models import AttendancePortalMultiPunchEmployee
 from attendance.views.portal import _enforced_assigned_geofences, _geofence_check
+from employee.filters import employee_name_number_search_query
 from employee.models import Employee
 
 from .forms import (
@@ -126,20 +129,62 @@ class GeoFencingSetUpPermissionCheck(APIView):
         return Response(status=200)
 
 
-def _geo_config_context():
+def _geo_assignment_context(request, active_geofences=None):
+    """Build the paginated employee assignment list context."""
+    search = request.GET.get("search", "").strip()
+    employees = Employee.objects.filter(is_active=True)
+    if search:
+        search_query = Q()
+        for token in search.split():
+            search_query &= employee_name_number_search_query(token) | Q(
+                employee_work_info__department_id__department__icontains=token
+            )
+        employees = employees.filter(search_query)
+
+    employees = (
+        employees.select_related(
+            "employee_work_info",
+            "employee_work_info__department_id",
+        )
+        .prefetch_related(
+            "assigned_geofences",
+            "assigned_geofences__excluded_employees",
+        )
+        .order_by(
+            "employee_first_name",
+            "employee_last_name",
+            "employee_no",
+            "pk",
+        )
+    )
+
+    if active_geofences is None:
+        active_geofences = list(
+            GeoFencing.objects.filter(start=True).prefetch_related("excluded_employees")
+        )
+
+    paginated_employees = paginator_qry(employees, request.GET.get("page"))
+    for employee in paginated_employees.object_list:
+        employee.active_global_geofences = active_geofences
+        employee.enforced_geofences = _enforced_assigned_geofences(employee)
+
+    query_params = request.GET.copy()
+    query_params.pop("page", None)
+
+    return {
+        "employees": paginated_employees,
+        "search": search,
+        "pd": query_params.urlencode(),
+    }
+
+
+def _geo_config_context(request):
     geofences = GeoFencing.objects.all()
     active_geofences = list(
         GeoFencing.objects.filter(start=True).prefetch_related("excluded_employees")
     )
     add_form = GeoFencingSetupForm()
-    employees = Employee.objects.filter(is_active=True).prefetch_related(
-        "assigned_geofences",
-        "assigned_geofences__excluded_employees",
-        "employee_work_info__department_id"
-    )
-    for employee in employees:
-        employee.active_global_geofences = active_geofences
-        employee.enforced_geofences = _enforced_assigned_geofences(employee)
+    assignment_context = _geo_assignment_context(request, active_geofences)
 
     multi_punch_assignments = (
         AttendancePortalMultiPunchEmployee.objects.filter(is_active=True)
@@ -154,7 +199,9 @@ def _geo_config_context():
     return {
         "geofences": geofences,
         "add_form": add_form,
-        "employees": employees,
+        "employees": assignment_context["employees"],
+        "search": assignment_context["search"],
+        "pd": assignment_context["pd"],
         "multi_punch_form": PortalMultiPunchEmployeeForm(),
         "multi_punch_assignments": multi_punch_assignments,
     }
@@ -211,13 +258,13 @@ def geo_location_config(request):
             else:
                 messages.error(request, str(form.errors))
 
-    return render(request, "geo_config.html", _geo_config_context())
+    return render(request, "geo_config.html", _geo_config_context(request))
 
 
 @login_required
 @permission_required("geofencing.add_geofencing")
 def geo_location_add_form(request):
-    context = _geo_config_context()
+    context = _geo_config_context(request)
     return render(request, "geo_add_form.html", {"form": context["add_form"]})
 
 
@@ -248,7 +295,19 @@ def geo_assign_save(request):
         geofences = list(_active_geofences().filter(id__in=geofence_ids))
         _sync_employee_geofence_coverage(employee, geofences)
         messages.success(request, _("Employee geofences assigned successfully."))
-    return render(request, "geo_config.html", _geo_config_context())
+    return render(request, "geo_config.html", _geo_config_context(request))
+
+
+@login_required
+@permission_required("geofencing.view_geofencing")
+@require_http_methods(["GET"])
+def geo_assignments(request):
+    """Return the HTMX employee assignment list and its pagination."""
+    return render(
+        request,
+        "geo_assignment_list.html",
+        _geo_assignment_context(request),
+    )
 
 
 @login_required
@@ -276,7 +335,7 @@ def geo_assign_delete(request, emp_id):
         employee = get_object_or_404(Employee, pk=emp_id)
         _clear_employee_geofence_coverage(employee)
         messages.success(request, _("Geofence assignments cleared successfully."))
-    return render(request, "geo_config.html", _geo_config_context())
+    return render(request, "geo_config.html", _geo_config_context(request))
 
 
 @login_required
@@ -306,7 +365,7 @@ def geo_multi_punch_save(request):
             )
         else:
             messages.error(request, str(form.errors))
-    return render(request, "geo_config.html", _geo_config_context())
+    return render(request, "geo_config.html", _geo_config_context(request))
 
 
 @login_required
@@ -319,7 +378,7 @@ def geo_multi_punch_delete(request, pk):
             request,
             _("Employee removed from multiple clock in/out portal mode."),
         )
-    return render(request, "geo_config.html", _geo_config_context())
+    return render(request, "geo_config.html", _geo_config_context(request))
 
 
 @login_required
