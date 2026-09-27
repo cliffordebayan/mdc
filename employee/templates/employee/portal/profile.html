@@ -54,14 +54,21 @@
           </ul>
         </div>
         <div class="oh-onboarding-card__container">
-          <div class="oh-input-group w-100 d-flex justify-content-center">
-            <div class="oh-profile-section__edit-photo me-4 mb-3" data-toggle="oh-modal-toggle" data-target="#uploadPhotoModal">
+          <div class="oh-input-group w-100 d-flex flex-column align-items-center justify-content-center">
+            <div class="oh-profile-section__edit-photo mb-3" data-toggle="oh-modal-toggle" data-target="#uploadPhotoModal">
               {% if employee.employee_profile %}
                 <img src="{{ employee.employee_profile.url }}" class="oh-profile-section__avatar" alt="{{ employee.get_full_name }}" />
               {% else %}
                 <img src="{{ employee.get_avatar }}" class="oh-profile-section__avatar" alt="{{ employee.get_full_name }}" />
               {% endif %}
             </div>
+            <button type="button"
+              class="oh-btn oh-btn--secondary oh-btn--shadow px-4"
+              data-toggle="oh-modal-toggle" data-target="#uploadPhotoModal"
+              aria-controls="uploadPhotoModal" aria-label="{% trans 'Upload Photo' %}">
+              <ion-icon class="me-1" name="cloud-upload-outline"></ion-icon>
+              {% trans "Upload Photo" %}
+            </button>
           </div>
           <h2 class="oh-onboarding-card__greeting text-center">{% trans "Upload your photo" %}</h2>
           <h3 class="oh-onboarding-card__title oh-onboarding-card__title--h1 text-center">{{ employee.get_full_name }}</h3>

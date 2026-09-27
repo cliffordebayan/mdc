@@ -43,6 +43,7 @@ from attendance.views.portal import (
     _make_portal_pin_reset_token,
     _portal_activity_total_seconds,
     _portal_break_policy,
+    _portal_face_detection_error,
     _portal_multi_punch_action_error,
     _portal_multi_punch_state_from_activities,
     _portal_worked_duration_metadata,
@@ -732,7 +733,7 @@ class PortalClockOutTests(SimpleTestCase):
     ):
         request = self.factory.post(
             "/attendance/portal/clock-out/",
-            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
+            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0", "face_detected": "true"},
         )
         attach_session(request)
         request.session["portal_pin_verification"] = {
@@ -784,7 +785,7 @@ class PortalClockOutTests(SimpleTestCase):
     ):
         request = self.factory.post(
             "/attendance/portal/clock-out/",
-            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
+            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0", "face_detected": "true"},
         )
         attach_session(request)
         request.session["portal_pin_verification"] = {
@@ -841,7 +842,7 @@ class PortalClockOutTests(SimpleTestCase):
     ):
         request = self.factory.post(
             "/attendance/portal/clock-out/",
-            {"employee_id": "1", "latitude": "invalid", "longitude": "invalid"},
+            {"employee_id": "1", "latitude": "invalid", "longitude": "invalid", "face_detected": "true"},
         )
         attach_session(request)
         request.session["portal_pin_verification"] = {
@@ -1117,6 +1118,8 @@ class PortalMultiPunchEndpointTests(SimpleTestCase):
         self.factory = RequestFactory()
 
     def _request(self, url, data):
+        data = dict(data)
+        data.setdefault("face_detected", "true")
         request = self.factory.post(url, data)
         attach_session(request)
         request.session["portal_pin_verification"] = {
@@ -1540,6 +1543,8 @@ class PortalGeofenceEndpointTests(SimpleTestCase):
         self.factory = RequestFactory()
 
     def _verified_request(self, path, data):
+        data = dict(data)
+        data.setdefault("face_detected", "true")
         request = self.factory.post(path, data)
         attach_session(request)
         request.session["portal_pin_verification"] = {
@@ -1670,6 +1675,8 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
         self.factory = RequestFactory()
 
     def _verified_request(self, path, data):
+        data = dict(data)
+        data.setdefault("face_detected", "true")
         request = self.factory.post(path, data)
         attach_session(request)
         request.session["portal_pin_verification"] = {
@@ -1801,7 +1808,7 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
     ):
         request = self._verified_request(
             "/attendance/portal/clock-in/",
-            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
+            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0", "face_detected": "true"},
         )
         employee = self._employee()
         employee_model.objects.get.return_value = employee
@@ -1856,7 +1863,7 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
     ):
         request = self._verified_request(
             "/attendance/portal/clock-in/",
-            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
+            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0", "face_detected": "true"},
         )
         employee = self._employee()
         employee_model.objects.get.return_value = employee
@@ -2045,6 +2052,32 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         )
         self.assertIn("You can continue without GPS.", self.portal_template)
 
+    def test_face_detection_gate_requires_runtime_and_visible_face(self):
+        self.assertIn("face_detection_required", self.portal_template)
+        self.assertIn("window.HRISFaceDetection.detect(video)", self.portal_template)
+        self.assertIn("if (faceDetectionRequired && (!faceDetectionReady || !faceDetected))", self.portal_template)
+        self.assertIn("formData.append('face_detected', String(!faceDetectionRequired || faceDetected));", self.portal_template)
+        self.assertIn("face_detection/face_detection.bundle.js", self.portal_template)
+        self.assertIn(".clock-camera-panel.face-detected::after", self.portal_template)
+        self.assertIn("cameraPanel.classList.toggle('face-detected', faceDetectionRequired && faceDetected)", self.portal_template)
+        self.assertIn("const FACE_DETECTION_MIN_FACE_AREA = 0.03;", self.portal_template)
+        self.assertIn("const FACE_DETECTION_CENTER_WIDTH = 0.60;", self.portal_template)
+        self.assertIn("const FACE_DETECTION_CENTER_HEIGHT = 0.70;", self.portal_template)
+        self.assertIn("function facePredictionIsCenteredAndVisible(prediction, video)", self.portal_template)
+        self.assertIn("facePredictionIsCenteredAndVisible(visibleFaces[0], video)", self.portal_template)
+        self.assertIn("&& facePredictionIsCenteredAndVisible(visibleFaces[0], video);", self.portal_template)
+
+    def test_face_detection_feedback_is_only_a_thin_full_camera_border(self):
+        self.assertNotIn('id="face-status"', self.portal_template)
+        self.assertNotIn(".clock-face-status", self.portal_template)
+        self.assertIn("border: 3px solid #22c55e;", self.portal_template)
+        self.assertNotIn("border-left: 10px solid #22c55e;", self.portal_template)
+        self.assertNotIn("border-right: 10px solid #22c55e;", self.portal_template)
+        self.assertIn(".clock-camera-panel::before", self.portal_template)
+        self.assertIn("width: min(60%, 360px);", self.portal_template)
+        self.assertIn("aspect-ratio: 1 / 1;", self.portal_template)
+        self.assertIn("border: 2px solid rgba(255, 255, 255, 0.42);", self.portal_template)
+
     def test_saved_map_fits_user_and_full_geofence_bounds(self):
         self.assertIn("L.latLng(pointLatitude, pointLongitude).toBounds(radius)", self.portal_template)
         self.assertIn("savedSelfieMapView(boundsPoints, w, h)", self.portal_template)
@@ -2056,6 +2089,83 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn("const renderedTiles = await drawSavedSelfieMapTiles(ctx, mapX, mapY, mapW, mapH);", self.portal_template)
         self.assertIn("if (!renderedTiles) {", self.portal_template)
         self.assertIn("drawSavedSelfieMap(ctx, mapX, mapY, mapW, mapH);", self.portal_template)
+
+
+class PortalFaceDetectionEndpointTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @staticmethod
+    def _employee(face_detection_enabled):
+        company = SimpleNamespace(
+            _meta=object(),
+            face_detection=SimpleNamespace(start=face_detection_enabled),
+        )
+        return SimpleNamespace(
+            employee_work_info=SimpleNamespace(company_id=company),
+        )
+
+    def test_enabled_face_detection_rejects_missing_client_gate(self):
+        request = self.factory.post("/attendance/portal/clock-in/", {})
+        response = _portal_face_detection_error(request, self._employee(True))
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload["face_detection_required"])
+
+    def test_face_detection_is_required_without_company_setting(self):
+        request = self.factory.post("/attendance/portal/clock-in/", {})
+        response = _portal_face_detection_error(request, self._employee(False))
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertTrue(payload["face_detection_required"])
+
+    def test_enabled_face_detection_accepts_detected_face(self):
+        request = self.factory.post(
+            "/attendance/portal/clock-in/",
+            {"face_detected": "true"},
+        )
+        self.assertIsNone(_portal_face_detection_error(request, self._employee(True)))
+
+    @patch("attendance.views.portal._maybe_auto_checkout_employee")
+    @patch("attendance.views.portal.Employee")
+    @patch("attendance.views.portal._require_verified_pin", return_value=(True, ""))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_all_portal_attendance_endpoints_reject_missing_or_false_face(
+        self,
+        _ip_allowed_mock,
+        _pin_mock,
+        employee_model,
+        _auto_checkout_mock,
+    ):
+        employee_model.objects.get.return_value = MagicMock(
+            employee_work_info=MagicMock()
+        )
+        endpoint_cases = (
+            (public_clock_in, "/attendance/portal/clock-in/", {"employee_id": "1"}),
+            (public_clock_out, "/attendance/portal/clock-out/", {"employee_id": "1"}),
+            (
+                public_activity_transition,
+                "/attendance/portal/activity-transition/",
+                {
+                    "employee_id": "1",
+                    "activity_type": "break",
+                    "transition": "start",
+                },
+            ),
+        )
+
+        for endpoint, path, data in endpoint_cases:
+            for face_value in (None, "false"):
+                request_data = dict(data)
+                if face_value is not None:
+                    request_data["face_detected"] = face_value
+                response = endpoint(self.factory.post(path, request_data))
+                payload = json.loads(response.content)
+
+                self.assertFalse(payload["success"])
+                self.assertTrue(payload["face_detection_required"])
 
 
 class PortalAutoCheckoutTests(SimpleTestCase):
@@ -2733,6 +2843,7 @@ class PortalEmployeeLookupTests(SimpleTestCase):
         self.assertEqual(result["break_total_time"], "00:00")
         self.assertEqual(result["lunch_total_seconds"], 0)
         self.assertEqual(result["lunch_total_time"], "00:00")
+        self.assertTrue(result["face_detection_required"])
 
     @patch("attendance.views.portal.Attendance")
     @patch("attendance.views.portal.AttendanceActivity")
@@ -3721,6 +3832,7 @@ class PortalActivityTransitionTests(SimpleTestCase):
         }
         if data:
             payload.update(data)
+        payload.setdefault("face_detected", "true")
         request = self.factory.post("/attendance/portal/activity-transition/", payload)
         attach_session(request)
         request.session["portal_pin_verification"] = {
@@ -4058,7 +4170,7 @@ class PortalActivityTransitionTests(SimpleTestCase):
     ):
         request = self.factory.post(
             "/attendance/portal/clock-out/",
-            {"employee_id": "1", "latitude": "14.6001", "longitude": "121.0001"},
+            {"employee_id": "1", "latitude": "14.6001", "longitude": "121.0001", "face_detected": "true"},
         )
         attach_session(request)
         request.session["portal_pin_verification"] = {
@@ -4973,6 +5085,117 @@ class AttendanceLazyTabContextTests(SimpleTestCase):
         self.assertEqual(context["active_tab_key"], "validated")
         self.assertTrue(context["is_grouped"])
         self.assertEqual(context["attendances_ids"], "[3]")
+
+
+class ValidateAllAttendanceTests(SimpleTestCase):
+    def _request(self, filters=""):
+        request = RequestFactory().post(
+            "/attendance/validate-all-attendance",
+            data={"filters": filters},
+        )
+        request.session = {}
+        request.user = SimpleNamespace(
+            is_authenticated=True,
+            is_active=True,
+            employee_get=SimpleNamespace(id=1, is_active=True),
+            has_perm=lambda permission: True,
+        )
+        return request
+
+    @patch("employee.models.EmployeeWorkInformation.objects.filter")
+    @patch("attendance.views.views.messages.info")
+    @patch("attendance.views.views.messages.success")
+    @patch("attendance.views.views._send_attendance_validation_notification")
+    @patch("attendance.views.views.filtersubordinates")
+    @patch("attendance.views.views.AttendanceFilters")
+    @patch("attendance.views.views.Attendance")
+    def test_validate_all_processes_records_beyond_one_page_and_skips_pending_requests(
+        self,
+        attendance_model,
+        attendance_filters,
+        filter_subordinates,
+        _notify_mock,
+        _success_message,
+        _info_message,
+        reporting_manager_filter,
+    ):
+        reporting_manager_filter.return_value.exists.return_value = False
+        employee = SimpleNamespace(employee_user_id=SimpleNamespace())
+        attendances = [
+            SimpleNamespace(
+                id=index,
+                employee_id=employee,
+                attendance_date=date(2026, 6, 1),
+                is_validate_request=False,
+                attendance_validated=False,
+                save=MagicMock(),
+            )
+            for index in range(1, 52)
+        ]
+        pending = SimpleNamespace(
+            id=52,
+            employee_id=employee,
+            attendance_date=date(2026, 6, 1),
+            is_validate_request=True,
+            attendance_validated=False,
+            save=MagicMock(),
+        )
+        attendances.append(pending)
+
+        queryset = MagicMock()
+        queryset.select_related.return_value = queryset
+        queryset.iterator.return_value = iter(attendances)
+        attendance_model.objects.filter.return_value = queryset
+        filter_subordinates.return_value = queryset
+
+        response = attendance_views.validate_all_attendance(
+            self._request("attendance_date__gte=2026-06-01")
+        )
+
+        payload = json.loads(response.content)
+        self.assertEqual(payload["validated"], 51)
+        self.assertEqual(payload["skipped"], 1)
+        self.assertEqual(sum(row.save.call_count for row in attendances[:51]), 51)
+        pending.save.assert_not_called()
+        attendance_model.objects.filter.assert_called_once_with(
+            employee_id__is_active=True,
+            attendance_validated=False,
+        )
+        attendance_filters.assert_not_called()
+
+    @patch("employee.models.EmployeeWorkInformation.objects.filter")
+    def test_validate_all_returns_json_permission_error(self, reporting_manager_filter):
+        reporting_manager_filter.return_value.exists.return_value = False
+        request = self._request()
+        request.user.has_perm = lambda permission: False
+
+        response = attendance_views.validate_all_attendance(request)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            json.loads(response.content)["message"],
+            "You do not have permission to validate attendance.",
+        )
+
+    @patch("employee.models.EmployeeWorkInformation.objects.filter")
+    @patch(
+        "attendance.views.views._validate_all_attendance_records",
+        side_effect=RuntimeError("database unavailable"),
+    )
+    def test_validate_all_returns_json_server_error(
+        self,
+        _validate_records_mock,
+        reporting_manager_filter,
+    ):
+        reporting_manager_filter.return_value.exists.return_value = False
+
+        response = attendance_views.validate_all_attendance(self._request())
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            json.loads(response.content)["message"],
+            "Unable to validate all attendance records.",
+        )
 
 
 class FakeActivityQuerySet(list):

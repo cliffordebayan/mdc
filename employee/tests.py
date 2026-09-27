@@ -1,13 +1,18 @@
 from io import BytesIO
+from datetime import date, time
 import uuid
 from unittest.mock import patch
 
 import pandas as pd
 from django.contrib.auth.models import User
+from django.contrib.messages.storage.fallback import FallbackStorage
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, TransactionTestCase
+from django.contrib.sessions.middleware import SessionMiddleware
+from django.http import HttpResponse
+from django.test import Client, RequestFactory, TestCase, TransactionTestCase
 from django.urls import reverse
 
+from attendance.models import Attendance, AttendanceActivity, AttendanceOverTime
 from base.models import Branch, BusinessUnit, Company, PayrollGroup
 from employee.filters import EmployeeFilter
 from employee.models import (
@@ -16,7 +21,223 @@ from employee.models import (
     EmployeeOnboardingPortal,
     EmployeeWorkInformation,
 )
+from employee.views import _delete_employee_record, employee_delete
 from horilla.horilla_middlewares import _thread_locals
+
+
+class EmployeeDeleteSuperuserTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.admin = User.objects.create_superuser(
+            username="employee-delete-admin",
+            email="employee-delete-admin@example.com",
+            password="password",
+        )
+        self.admin_employee = Employee.objects.create(
+            employee_user_id=self.admin,
+            employee_first_name="Admin",
+            employee_last_name="Employee",
+            email="employee-delete-admin-employee@example.com",
+            phone="09170000004",
+            gender="male",
+            is_active=True,
+        )
+        self.target_user = User.objects.create_superuser(
+            username="employee-delete-target",
+            email="employee-delete-target@example.com",
+            password="password",
+        )
+        self.target = Employee.objects.create(
+            employee_user_id=self.target_user,
+            employee_first_name="Target",
+            employee_last_name="Superuser",
+            email="employee-delete-target-employee@example.com",
+            phone="09170000003",
+            gender="male",
+            is_active=True,
+        )
+
+    def tearDown(self):
+        _thread_locals.request = None
+        super().tearDown()
+
+    def test_superuser_can_delete_another_superuser_employee(self):
+        request = self.factory.post(
+            reverse("employee-delete", args=[self.target.pk]),
+            {"view": "list"},
+        )
+        request.user = self.admin
+        SessionMiddleware(lambda _request: None).process_request(request)
+        request.session.save()
+        request._messages = FallbackStorage(request)
+
+        with patch(
+            "employee.views.HorillaRedirect",
+            return_value=HttpResponse(status=302),
+        ):
+            response = employee_delete(request, self.target.pk)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Employee.objects.filter(pk=self.target.pk).exists())
+        self.assertFalse(User.objects.filter(pk=self.target_user.pk).exists())
+
+    def test_superuser_cannot_delete_their_own_employee_account(self):
+        request = self.factory.post(
+            reverse("employee-delete", args=[self.admin_employee.pk]),
+            {"view": "list"},
+        )
+        request.user = self.admin
+        SessionMiddleware(lambda _request: None).process_request(request)
+        request.session.save()
+        request._messages = FallbackStorage(request)
+
+        with patch(
+            "employee.views.HorillaRedirect",
+            return_value=HttpResponse(status=302),
+        ):
+            response = employee_delete(request, self.admin_employee.pk)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            Employee.objects.filter(pk=self.admin_employee.pk).exists()
+        )
+
+
+class EmployeeDeleteProtectedDataTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        self.client = Client(enforce_csrf_checks=True)
+        self.admin = User.objects.create_superuser(
+            username="protected-delete-admin",
+            email="protected-delete-admin@example.com",
+            password="password",
+        )
+        self.admin_employee = Employee.objects.create(
+            employee_user_id=self.admin,
+            employee_first_name="Protected Delete Admin",
+            email="protected-delete-admin-employee@example.com",
+            phone="09170000005",
+            gender="male",
+            is_active=True,
+        )
+        self.target_user = User.objects.create_user(
+            username="protected-delete-target",
+            email="protected-delete-target@example.com",
+            password="password",
+        )
+        self.target = Employee.objects.create(
+            employee_user_id=self.target_user,
+            employee_first_name="Protected Delete Target",
+            email="protected-delete-target-employee@example.com",
+            phone="09170000006",
+            gender="male",
+            is_active=True,
+        )
+        self.other_user = User.objects.create_user(
+            username="protected-delete-other",
+            email="protected-delete-other@example.com",
+            password="password",
+        )
+        self.other = Employee.objects.create(
+            employee_user_id=self.other_user,
+            employee_first_name="Protected Delete Other",
+            email="protected-delete-other-employee@example.com",
+            phone="09170000007",
+            gender="male",
+            is_active=True,
+        )
+
+        self.target_activity = AttendanceActivity.objects.create(
+            employee_id=self.target,
+            attendance_date=date(2026, 1, 1),
+            clock_in=time(9, 0),
+        )
+        self.target_attendance = Attendance.objects.create(
+            employee_id=self.target,
+            attendance_date=date(2026, 1, 1),
+        )
+        self.target_hour_account = AttendanceOverTime.objects.get(
+            employee_id=self.target,
+            month="january",
+            year="2026",
+        )
+        self.other_attendance = Attendance.objects.create(
+            employee_id=self.other,
+            attendance_date=date(2026, 1, 1),
+        )
+        self.other_attendance_approved_by_target = Attendance.objects.create(
+            employee_id=self.other,
+            attendance_date=date(2026, 1, 2),
+            approved_by=self.target,
+        )
+
+        self.client.force_login(self.admin)
+
+    def tearDown(self):
+        _thread_locals.request = None
+        super().tearDown()
+
+    def _csrf_token(self):
+        token = "a" * 64
+        self.client.cookies["csrftoken"] = token
+        return token
+
+    def test_delete_route_removes_protected_employee_records(self):
+        response = self.client.post(
+            reverse("employee-delete", args=[self.target.pk]),
+            {"view": "list", "csrfmiddlewaretoken": self._csrf_token()},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Employee.objects.filter(pk=self.target.pk).exists())
+        self.assertFalse(User.objects.filter(pk=self.target_user.pk).exists())
+        self.assertFalse(
+            AttendanceActivity.objects.filter(pk=self.target_activity.pk).exists()
+        )
+        self.assertFalse(
+            Attendance.objects.filter(pk=self.target_attendance.pk).exists()
+        )
+        self.assertFalse(
+            AttendanceOverTime.objects.filter(pk=self.target_hour_account.pk).exists()
+        )
+        self.assertFalse(
+            Attendance.objects.filter(
+                pk=self.other_attendance_approved_by_target.pk
+            ).exists()
+        )
+        self.assertTrue(Attendance.objects.filter(pk=self.other_attendance.pk).exists())
+        self.assertTrue(Employee.objects.filter(pk=self.other.pk).exists())
+
+    def test_bulk_delete_uses_protected_record_cleanup(self):
+        response = self.client.post(
+            reverse("employee-bulk-delete"),
+            {
+                "ids": "[%d]" % self.target.pk,
+                "csrfmiddlewaretoken": self._csrf_token(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Employee.objects.filter(pk=self.target.pk).exists())
+        self.assertFalse(AttendanceActivity.objects.filter(pk=self.target_activity.pk).exists())
+        self.assertFalse(AttendanceOverTime.objects.filter(pk=self.target_hour_account.pk).exists())
+
+    def test_delete_rolls_back_when_employee_delete_fails(self):
+        with patch(
+            "employee.views.Employee.delete",
+            side_effect=RuntimeError("simulated delete failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                _delete_employee_record(self.target)
+
+        self.assertTrue(Employee.objects.filter(pk=self.target.pk).exists())
+        self.assertTrue(
+            AttendanceActivity.objects.filter(pk=self.target_activity.pk).exists()
+        )
+        self.assertTrue(Attendance.objects.filter(pk=self.target_attendance.pk).exists())
+        self.assertTrue(
+            AttendanceOverTime.objects.filter(pk=self.target_hour_account.pk).exists()
+        )
 
 
 class EmployeeWorkInfoExportTests(TestCase):
@@ -219,6 +440,14 @@ class EmployeePortalFlowTests(TestCase):
             "emergency_contact_name": "Emergency Contact",
             "emergency_contact_relation": "Sibling",
         }
+
+    def test_profile_page_shows_explicit_upload_photo_button(self):
+        response = self.client.get(
+            reverse("employee-portal-profile", args=[self.token])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'aria-controls="uploadPhotoModal"')
 
     def test_personal_details_redirects_directly_to_pin_step(self):
         response = self.client.post(

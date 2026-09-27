@@ -497,6 +497,12 @@ def _get_client_ip(request):
 
 
 def _active_global_geofences(employee=None):
+    """Return active geofences that apply to ``employee``.
+
+    Geofences are opt-in per employee.  The optional cached attribute is kept
+    for lightweight callers and tests, but database-backed employees are
+    filtered through the explicit many-to-many assignment.
+    """
     if (
         employee is not None
         and "active_global_geofences" in getattr(employee, "__dict__", {})
@@ -507,11 +513,34 @@ def _active_global_geofences(employee=None):
         GeoFencing = apps.get_model("geofencing", "GeoFencing")
     except LookupError:
         return []
-    return GeoFencing.objects.filter(start=True).prefetch_related("excluded_employees")
+
+    geofences = GeoFencing.objects.filter(start=True)
+    if employee is not None:
+        geofences = geofences.filter(assigned_employees=employee)
+    return geofences.prefetch_related("excluded_employees")
 
 
 def _active_assigned_geofences(employee):
     return _active_global_geofences(employee)
+
+
+def _portal_face_detection_required(employee):
+    """Portal attendance always requires local face presence detection."""
+    return True
+
+
+def _portal_face_detection_error(request, employee):
+    """Reject portal attendance requests that bypass the face-presence gate."""
+    if _portal_face_detection_required(employee) and request.POST.get("face_detected") != "true":
+        return JsonResponse(
+            {
+                "success": False,
+                "face_detection_required": True,
+                "message": _("Show one face in the camera before continuing."),
+            },
+            status=200,
+        )
+    return None
 
 
 def _employee_is_excluded_from_geofence(employee, geofence):
@@ -539,11 +568,11 @@ def _employee_is_excluded_from_geofence(employee, geofence):
 
 def _enforced_assigned_geofences(employee):
     """
-    Return the active global geofences that should actually restrict this
-    employee. Empty means the employee has no geofence restriction.
+    Return active geofences explicitly assigned to this employee. Empty means
+    the employee has no geofence restriction.
     """
     enforced_geofences = []
-    for geofence in _active_global_geofences(employee):
+    for geofence in _active_assigned_geofences(employee):
         if not getattr(geofence, "start", True):
             continue
         if _employee_is_excluded_from_geofence(employee, geofence):
@@ -1996,13 +2025,8 @@ def employee_lookup(request):
         )[:10]
 
         lookup_now = get_real_now()
-        active_global_geofences = None
         results = []
         for emp in employees:
-            if "active_global_geofences" not in getattr(emp, "__dict__", {}):
-                if active_global_geofences is None:
-                    active_global_geofences = list(_active_global_geofences())
-                emp.active_global_geofences = active_global_geofences
             _maybe_auto_checkout_employee(emp, lookup_now)
             active_activity = _open_portal_activity(emp)
             work_info = getattr(emp, "employee_work_info", None)
@@ -2102,6 +2126,7 @@ def employee_lookup(request):
                 "clock_out_datetime": clock_out_datetime,
                 "geo_fence": geo_data,
                 "branch": branch_name,
+                "face_detection_required": _portal_face_detection_required(emp),
             })
 
         return JsonResponse({"success": True, "results": results})
@@ -3339,6 +3364,7 @@ def public_clock_in(request):
         selfie (file): Selfie image file
         latitude (float): GPS latitude
         longitude (float): GPS longitude
+        face_detected (str): "true" when the client detected one visible face
 
     Returns:
         JSON: {
@@ -3391,6 +3417,10 @@ def public_clock_in(request):
                 {"success": False, "message": "Employee work information not configured"},
                 status=200,
             )
+
+        face_error = _portal_face_detection_error(request, employee)
+        if face_error:
+            return face_error
 
         # Geofence check
         geo_error = _geofence_check(employee, work_info, latitude, longitude)
@@ -3553,8 +3583,9 @@ def public_clock_in(request):
 def public_activity_transition(request):
     """
     Start or end a non-work attendance activity from the public portal.
-    Break/lunch transitions require the same PIN, GPS, selfie, and geofence checks
-    as clock-in/out, but only work activities contribute to worked hours.
+    Break/lunch transitions require the same PIN, GPS, selfie, geofence, and
+    face-presence checks as clock-in/out, but only work activities contribute
+    to worked hours.
     """
     if not _ip_is_allowed(request):
         return JsonResponse(
@@ -3595,6 +3626,10 @@ def public_activity_transition(request):
             return JsonResponse(
                 {"success": False, "message": "Employee not found"}, status=200
             )
+
+        face_error = _portal_face_detection_error(request, employee)
+        if face_error:
+            return face_error
 
         _maybe_auto_checkout_employee(employee)
 
@@ -3814,6 +3849,7 @@ def public_clock_out(request):
         selfie (file): Selfie image file
         latitude (float): GPS latitude
         longitude (float): GPS longitude
+        face_detected (str): "true" when the client detected one visible face
 
     Returns:
         JSON: {
@@ -3855,6 +3891,10 @@ def public_clock_out(request):
             return JsonResponse(
                 {"success": False, "message": "Employee not found"}, status=200
             )
+
+        face_error = _portal_face_detection_error(request, employee)
+        if face_error:
+            return face_error
 
         _maybe_auto_checkout_employee(employee)
 

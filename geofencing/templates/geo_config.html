@@ -107,11 +107,17 @@
                 </button>
                 {% endif %}
                 {% if perms.geofencing.delete_geofencing %}
-                <button class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-50"
-                        onclick="geoDeleteConfirm({{ geo.pk }}, '{{ geo|escapejs }}')"
-                        title="Remove">
-                  <ion-icon name="trash-outline"></ion-icon>
-                </button>
+                <form hx-post="{% url 'geo-config' %}?action=delete&pk={{ geo.pk }}"
+                      hx-target="#geo"
+                      hx-swap="innerHTML"
+                      hx-confirm="Delete geofence '{{ geo|escapejs }}'?"
+                      onsubmit="localStorage.setItem('geoActiveTab', 'geofences');"
+                      class="d-inline-flex w-50">
+                  {% csrf_token %}
+                  <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100" title="Remove">
+                    <ion-icon name="trash-outline" aria-hidden="true"></ion-icon>
+                  </button>
+                </form>
                 {% endif %}
               </div>
             </div>
@@ -234,14 +240,6 @@ $(document).ready(function() {
     switchGeoTab('assignments');
   }
 });
-
-function geoDeleteConfirm(pk, name) {
-  if (!confirm('Delete geofence "' + name + '"?')) return;
-  fetch("{% url 'geo-config' %}?action=delete&pk=" + pk, {
-    method: "POST",
-    headers: { "X-CSRFToken": document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "" },
-  }).then(() => htmx.ajax("GET", "{% url 'geo-config' %}", { target: "#geo", swap: "innerHTML" }));
-}
 
 function geoAssignDeleteConfirm(pk, empName) {
   if (!confirm('Clear all geofence assignments for "' + empName + '"?')) return;

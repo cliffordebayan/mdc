@@ -1439,6 +1439,32 @@
             /* transform: scaleX(-1); - moved inline to avoid Safari blank frame issue */
         }
 
+        .clock-camera-panel::before {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: min(60%, 360px);
+            aspect-ratio: 1 / 1;
+            transform: translate(-50%, -50%);
+            border: 2px solid rgba(255, 255, 255, 0.42);
+            border-radius: 18px;
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), inset 0 0 18px rgba(255, 255, 255, 0.06);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .clock-camera-panel.face-detected::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border: 3px solid #22c55e;
+            box-shadow: inset 0 0 20px rgba(34, 197, 94, 0.24);
+            pointer-events: none;
+            z-index: 1;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
         .clock-camera-panel #canvas {
             display: none;
         }
@@ -3031,6 +3057,14 @@
         let cameraReady = false;
         let cameraFacingMode = 'user';
         let cameraSwitchInFlight = false;
+        let faceDetectionRequired = false;
+        let faceDetected = false;
+        let faceDetectionReady = false;
+        let faceDetectionInFlight = false;
+        let faceDetectionTimer = null;
+        let faceDetectionGeneration = 0;
+        let faceDetectionPositiveStreak = 0;
+        let faceDetectionRuntimePromise = null;
         let latitude = null;
         let longitude = null;
         let capturedAddress = null;
@@ -3057,6 +3091,14 @@
         const PORTAL_MAP_TILE_TEMPLATE = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
         const PORTAL_MAP_TILE_ATTRIBUTION = '';
         const SAVED_MAP_TILE_TIMEOUT_MS = 10000;
+        const FACE_DETECTION_BUNDLE_URL = '{% static "attendance/face_detection/face_detection.bundle.js" %}?v=2';
+        const FACE_DETECTION_MODEL_URL = '{% static "attendance/face_detection/model/model.json" %}?v=2';
+        const FACE_DETECTION_INTERVAL_MS = 220;
+        const FACE_DETECTION_SCORE_THRESHOLD = 0.5;
+        const FACE_DETECTION_MIN_FACE_AREA = 0.03;
+        const FACE_DETECTION_CENTER_WIDTH = 0.60;
+        const FACE_DETECTION_CENTER_HEIGHT = 0.70;
+        const FACE_DETECTION_REQUIRED_LANDMARKS = 6;
 
         function addPortalMapTiles(map) {
             return L.tileLayer(PORTAL_MAP_TILE_TEMPLATE, {
@@ -3497,12 +3539,294 @@
             return '#clock-in-btn, #clock-out-btn, #activity-transition-btn';
         }
 
+        function setFaceDetectionStatus() {
+            // Detection feedback is intentionally visual-only: the camera border
+            // is green only while a valid face is detected.
+            syncFaceDetectionVisual();
+        }
+
+        function syncFaceDetectionVisual() {
+            const cameraPanel = document.querySelector('.clock-camera-panel');
+            if (!cameraPanel) return;
+            cameraPanel.classList.toggle('face-detected', faceDetectionRequired && faceDetected);
+        }
+
+        function facePredictionScore(prediction) {
+            const probability = prediction && prediction.probability;
+            const score = probability && typeof probability.length === 'number'
+                ? probability[0]
+                : probability;
+            return Number(score) || 0;
+        }
+
+        function facePredictionBounds(prediction) {
+            if (!prediction) return null;
+            const topLeft = prediction.topLeft || [];
+            const bottomRight = prediction.bottomRight || [];
+            const left = Number(topLeft[0]);
+            const top = Number(topLeft[1]);
+            const right = Number(bottomRight[0]);
+            const bottom = Number(bottomRight[1]);
+            if (![left, top, right, bottom].every(Number.isFinite)) {
+                return null;
+            }
+            return {
+                left,
+                top,
+                right,
+                bottom,
+                width: right - left,
+                height: bottom - top,
+            };
+        }
+
+        function facePredictionArea(prediction, video) {
+            const bounds = facePredictionBounds(prediction);
+            if (!bounds || !video || !video.videoWidth || !video.videoHeight) {
+                return 0;
+            }
+            return Math.max(0, bounds.width * bounds.height)
+                / (video.videoWidth * video.videoHeight);
+        }
+
+        function facePredictionIsCenteredAndVisible(prediction, video) {
+            if (!video || !video.videoWidth || !video.videoHeight) {
+                return false;
+            }
+
+            const bounds = facePredictionBounds(prediction);
+            if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
+                return false;
+            }
+
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            if (
+                bounds.left < 0 ||
+                bounds.top < 0 ||
+                bounds.right > videoWidth ||
+                bounds.bottom > videoHeight
+            ) {
+                return false;
+            }
+
+            const centerWidth = videoWidth * FACE_DETECTION_CENTER_WIDTH;
+            const centerHeight = videoHeight * FACE_DETECTION_CENTER_HEIGHT;
+            const centerLeft = (videoWidth - centerWidth) / 2;
+            const centerTop = (videoHeight - centerHeight) / 2;
+            if (
+                bounds.left < centerLeft ||
+                bounds.right > centerLeft + centerWidth ||
+                bounds.top < centerTop ||
+                bounds.bottom > centerTop + centerHeight
+            ) {
+                return false;
+            }
+
+            if (facePredictionArea(prediction, video) < FACE_DETECTION_MIN_FACE_AREA) {
+                return false;
+            }
+
+            const landmarks = prediction.landmarks;
+            if (!Array.isArray(landmarks) || landmarks.length < FACE_DETECTION_REQUIRED_LANDMARKS) {
+                return false;
+            }
+
+            return landmarks.every(function (landmark) {
+                if (!Array.isArray(landmark) || landmark.length < 2) {
+                    return false;
+                }
+                const x = Number(landmark[0]);
+                const y = Number(landmark[1]);
+                return Number.isFinite(x)
+                    && Number.isFinite(y)
+                    && x >= 0
+                    && x <= videoWidth
+                    && y >= 0
+                    && y <= videoHeight;
+            });
+        }
+
+        function loadFaceDetectionRuntime() {
+            if (window.HRISFaceDetection) {
+                return Promise.resolve(window.HRISFaceDetection);
+            }
+            if (faceDetectionRuntimePromise) {
+                return faceDetectionRuntimePromise;
+            }
+
+            faceDetectionRuntimePromise = new Promise(function (resolve, reject) {
+                const script = document.createElement('script');
+                script.src = FACE_DETECTION_BUNDLE_URL;
+                script.async = true;
+                script.onload = function () {
+                    if (window.HRISFaceDetection) {
+                        resolve(window.HRISFaceDetection);
+                    } else {
+                        reject(new Error('Face detection runtime did not initialize.'));
+                    }
+                };
+                script.onerror = function () {
+                    reject(new Error('Face detection runtime could not be loaded.'));
+                };
+                document.head.appendChild(script);
+            }).catch(function (error) {
+                faceDetectionRuntimePromise = null;
+                throw error;
+            });
+            return faceDetectionRuntimePromise;
+        }
+
+        function stopFaceDetection() {
+            if (faceDetectionTimer) {
+                clearTimeout(faceDetectionTimer);
+                faceDetectionTimer = null;
+            }
+            faceDetectionGeneration += 1;
+            faceDetectionInFlight = false;
+            faceDetectionPositiveStreak = 0;
+            faceDetectionReady = false;
+            faceDetected = false;
+            if (faceDetectionRequired) {
+                setFaceDetectionStatus('{% trans "Looking for your face..." %}', 'warning');
+            } else {
+                setFaceDetectionStatus('', 'warning');
+            }
+            updateFaceGatedButtons();
+        }
+
+        function scheduleFaceDetection(generation) {
+            if (faceDetectionTimer) {
+                clearTimeout(faceDetectionTimer);
+            }
+            faceDetectionTimer = setTimeout(function () {
+                faceDetectionTimer = null;
+                detectFaceFrame(generation);
+            }, FACE_DETECTION_INTERVAL_MS);
+        }
+
+        async function detectFaceFrame(generation) {
+            if (
+                generation !== faceDetectionGeneration ||
+                !faceDetectionRequired ||
+                !faceDetectionReady ||
+                !cameraReady ||
+                !videoStream ||
+                !$('#step-clock').hasClass('active')
+            ) {
+                return;
+            }
+
+            if (faceDetectionInFlight) {
+                scheduleFaceDetection(generation);
+                return;
+            }
+
+            const video = document.getElementById('video-preview');
+            if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+                faceDetected = false;
+                faceDetectionPositiveStreak = 0;
+                setFaceDetectionStatus('{% trans "Show your face in the camera." %}', 'warning');
+                updateFaceGatedButtons();
+                scheduleFaceDetection(generation);
+                return;
+            }
+
+            faceDetectionInFlight = true;
+            try {
+                const predictions = await window.HRISFaceDetection.detect(video);
+                if (generation !== faceDetectionGeneration) {
+                    return;
+                }
+
+                const visibleFaces = Array.isArray(predictions)
+                    ? predictions.filter(function (prediction) {
+                        return facePredictionScore(prediction) >= FACE_DETECTION_SCORE_THRESHOLD;
+                    })
+                    : [];
+
+                if (visibleFaces.length > 1) {
+                    faceDetected = false;
+                    faceDetectionPositiveStreak = 0;
+                    setFaceDetectionStatus('{% trans "Show only one face in the camera." %}', 'warning');
+                } else if (visibleFaces.length === 0) {
+                    faceDetected = false;
+                    faceDetectionPositiveStreak = 0;
+                    setFaceDetectionStatus('{% trans "Show your face in the camera." %}', 'warning');
+                } else if (!facePredictionIsCenteredAndVisible(visibleFaces[0], video)) {
+                    faceDetected = false;
+                    faceDetectionPositiveStreak = 0;
+                    setFaceDetectionStatus('{% trans "Keep your full face centered in the camera." %}', 'warning');
+                } else {
+                    faceDetectionPositiveStreak += 1;
+                    faceDetected = faceDetectionPositiveStreak >= 2;
+                    setFaceDetectionStatus(
+                        faceDetected ? '{% trans "Face detected." %}' : '{% trans "Looking for your face..." %}',
+                        faceDetected ? 'success' : 'warning'
+                    );
+                }
+                updateFaceGatedButtons();
+            } catch (error) {
+                console.error('Face detection error:', error);
+                faceDetected = false;
+                faceDetectionPositiveStreak = 0;
+                setFaceDetectionStatus('{% trans "Face detection is unavailable. Please reload and try again." %}', 'error');
+                updateFaceGatedButtons();
+                return;
+            } finally {
+                faceDetectionInFlight = false;
+            }
+
+            scheduleFaceDetection(generation);
+        }
+
+        function startFaceDetection() {
+            stopFaceDetection();
+            if (!faceDetectionRequired) {
+                faceDetectionReady = true;
+                faceDetected = true;
+                setFaceDetectionStatus('', 'success');
+                updateFaceGatedButtons();
+                return Promise.resolve();
+            }
+
+            setFaceDetectionStatus('{% trans "Loading face detection..." %}', 'warning');
+            if (!cameraReady || !videoStream) {
+                setFaceDetectionStatus('{% trans "Camera is required for face detection." %}', 'error');
+                updateFaceGatedButtons();
+                return Promise.resolve();
+            }
+
+            const generation = faceDetectionGeneration;
+            return loadFaceDetectionRuntime()
+                .then(function (runtime) {
+                    return runtime.load(FACE_DETECTION_MODEL_URL);
+                })
+                .then(function () {
+                    if (generation !== faceDetectionGeneration || !faceDetectionRequired) {
+                        return;
+                    }
+                    faceDetectionReady = true;
+                    setFaceDetectionStatus('{% trans "Show your face in the camera." %}', 'warning');
+                    updateFaceGatedButtons();
+                    scheduleFaceDetection(generation);
+                })
+                .catch(function (error) {
+                    console.error('Face detector initialization error:', error);
+                    faceDetectionReady = false;
+                    faceDetected = false;
+                    setFaceDetectionStatus('{% trans "Face detection is unavailable. Please reload and try again." %}', 'error');
+                    updateFaceGatedButtons();
+                });
+        }
+
         function disableClockButtons() {
             $(clockActionButtonSelector()).prop('disabled', true).attr('title', '{% trans "Please wait..." %}');
         }
 
         function enableClockButtons() {
             if (!cameraReady) return;
+            if (faceDetectionRequired && (!faceDetectionReady || !faceDetected)) return;
             if (selectedEmployeeRequiresLocation() && !hasCapturedPortalLocation()) return;
             const $button = getSelectedClockButton();
             if ($button.length) {
@@ -5421,6 +5745,7 @@
         function stopClockCapturePreview() {
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
             $('#clock-preview-map').removeClass('is-placeholder').hide();
+            stopFaceDetection();
             cameraReady = false;
             $('#video-preview').css('display', 'none');
             $('#captured-photo').css('display', 'none');
@@ -5791,6 +6116,7 @@
                 activity_totals_updated_at_ms: Date.now() + serverTimeOffset,
                 geo_fence: cached.geo_fence || null,
                 branch: cached.branch || "",
+                face_detection_required: !!cached.face_detection_required,
                 multi_punch_enabled: !!cached.multi_punch_enabled,
                 multi_punch_step: cached.multi_punch_step || '',
                 multi_punch_message: cached.multi_punch_message || '',
@@ -5970,6 +6296,8 @@
             geocodingPromise = null;
             cameraReady = false;
             cameraFacingMode = 'user';
+            faceDetectionRequired = !!selectedEmployee.face_detection_required;
+            stopFaceDetection();
             latitude = null;
             longitude = null;
             locationAccuracy = null;
@@ -5998,8 +6326,12 @@
         }
 
         function updateFaceGatedButtons() {
-            // All portal attendance actions require both camera and coordinates.
+            // All portal attendance actions require camera, face (when enabled), and coordinates.
             if (!cameraReady) { disableClockButtons(); return; }
+            if (faceDetectionRequired && (!faceDetectionReady || !faceDetected)) {
+                disableClockButtons();
+                return;
+            }
             if (!hasCapturedPortalLocation()) {
                 disableClockButtons();
                 if (locationCaptureInFlight) {
@@ -6059,6 +6391,7 @@
                                 applySelectedClockActionVisibility();
 
                                 updateFaceGatedButtons();
+                                startFaceDetection();
                                 resolve();
                             };
                             video.addEventListener('playing', onPlaying);
@@ -6819,6 +7152,54 @@
             $('#location-overlay-text').html(locationText);
         }
 
+        async function verifyFaceBeforeAction() {
+            if (!faceDetectionRequired) {
+                return true;
+            }
+            if (!faceDetectionReady || !window.HRISFaceDetection) {
+                faceDetected = false;
+                setFaceDetectionStatus('{% trans "Face detection is still loading." %}', 'warning');
+                updateFaceGatedButtons();
+                return false;
+            }
+
+            const video = document.getElementById('video-preview');
+            if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+                faceDetected = false;
+                setFaceDetectionStatus('{% trans "Show your face in the camera." %}', 'warning');
+                updateFaceGatedButtons();
+                return false;
+            }
+
+            try {
+                const predictions = await window.HRISFaceDetection.detect(video);
+                const visibleFaces = Array.isArray(predictions)
+                    ? predictions.filter(function (prediction) {
+                        return facePredictionScore(prediction) >= FACE_DETECTION_SCORE_THRESHOLD;
+                    })
+                    : [];
+                const validFace = visibleFaces.length === 1
+                    && facePredictionIsCenteredAndVisible(visibleFaces[0], video);
+                faceDetected = validFace;
+                faceDetectionPositiveStreak = validFace ? 2 : 0;
+                if (visibleFaces.length > 1) {
+                    setFaceDetectionStatus('{% trans "Show only one face in the camera." %}', 'warning');
+                } else if (!validFace) {
+                    setFaceDetectionStatus('{% trans "Show your face in the camera." %}', 'warning');
+                } else {
+                    setFaceDetectionStatus('{% trans "Face detected." %}', 'success');
+                }
+                updateFaceGatedButtons();
+                return validFace;
+            } catch (error) {
+                console.error('Face verification error:', error);
+                faceDetected = false;
+                setFaceDetectionStatus('{% trans "Face detection is unavailable. Please reload and try again." %}', 'error');
+                updateFaceGatedButtons();
+                return false;
+            }
+        }
+
         // Clock in (selfie is captured automatically on click)
         async function clockInEmployee() {
             if (!selectedEmployee) {
@@ -6826,6 +7207,9 @@
                 return;
             }
             if (!ensureLocationReadyForClockAction()) {
+                return;
+            }
+            if (!await verifyFaceBeforeAction()) {
                 return;
             }
 
@@ -6841,6 +7225,7 @@
                 formData.append('selfie', selfieBlob, 'selfie.jpg');
                 formData.append('latitude', latitude || '');
                 formData.append('longitude', longitude || '');
+                formData.append('face_detected', String(!faceDetectionRequired || faceDetected));
                 const multiConfig = multiPunchActionConfig(selectedAttendanceAction);
                 if (multiConfig) {
                     formData.append('punch_type', multiConfig.punch_type);
@@ -6879,6 +7264,9 @@
             if (!ensureLocationReadyForClockAction()) {
                 return;
             }
+            if (!await verifyFaceBeforeAction()) {
+                return;
+            }
 
             const btn = $('#clock-out-btn');
             const originalText = btn.html();
@@ -6892,6 +7280,7 @@
                 formData.append('selfie', selfieBlob, 'selfie.jpg');
                 formData.append('latitude', latitude || '');
                 formData.append('longitude', longitude || '');
+                formData.append('face_detected', String(!faceDetectionRequired || faceDetected));
                 const multiConfig = multiPunchActionConfig(selectedAttendanceAction);
                 if (multiConfig) {
                     formData.append('punch_type', multiConfig.punch_type);
@@ -6936,6 +7325,9 @@
             if (!ensureLocationReadyForClockAction()) {
                 return;
             }
+            if (!await verifyFaceBeforeAction()) {
+                return;
+            }
 
             const btn = $('#activity-transition-btn');
             const originalText = btn.html();
@@ -6951,6 +7343,7 @@
                 formData.append('selfie', selfieBlob, 'selfie.jpg');
                 formData.append('latitude', latitude || '');
                 formData.append('longitude', longitude || '');
+                formData.append('face_detected', String(!faceDetectionRequired || faceDetected));
 
                 const response = await fetch('{% url "portal-activity-transition" %}', {
                     method: 'POST',
@@ -7173,6 +7566,8 @@
         // Reset form
         function resetForm() {
             stopAttendanceSummaryTimer();
+            faceDetectionRequired = false;
+            stopFaceDetection();
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
             $('#clock-preview-map').removeClass('is-placeholder').hide();
             $('#employee-branch').hide().text('');
@@ -7221,6 +7616,7 @@
         // Handle visibility change to stop/start camera when page visibility changes
         document.addEventListener('visibilitychange', function () {
             if (document.hidden) {
+                stopFaceDetection();
                 if (videoStream) {
                     videoStream.getTracks().forEach(track => track.stop());
                     videoStream = null;

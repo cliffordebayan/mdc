@@ -351,6 +351,11 @@ urlpatterns = [
         name="validate-bulk-attendance",
     ),
     path(
+        "validate-all-attendance",
+        views.validate_all_attendance,
+        name="validate-all-attendance",
+    ),
+    path(
         "validate-this-attendance/<int:obj_id>/",
         views.validate_this_attendance,
         name="validate-this-attendance",

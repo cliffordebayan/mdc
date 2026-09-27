@@ -12,6 +12,13 @@ var validateMessages = {
     en: "Do you really want to validate all the selected attendances?",
     fr: "Voulez-vous vraiment valider toutes les présences sélectionnées?",
 };
+var validateAllMessages = {
+    ar: "هل تريد حقًا التحقق من جميع سجلات الحضور المطابقة للفلاتر الحالية؟",
+    de: "Möchten Sie wirklich alle Anwesenheiten validieren, die den aktuellen Filtern entsprechen?",
+    es: "¿Realmente quieres validar todas las asistencias que coinciden con los filtros actuales?",
+    en: "Do you really want to validate all attendance records matching the current filters?",
+    fr: "Voulez-vous vraiment valider toutes les présences correspondant aux filtres actuels ?",
+};
 var overtimeMessages = {
     ar: "هل ترغب حقًا في الموافقة على الساعات الإضافية لجميع الحضور المحدد؟",
     de: "Möchten Sie wirklich die Überstunden für alle ausgewählten Anwesenheiten genehmigen?",
@@ -968,6 +975,49 @@ $("#validateAttendances").click(function (e) {
         }
     });
 });
+
+$(document)
+    .off("click.validateAllAttendance", "#validateAllAttendances")
+    .on("click.validateAllAttendance", "#validateAllAttendances", function (e) {
+    e.preventDefault();
+    getCurrentLanguageCode(function (code) {
+        var confirmMessage = validateAllMessages[code] || validateAllMessages.en;
+        Swal.fire({
+            text: confirmMessage,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#008000",
+            cancelButtonColor: "#d33",
+            confirmButtonText: "Confirm",
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                $.ajax({
+                    type: "POST",
+                    url: "/attendance/validate-all-attendance",
+                    data: {
+                        csrfmiddlewaretoken: getCookie("csrftoken"),
+                    },
+                    success: function (response, textStatus, jqXHR) {
+                        if (jqXHR.status === 200) {
+                            location.reload();
+                        }
+                    },
+                    error: function (xhr) {
+                        var message = "Unable to validate all attendance records.";
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            message = xhr.responseJSON.message;
+                        }
+                        Swal.fire({
+                            text: message,
+                            icon: "error",
+                            confirmButtonText: "Close",
+                        });
+                    },
+                });
+            }
+        });
+    });
+    });
 
 $("#approveOt").click(function (e) {
     e.preventDefault();

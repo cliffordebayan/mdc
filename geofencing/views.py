@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
+from django.db import transaction
 from django.db.models import Q
 from django.http import JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
@@ -77,7 +78,7 @@ class GeoFencingSetupPutDeleteAPIView(APIView):
     )
     def delete(self, request, pk):
         location = get_object_or_404(GeoFencing, pk=pk)
-        location.delete()
+        _delete_geofence(location)
         return Response(
             {"message": "GeoFencing location deleted successfully"},
             status=status.HTTP_200_OK,
@@ -129,7 +130,7 @@ class GeoFencingSetUpPermissionCheck(APIView):
         return Response(status=200)
 
 
-def _geo_assignment_context(request, active_geofences=None):
+def _geo_assignment_context(request):
     """Build the paginated employee assignment list context."""
     search = request.GET.get("search", "").strip()
     employees = Employee.objects.filter(is_active=True)
@@ -158,14 +159,8 @@ def _geo_assignment_context(request, active_geofences=None):
         )
     )
 
-    if active_geofences is None:
-        active_geofences = list(
-            GeoFencing.objects.filter(start=True).prefetch_related("excluded_employees")
-        )
-
     paginated_employees = paginator_qry(employees, request.GET.get("page"))
     for employee in paginated_employees.object_list:
-        employee.active_global_geofences = active_geofences
         employee.enforced_geofences = _enforced_assigned_geofences(employee)
 
     query_params = request.GET.copy()
@@ -180,11 +175,8 @@ def _geo_assignment_context(request, active_geofences=None):
 
 def _geo_config_context(request):
     geofences = GeoFencing.objects.all()
-    active_geofences = list(
-        GeoFencing.objects.filter(start=True).prefetch_related("excluded_employees")
-    )
     add_form = GeoFencingSetupForm()
-    assignment_context = _geo_assignment_context(request, active_geofences)
+    assignment_context = _geo_assignment_context(request)
 
     multi_punch_assignments = (
         AttendancePortalMultiPunchEmployee.objects.filter(is_active=True)
@@ -211,22 +203,32 @@ def _active_geofences():
     return GeoFencing.objects.filter(start=True)
 
 
-def _sync_employee_geofence_coverage(employee, selected_geofences):
-    active_geofences = list(_active_geofences())
-    selected_ids = {geofence.id for geofence in selected_geofences}
+def _delete_geofence(geofence):
+    """Delete one geofence and detach it from every employee first."""
+    with transaction.atomic():
+        geofence.assigned_employees.clear()
+        geofence.excluded_employees.clear()
+        geofence.delete()
 
+
+def _sync_employee_geofence_coverage(employee, selected_geofences):
+    """Replace an employee's explicit geofence assignments.
+
+    A geofence is restrictive only when it is present in this relation, so a
+    newly created geofence remains inactive for every employee until selected.
+    """
     employee.assigned_geofences.set(selected_geofences)
-    for geofence in active_geofences:
-        if geofence.id in selected_ids:
-            geofence.excluded_employees.remove(employee)
-        else:
-            geofence.excluded_employees.add(employee)
+
+    # Clear legacy exclusion rows for this employee. They are no longer used
+    # to grant or revoke access now that assignments are explicit.
+    for geofence in _active_geofences():
+        geofence.excluded_employees.remove(employee)
 
 
 def _clear_employee_geofence_coverage(employee):
     employee.assigned_geofences.clear()
     for geofence in _active_geofences():
-        geofence.excluded_employees.add(employee)
+        geofence.excluded_employees.remove(employee)
 
 
 @login_required
@@ -240,7 +242,7 @@ def geo_location_config(request):
                 raise PermissionDenied
             pk = request.GET.get("pk")
             geo = get_object_or_404(GeoFencing, pk=pk)
-            geo.delete()
+            _delete_geofence(geo)
             messages.success(request, _("Geofence deleted successfully."))
         else:
             pk = request.POST.get("geo_id")
@@ -314,8 +316,6 @@ def geo_assignments(request):
 @permission_required("geofencing.change_geofencing")
 def geo_assign_edit(request, emp_id):
     employee = get_object_or_404(Employee, pk=emp_id)
-    active_geofences = list(_active_geofences().prefetch_related("excluded_employees"))
-    employee.active_global_geofences = active_geofences
     current_geos = _enforced_assigned_geofences(employee)
     form = EmployeeGeofenceForm(initial={
         "employee": employee.id,

@@ -5551,6 +5551,20 @@ def validation_condition_delete(request, obj_id):
     return redirect("/attendance/validation-condition-view")
 
 
+def _send_attendance_validation_notification(request, attendance):
+    notify.send(
+        request.user.employee_get,
+        recipient=attendance.employee_id.employee_user_id,
+        verb=f"Your attendance for the date {attendance.attendance_date} is validated",
+        verb_ar=f"تم التحقق من حضورك في تاريخ {attendance.attendance_date}",
+        verb_de=f"Ihre Anwesenheit für das Datum {attendance.attendance_date} wurde bestätigt",
+        verb_es=f"Se ha validado su asistencia para la fecha {attendance.attendance_date}",
+        verb_fr=f"Votre présence pour la date {attendance.attendance_date} est validée",
+        redirect=reverse("view-my-attendance") + f"?id={attendance.id}",
+        icon="checkmark",
+    )
+
+
 @login_required
 @require_http_methods(["POST"])
 @manager_can_enter("attendance.change_attendance")
@@ -5609,6 +5623,82 @@ def validate_bulk_attendance(request):
             messages.error(request, msg)
 
     return JsonResponse({"message": "success"})
+
+
+def _validate_all_attendance_records(request):
+    queryset = Attendance.objects.filter(
+        employee_id__is_active=True,
+        attendance_validated=False,
+    )
+    queryset = filtersubordinates(
+        request,
+        queryset,
+        "attendance.view_attendance",
+    )
+    queryset = queryset.select_related("employee_id", "employee_id__employee_user_id")
+
+    validate_req_count = 0
+    error_messages = []
+    for attendance in queryset.iterator():
+        if attendance.is_validate_request:
+            error_messages.append(
+                _(
+                    "Pending attendance update request for {}'s attendance on {}!"
+                ).format(attendance.employee_id, attendance.attendance_date)
+            )
+            continue
+
+        attendance.attendance_validated = True
+        attendance.save()
+        validate_req_count += 1
+        _send_attendance_validation_notification(request, attendance)
+
+    if validate_req_count > 0:
+        messages.success(
+            request,
+            _("{} Attendances validated.").format(validate_req_count),
+        )
+    for msg in error_messages:
+        if "Pending" in msg:
+            messages.info(request, msg)
+        else:
+            messages.error(request, msg)
+
+    return validate_req_count, len(error_messages)
+
+
+@login_required
+@require_http_methods(["POST"])
+def validate_all_attendance(request):
+    """Validate every unvalidated attendance visible to the current user."""
+    try:
+        is_manager = EmployeeWorkInformation.objects.filter(
+            reporting_manager_id=request.user.employee_get
+        ).exists()
+        if not (
+            request.user.has_perm("attendance.change_attendance")
+            or is_manager
+        ):
+            return JsonResponse(
+                {"message": "You do not have permission to validate attendance."},
+                status=403,
+            )
+
+        validate_req_count, skipped_count = _validate_all_attendance_records(request)
+    except Exception:
+        logger.exception("Validate all attendance failed")
+        return JsonResponse(
+            {"message": "Unable to validate all attendance records."},
+            status=500,
+        )
+
+    return JsonResponse(
+        {
+            "message": "success",
+            "validated": validate_req_count,
+            "skipped": skipped_count,
+        }
+    )
 
 
 @login_required

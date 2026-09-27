@@ -1369,6 +1369,78 @@ def group_remove_user(request, uid, gid):
     return HorillaRedirect(request)
 
 
+def _default_shift_for_deleted_shift(employee_shift):
+    """Return a safe fallback shift while another shift is being deleted."""
+    default_shift = (
+        EmployeeShift._base_manager.exclude(pk=employee_shift.pk)
+        .filter(employee_shift="Default Shift")
+        .order_by("pk")
+        .first()
+    )
+
+    if default_shift is None:
+        default_shift = EmployeeShift(
+            employee_shift="Default Shift",
+            weekly_full_time=employee_shift.weekly_full_time,
+            full_time=employee_shift.full_time,
+        )
+        if hasattr(employee_shift, "grace_time_id_id"):
+            default_shift.grace_time_id_id = employee_shift.grace_time_id_id
+        default_shift.save()
+
+    source_companies = list(employee_shift.company_id.all())
+    if source_companies:
+        default_shift.company_id.add(*source_companies)
+
+    source_schedules = list(
+        EmployeeShiftSchedule._base_manager.filter(
+            shift_id_id=employee_shift.pk
+        )
+    )
+    for source_schedule in source_schedules:
+        schedule_exists = EmployeeShiftSchedule._base_manager.filter(
+            shift_id_id=default_shift.pk,
+            day_id=source_schedule.day_id,
+        ).exists()
+        if schedule_exists:
+            source_schedule.delete()
+        else:
+            source_schedule.shift_id_id = default_shift.pk
+            source_schedule.save(update_fields=["shift_id"])
+
+    for model in apps.get_models():
+        for field in model._meta.fields:
+            if getattr(field.remote_field, "model", None) is not EmployeeShift:
+                continue
+            if model is EmployeeShiftSchedule:
+                continue
+
+            model._base_manager.filter(**{field.name: employee_shift}).update(
+                **{f"{field.name}_id": default_shift.pk}
+            )
+
+    if apps.is_installed("base"):
+        for rotating_shift in RotatingShift._base_manager.all():
+            additional_data = rotating_shift.additional_data or {}
+            additional_shifts = additional_data.get("additional_shifts")
+            if not additional_shifts:
+                continue
+
+            updated_shifts = [
+                str(default_shift.pk)
+                if str(shift_id) == str(employee_shift.pk)
+                else shift_id
+                for shift_id in additional_shifts
+            ]
+            if updated_shifts != additional_shifts:
+                additional_data["additional_shifts"] = updated_shifts
+                RotatingShift._base_manager.filter(pk=rotating_shift.pk).update(
+                    additional_data=additional_data
+                )
+
+    return default_shift
+
+
 @login_required
 @delete_permission()
 @require_http_methods(["POST", "DELETE"])
@@ -1393,9 +1465,13 @@ def object_delete(request, obj_id, **kwargs):
     delete_error = False
     try:
         instance = model.objects.get(id=obj_id)
-        instance.delete()
+        with transaction.atomic():
+            if model is EmployeeShift:
+                _default_shift_for_deleted_shift(instance)
+            instance.delete()
         messages.success(
-            request, _("The {} has been deleted successfully.").format(instance)
+            request,
+            _("The {} has been deleted successfully.").format(instance),
         )
     except model.DoesNotExist:
         delete_error = True
@@ -2996,7 +3072,23 @@ def employee_shift_update(request, id, **kwargs):
     if request.method == "POST":
         form = EmployeeShiftForm(request.POST, instance=employee_shift)
         if form.is_valid():
-            form.save()
+            employee_shift = form.save()
+            if apps.is_installed("attendance"):
+                try:
+                    from attendance.methods.utils import recalculate_attendance_for_shift
+
+                    recalculate_attendance_for_shift(employee_shift)
+                except Exception:
+                    logger.exception(
+                        "Attendance recalculation failed after updating shift %s",
+                        employee_shift.pk,
+                    )
+                    messages.warning(
+                        request,
+                        _(
+                            "Shift updated, but attendance recalculation could not be completed automatically."
+                        ),
+                    )
             messages.success(request, _("Shift updated"))
             return HorillaRedirect(request)
     return render(

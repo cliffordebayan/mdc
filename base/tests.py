@@ -407,3 +407,55 @@ class EmployeeShiftScheduleSettingsTests(TestCase):
         self.assertContains(response, "09:00 - 17:00")
         self.assertContains(response, "Minimum")
         self.assertContains(response, "08:00")
+
+
+class EmployeeShiftDeleteTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            username="shift-delete-admin",
+            email="",
+            password="test",
+        )
+        self.client.force_login(self.user)
+        self.shift_day = EmployeeShiftDay.objects.create(day="monday")
+        self.shift = EmployeeShift.objects.create(
+            employee_shift="Shift To Delete",
+            weekly_full_time="40:00",
+            full_time="200:00",
+        )
+        EmployeeShiftSchedule.objects.create(
+            day=self.shift_day,
+            shift_id=self.shift,
+            minimum_working_hour="08:00",
+            start_time=time(9, 0),
+            end_time=time(17, 0),
+        )
+        employee = Employee.objects.create(
+            employee_user_id=self.user,
+            employee_first_name="Assigned",
+            employee_last_name="Employee",
+            email="assigned@example.com",
+            phone="09170000000",
+            gender="male",
+            is_active=True,
+        )
+        self.work_info = employee.employee_work_info
+        self.work_info.shift_id = self.shift
+        self.work_info.save(update_fields=["shift_id"])
+
+    def test_deleting_shift_reassigns_employees_and_schedules_to_default_shift(self):
+        response = self.client.post(
+            reverse("employee-shift-delete", args=[self.shift.id])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(EmployeeShift.objects.filter(pk=self.shift.pk).exists())
+        default_shift = EmployeeShift.objects.get(employee_shift="Default Shift")
+        self.work_info.refresh_from_db()
+        self.assertEqual(self.work_info.shift_id, default_shift)
+        self.assertTrue(
+            EmployeeShiftSchedule.objects.filter(
+                shift_id=default_shift,
+                day=self.shift_day,
+            ).exists()
+        )

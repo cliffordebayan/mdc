@@ -1403,6 +1403,77 @@ def _clear_reporting_manager_relations(employee):
     )
 
 
+def _clear_many_to_many_relations(instance):
+    """Remove relation rows without deleting the related shared objects."""
+    for field in instance._meta.local_many_to_many:
+        through = field.remote_field.through
+        through._default_manager.filter(
+            **{field.m2m_field_name(): instance.pk}
+        ).delete()
+
+    for relation in instance._meta.get_fields():
+        if not (
+            getattr(relation, "auto_created", False)
+            and getattr(relation, "many_to_many", False)
+        ):
+            continue
+        field = relation.field
+        through = field.remote_field.through
+        through._default_manager.filter(
+            **{field.m2m_reverse_field_name(): instance.pk}
+        ).delete()
+
+
+def _delete_protected_related_records(instance, visited=None):
+    """
+    Delete records that would otherwise prevent ``instance`` from being deleted.
+
+    Employee data uses PROTECT and DO_NOTHING in several optional apps. Walking
+    those reverse relations from model metadata keeps this cleanup in sync with
+    installed apps while limiting deletion to rows related to the target graph.
+    """
+    if visited is None:
+        visited = set()
+
+    key = (instance._meta.label_lower, instance.pk)
+    if key in visited:
+        return
+    visited.add(key)
+
+    _clear_many_to_many_relations(instance)
+
+    for relation in instance._meta.get_fields():
+        if not (
+            getattr(relation, "auto_created", False)
+            and not getattr(relation, "concrete", False)
+            and not getattr(relation, "many_to_many", False)
+        ):
+            continue
+
+        on_delete = getattr(relation, "on_delete", None)
+        if on_delete not in (models.PROTECT, models.DO_NOTHING):
+            continue
+
+        related_model = relation.related_model
+        related_objects = related_model._base_manager.filter(
+            **{relation.field.name: instance}
+        )
+        for related_object in related_objects:
+            _delete_protected_related_records(related_object, visited)
+            related_object.delete()
+
+
+def _delete_employee_record(employee):
+    """Delete an employee and all records that block deleting that employee."""
+    user = employee.employee_user_id
+    with transaction.atomic():
+        _clear_reporting_manager_relations(employee)
+        _delete_protected_related_records(employee)
+        employee.delete()
+        if user:
+            user.delete()
+
+
 @login_required
 @enter_if_accessible(
     feature="employee_view",
@@ -2309,7 +2380,9 @@ def employee_delete(request, obj_id):
         employee = Employee.objects.select_related("employee_user_id").get(id=obj_id)
         user = employee.employee_user_id
 
-        if user and user.is_superuser:
+        if user and user.is_superuser and (
+            not request.user.is_superuser or user.pk == request.user.pk
+        ):
             messages.error(
                 request,
                 _("%(employee)s is a superuser and cannot be deleted.")
@@ -2317,25 +2390,7 @@ def employee_delete(request, obj_id):
             )
             return HorillaRedirect(request, fallback_url=f"/view={view}")
 
-        if apps.is_installed("payroll"):
-            if employee.contract_set.all().exists():
-                contracts = employee.contract_set.all()
-                for contract in contracts:
-                    if contract.contract_status != "active":
-                        contract.delete()
-        _clear_reporting_manager_relations(employee)
-        # try:
-        #     user.delete()
-        # except AttributeError:
-        #     employee.delete()
-        # messages.success(request, _("Employee deleted"))
-
-        # Delete employee FIRST
-        employee.delete()
-
-        # Delete auth user next (only if exists)
-        if user:
-            user.delete()
+        _delete_employee_record(employee)
 
         messages.success(request, _("Employee deleted"))
 
@@ -2367,7 +2422,9 @@ def employee_bulk_delete(request):
     for employee in employees:
         try:
             user = employee.employee_user_id
-            if user and user.is_superuser:
+            if user and user.is_superuser and (
+                not request.user.is_superuser or user.pk == request.user.pk
+            ):
                 messages.error(
                     request,
                     _("%(employee)s is a superuser and cannot be deleted.")
@@ -2375,16 +2432,7 @@ def employee_bulk_delete(request):
                 )
                 continue
 
-            if apps.is_installed("payroll"):
-                if employee.contract_set.all().exists():
-                    contracts = employee.contract_set.all()
-                    for contract in contracts:
-                        if contract.contract_status != "active":
-                            contract.delete()
-            _clear_reporting_manager_relations(employee)
-            employee.delete()
-            if user:
-                user.delete()
+            _delete_employee_record(employee)
             deleted_count += 1
         except Employee.DoesNotExist:
             messages.error(request, _("Employee not found."))
