@@ -1378,6 +1378,85 @@ class AttendancePortalMultiPunchEmployee(HorillaModel):
         return str(self.employee_id)
 
 
+class AttendancePortalShiftContext(HorillaModel):
+    """
+    Employee-owned shift used by the public attendance portal.
+
+    The employee's normal work-information shift is deliberately left intact.
+    Portal attendance rows use this generated shift so custom portal schedules
+    continue to work with the existing attendance shift calculations.
+    """
+
+    employee_id = models.OneToOneField(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="portal_shift_context",
+        verbose_name=_("Employee"),
+    )
+    shift_id = models.OneToOneField(
+        EmployeeShift,
+        on_delete=models.CASCADE,
+        related_name="portal_shift_context",
+        verbose_name=_("Portal Shift"),
+    )
+    objects = HorillaCompanyManager(
+        related_company_field="employee_id__employee_work_info__company_id"
+    )
+
+    class Meta:
+        verbose_name = _("Attendance Portal Shift Context")
+        verbose_name_plural = _("Attendance Portal Shift Contexts")
+
+    def __str__(self):
+        return str(self.shift_id)
+
+
+class AttendancePortalShiftOverride(HorillaModel):
+    """An explicit recurring weekday time override saved from the portal."""
+
+    employee_id = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="portal_shift_overrides",
+        verbose_name=_("Employee"),
+    )
+    day = models.ForeignKey(
+        EmployeeShiftDay,
+        on_delete=models.PROTECT,
+        related_name="portal_shift_overrides",
+        verbose_name=_("Shift Day"),
+    )
+    start_time = models.TimeField(verbose_name=_("Start Time"))
+    end_time = models.TimeField(verbose_name=_("End Time"))
+    minimum_working_hour = models.CharField(
+        max_length=10,
+        default="00:00",
+        validators=[validate_time_format],
+        verbose_name=_("Minimum Working Hours"),
+    )
+    is_night_shift = models.BooleanField(default=False, verbose_name=_("Night Shift"))
+    objects = HorillaCompanyManager(
+        related_company_field="employee_id__employee_work_info__company_id"
+    )
+
+    class Meta:
+        verbose_name = _("Attendance Portal Shift Override")
+        verbose_name_plural = _("Attendance Portal Shift Overrides")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee_id", "day"],
+                name="uniq_portal_shift_override_employee_day",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        self.is_night_shift = bool(self.start_time and self.end_time and self.start_time > self.end_time)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.employee_id} - {self.day}"
+
+
 class WorkRecords(models.Model):
     """
     WorkRecord Model

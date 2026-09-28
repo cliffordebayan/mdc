@@ -73,10 +73,10 @@
   <div id="my-attendance-table" data-table-name="my_attendance_tab_v2">
     <div class="oh-sticky-table">
       <div class="oh-sticky-table__table oh-table--sortable">
-        {% include "attendance/attendance/daily_attendance_headers.html" with show_checkbox=False show_actions=False show_confirmation=False search_url="own-attendance-filter" sort_param="orderby" hx_target="#attendance-container" %}
+        {% include "attendance/attendance/daily_attendance_headers.html" with show_checkbox=False show_actions=False show_confirmation=False show_shift_schedule=True search_url="own-attendance-filter" sort_param="orderby" hx_target="#attendance-container" %}
         <div class="oh-sticky-table__tbody">
           {% for row in attendance_rows %}
-            {% include "attendance/attendance/daily_attendance_row.html" with show_checkbox=False show_status=True show_actions=False show_confirmation=False detail_query="my_attendance=true" instances_ids=attendances_ids %}
+            {% include "attendance/attendance/daily_attendance_row.html" with show_checkbox=False show_status=True show_actions=False show_confirmation=False show_shift_schedule=True detail_query="my_attendance=true" instances_ids=attendances_ids %}
           {% endfor %}
         </div>
       </div>

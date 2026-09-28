@@ -13,6 +13,7 @@ from unittest.mock import ANY, MagicMock, patch
 from django.core.signing import SignatureExpired
 from django.contrib.auth.models import AnonymousUser, Permission, User
 from django.contrib.sessions.middleware import SessionMiddleware
+from django.db import DatabaseError, connection
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
@@ -32,6 +33,8 @@ from attendance.models import (
     AttendanceActivity,
     AttendanceLateComeEarlyOut,
     AttendanceOverTime,
+    AttendancePortalShiftContext,
+    AttendancePortalShiftOverride,
 )
 from attendance.views import clock_in_out as clock_in_out_views
 from attendance.views.clock_in_out import clock_out_attendance_and_activity
@@ -46,6 +49,8 @@ from attendance.views.portal import (
     _portal_face_detection_error,
     _portal_multi_punch_action_error,
     _portal_multi_punch_state_from_activities,
+    _portal_effective_schedule,
+    _portal_schedule_context,
     _portal_worked_duration_metadata,
     _send_portal_pin_reset_email,
     attendance_history,
@@ -54,6 +59,7 @@ from attendance.views.portal import (
     public_activity_transition,
     public_clock_in,
     public_clock_out,
+    portal_shift_schedule,
     reset_pin,
     verify_pin,
 )
@@ -2052,6 +2058,14 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         )
         self.assertIn("You can continue without GPS.", self.portal_template)
 
+    def test_today_shift_control_is_above_attendance_actions(self):
+        self.assertIn('id="attendance-shift-card"', self.portal_template)
+        self.assertIn('id="attendance-shift-value"', self.portal_template)
+        self.assertIn('function editTodayShift()', self.portal_template)
+        self.assertIn('function refreshTodayShift()', self.portal_template)
+        self.assertIn('portal-shift-swal', self.portal_template)
+        self.assertIn('{% url "portal-shift-schedule" %}', self.portal_template)
+
     def test_face_detection_gate_requires_runtime_and_visible_face(self):
         self.assertIn("face_detection_required", self.portal_template)
         self.assertIn("window.HRISFaceDetection.detect(video)", self.portal_template)
@@ -2060,23 +2074,33 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn("face_detection/face_detection.bundle.js", self.portal_template)
         self.assertIn(".clock-camera-panel.face-detected::after", self.portal_template)
         self.assertIn("cameraPanel.classList.toggle('face-detected', faceDetectionRequired && faceDetected)", self.portal_template)
+        self.assertIn('id="face-status-pill"', self.portal_template)
+        self.assertIn("showSuccess = faceDetectionRequired && faceDetected && status === 'success';", self.portal_template)
+        self.assertIn("statusPill.classList.toggle('is-visible', showSuccess);", self.portal_template)
         self.assertIn("const FACE_DETECTION_MIN_FACE_AREA = 0.03;", self.portal_template)
-        self.assertIn("const FACE_DETECTION_CENTER_WIDTH = 0.60;", self.portal_template)
-        self.assertIn("const FACE_DETECTION_CENTER_HEIGHT = 0.70;", self.portal_template)
+        self.assertIn("const FACE_DETECTION_CENTER_WIDTH = 0.76;", self.portal_template)
+        self.assertIn("const FACE_DETECTION_CENTER_HEIGHT = 0.82;", self.portal_template)
         self.assertIn("function facePredictionIsCenteredAndVisible(prediction, video)", self.portal_template)
         self.assertIn("facePredictionIsCenteredAndVisible(visibleFaces[0], video)", self.portal_template)
         self.assertIn("&& facePredictionIsCenteredAndVisible(visibleFaces[0], video);", self.portal_template)
 
-    def test_face_detection_feedback_is_only_a_thin_full_camera_border(self):
-        self.assertNotIn('id="face-status"', self.portal_template)
-        self.assertNotIn(".clock-face-status", self.portal_template)
+    def test_face_detection_feedback_includes_larger_guide_and_success_pill(self):
+        self.assertIn('id="face-status-pill"', self.portal_template)
+        self.assertIn(".face-status-pill.is-visible", self.portal_template)
+        self.assertIn("top: calc(100% + 10px);", self.portal_template)
         self.assertIn("border: 3px solid #22c55e;", self.portal_template)
         self.assertNotIn("border-left: 10px solid #22c55e;", self.portal_template)
         self.assertNotIn("border-right: 10px solid #22c55e;", self.portal_template)
-        self.assertIn(".clock-camera-panel::before", self.portal_template)
-        self.assertIn("width: min(60%, 360px);", self.portal_template)
+        self.assertIn(".face-guide", self.portal_template)
+        self.assertIn("width: min(76%, 440px);", self.portal_template)
         self.assertIn("aspect-ratio: 1 / 1;", self.portal_template)
         self.assertIn("border: 2px solid rgba(255, 255, 255, 0.42);", self.portal_template)
+
+    def test_working_hours_status_displays_completed_attendance(self):
+        self.assertIn("function attendanceWorkedStatusText(state)", self.portal_template)
+        self.assertIn("const totalSeconds = workedTotalSecondsFromState(state);", self.portal_template)
+        self.assertIn("return totalSeconds > 0 ? formatDurationHMS(totalSeconds) : '--:--';", self.portal_template)
+        self.assertNotIn("if (!state.is_clocked_in) {\n                return '--:--';", self.portal_template)
 
     def test_saved_map_fits_user_and_full_geofence_bounds(self):
         self.assertIn("L.latLng(pointLatitude, pointLongitude).toBounds(radius)", self.portal_template)
@@ -2727,6 +2751,437 @@ class PortalActivityDurationTests(SimpleTestCase):
 
         self.assertEqual(metadata["worked_total_seconds"], 19800)
         self.assertEqual(metadata["worked_total_time"], "05:30")
+
+
+class PortalEmployeeShiftScheduleTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        self.employee = Employee.objects.create(
+            employee_no="2022785",
+            employee_first_name="Portal",
+            employee_last_name="Employee",
+            email="portal-shift@example.com",
+            phone="0000000000",
+        )
+        self.base_shift = EmployeeShift.objects.create(employee_shift="Base Shift")
+        EmployeeWorkInformation.objects.update_or_create(
+            employee_id=self.employee,
+            defaults={"shift_id": self.base_shift, "pin": "123456"},
+        )
+        self.employee.refresh_from_db()
+        self.monday = EmployeeShiftDay.objects.get_or_create(day="monday")[0]
+        self.tuesday = EmployeeShiftDay.objects.get_or_create(day="tuesday")[0]
+        self.wednesday = EmployeeShiftDay.objects.get_or_create(day="wednesday")[0]
+        self.thursday = EmployeeShiftDay.objects.get_or_create(day="thursday")[0]
+        self.friday = EmployeeShiftDay.objects.get_or_create(day="friday")[0]
+        EmployeeShiftSchedule.objects.create(
+            shift_id=self.base_shift,
+            day=self.monday,
+            minimum_working_hour="09:00",
+            start_time=time(8, 0),
+            end_time=time(17, 0),
+        )
+        EmployeeShiftSchedule.objects.create(
+            shift_id=self.base_shift,
+            day=self.tuesday,
+            minimum_working_hour="09:00",
+            start_time=time(9, 0),
+            end_time=time(18, 0),
+        )
+
+    def test_weekday_override_rolls_forward_until_a_later_day_changes(self):
+        AttendancePortalShiftOverride.objects.create(
+            employee_id=self.employee,
+            day=self.monday,
+            start_time=time(7, 0),
+            end_time=time(16, 0),
+            minimum_working_hour="09:00",
+        )
+
+        tuesday_context = _portal_effective_schedule(
+            self.employee,
+            date(2026, 9, 29),
+        )
+        self.assertEqual(tuesday_context[2]["start_time"], time(7, 0))
+        self.assertEqual(tuesday_context[2]["end_time"], time(16, 0))
+
+        AttendancePortalShiftOverride.objects.create(
+            employee_id=self.employee,
+            day=self.tuesday,
+            start_time=time(10, 0),
+            end_time=time(19, 0),
+            minimum_working_hour="09:00",
+        )
+        wednesday_context = _portal_effective_schedule(
+            self.employee,
+            date(2026, 9, 30),
+        )
+        self.assertEqual(wednesday_context[2]["start_time"], time(10, 0))
+        self.assertEqual(wednesday_context[2]["end_time"], time(19, 0))
+
+    def test_portal_context_creates_employee_owned_shift_schedule(self):
+        context = _portal_schedule_context(
+            self.employee,
+            date(2026, 9, 28),
+            persist=True,
+        )
+
+        self.assertEqual(context["shift"].employee_shift, "2022785_shift")
+        portal_schedule = EmployeeShiftSchedule.objects.get(
+            shift_id=context["shift"],
+            day=self.monday,
+        )
+        self.assertEqual(portal_schedule.start_time, time(8, 0))
+        self.assertEqual(portal_schedule.end_time, time(17, 0))
+
+    def test_portal_shift_storage_tables_are_available(self):
+        table_names = connection.introspection.table_names()
+
+        self.assertIn(
+            AttendancePortalShiftContext._meta.db_table,
+            table_names,
+        )
+        self.assertIn(
+            AttendancePortalShiftOverride._meta.db_table,
+            table_names,
+        )
+
+    def _post_shift_schedule(self, start_time="07:30", end_time="16:30"):
+        request = RequestFactory().post(
+            "/attendance/portal/shift-schedule/",
+            {
+                "employee_id": str(self.employee.id),
+                "start_time": start_time,
+                "end_time": end_time,
+            },
+        )
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": str(self.employee.id),
+            "verified_at": datetime.now().timestamp(),
+        }
+        previous_request = getattr(_thread_locals, "request", None)
+        _thread_locals.request = request
+        try:
+            return portal_shift_schedule(request)
+        finally:
+            _thread_locals.request = previous_request
+
+    def _post_shift_schedule_on(
+        self,
+        schedule_date,
+        start_time="07:30",
+        end_time="16:30",
+    ):
+        with patch(
+            "attendance.views.portal.get_real_now",
+            return_value=datetime.combine(schedule_date, time(9, 0)),
+        ), patch("attendance.views.portal._ip_is_allowed", return_value=True):
+            return self._post_shift_schedule(start_time, end_time)
+
+    def _effective_schedule_on(self, schedule_date):
+        return _portal_effective_schedule(self.employee, schedule_date)[2]
+
+    def test_endpoint_saves_each_weekday_and_carries_latest_change_forward(self):
+        monday_response = self._post_shift_schedule_on(
+            date(2026, 9, 28),
+            start_time="07:00",
+            end_time="16:00",
+        )
+        tuesday_response = self._post_shift_schedule_on(
+            date(2026, 9, 29),
+            start_time="10:00",
+            end_time="19:00",
+        )
+
+        self.assertTrue(json.loads(monday_response.content)["success"])
+        self.assertTrue(json.loads(tuesday_response.content)["success"])
+        wednesday_schedule = self._effective_schedule_on(date(2026, 9, 30))
+
+        self.assertEqual(wednesday_schedule["start_time"], time(10, 0))
+        self.assertEqual(wednesday_schedule["end_time"], time(19, 0))
+        self.assertEqual(wednesday_schedule["override_day"], "tuesday")
+
+    def test_explicit_wednesday_change_replaces_tuesday_inheritance(self):
+        self._post_shift_schedule_on(
+            date(2026, 9, 29),
+            start_time="10:00",
+            end_time="19:00",
+        )
+        self._post_shift_schedule_on(
+            date(2026, 9, 30),
+            start_time="11:00",
+            end_time="20:00",
+        )
+
+        wednesday_schedule = self._effective_schedule_on(date(2026, 9, 30))
+        thursday_schedule = self._effective_schedule_on(date(2026, 10, 1))
+
+        self.assertEqual(wednesday_schedule["start_time"], time(11, 0))
+        self.assertEqual(wednesday_schedule["end_time"], time(20, 0))
+        self.assertEqual(wednesday_schedule["override_day"], "wednesday")
+        self.assertEqual(thursday_schedule["start_time"], time(11, 0))
+        self.assertEqual(thursday_schedule["end_time"], time(20, 0))
+
+    def test_friday_override_does_not_carry_into_following_monday(self):
+        AttendancePortalShiftOverride._base_manager.create(
+            employee_id=self.employee,
+            day=self.friday,
+            start_time=time(10, 0),
+            end_time=time(19, 0),
+            minimum_working_hour="09:00",
+        )
+
+        monday_schedule = self._effective_schedule_on(date(2026, 9, 28))
+
+        self.assertEqual(monday_schedule["start_time"], time(8, 0))
+        self.assertEqual(monday_schedule["end_time"], time(17, 0))
+        self.assertIsNone(monday_schedule["override_day"])
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_endpoint_saves_today_override_after_pin_verification(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+    ):
+        request = RequestFactory().post(
+            "/attendance/portal/shift-schedule/",
+            {
+                "employee_id": str(self.employee.id),
+                "start_time": "07:30",
+                "end_time": "16:30",
+            },
+        )
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": str(self.employee.id),
+            "verified_at": datetime.now().timestamp(),
+        }
+
+        response = portal_shift_schedule(request)
+        payload = json.loads(response.content)
+
+        self.assertTrue(payload["success"])
+        override = AttendancePortalShiftOverride.objects.get(
+            employee_id=self.employee,
+            day=self.monday,
+        )
+        self.assertEqual(override.start_time, time(7, 30))
+        self.assertEqual(override.end_time, time(16, 30))
+        self.assertEqual(override.minimum_working_hour, "09:00")
+        self.assertEqual(payload["today_shift"]["start_time"], "07:30")
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_endpoint_saves_overnight_override(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+    ):
+        response = self._post_shift_schedule(start_time="22:00", end_time="06:00")
+        payload = json.loads(response.content)
+
+        self.assertTrue(payload["success"])
+        override = AttendancePortalShiftOverride.objects.get(
+            employee_id=self.employee,
+            day=self.monday,
+        )
+        self.assertTrue(override.is_night_shift)
+        self.assertEqual(override.minimum_working_hour, "08:00")
+        self.assertEqual(payload["today_shift"]["is_night_shift"], True)
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_endpoint_retry_updates_existing_override_without_duplicate(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+    ):
+        first_response = self._post_shift_schedule()
+        second_response = self._post_shift_schedule(
+            start_time="08:15",
+            end_time="17:15",
+        )
+
+        self.assertTrue(json.loads(first_response.content)["success"])
+        self.assertTrue(json.loads(second_response.content)["success"])
+        self.assertEqual(
+            AttendancePortalShiftOverride.objects.filter(
+                employee_id=self.employee,
+                day=self.monday,
+            ).count(),
+            1,
+        )
+        override = AttendancePortalShiftOverride.objects.get(
+            employee_id=self.employee,
+            day=self.monday,
+        )
+        self.assertEqual(override.start_time, time(8, 15))
+        self.assertEqual(override.end_time, time(17, 15))
+
+    @patch(
+        "attendance.views.portal.AttendancePortalShiftOverride.objects.update_or_create",
+        side_effect=AssertionError("portal writes must bypass the company-filtered manager"),
+    )
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_endpoint_uses_unfiltered_portal_storage_manager(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+        _filtered_update_mock,
+    ):
+        response = self._post_shift_schedule()
+
+        self.assertTrue(json.loads(response.content)["success"])
+        self.assertEqual(
+            AttendancePortalShiftOverride._base_manager.filter(
+                employee_id=self.employee,
+                day=self.monday,
+            ).count(),
+            1,
+        )
+
+    @patch("attendance.views.portal._portal_schedule_context")
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_endpoint_rolls_back_override_when_context_resolution_fails(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+        context_mock,
+    ):
+        context_mock.return_value = {
+            "error": "Employee shift schedule not configured",
+        }
+
+        response = self._post_shift_schedule()
+        payload = json.loads(response.content)
+
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["message"], "Employee shift schedule not configured")
+        self.assertFalse(
+            AttendancePortalShiftOverride.objects.filter(
+                employee_id=self.employee,
+                day=self.monday,
+            ).exists()
+        )
+
+    @patch(
+        "attendance.views.portal.AttendancePortalShiftOverride._base_manager.update_or_create",
+        side_effect=DatabaseError("missing table"),
+    )
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_endpoint_returns_actionable_message_for_database_failure(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+        _update_mock,
+    ):
+        response = self._post_shift_schedule()
+        payload = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(payload["success"])
+        self.assertIn("latest attendance migrations", payload["message"])
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_endpoint_reads_today_shift_after_pin_verification(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+    ):
+        request = RequestFactory().get(
+            "/attendance/portal/shift-schedule/",
+            {"employee_id": str(self.employee.id)},
+        )
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": str(self.employee.id),
+            "verified_at": datetime.now().timestamp(),
+        }
+
+        response = portal_shift_schedule(request)
+        payload = json.loads(response.content)
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["today_shift"]["start_time"], "08:00")
+        self.assertEqual(payload["today_shift"]["end_time"], "17:00")
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_endpoint_updates_existing_attendance_schedule_without_full_save(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+    ):
+        attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=date(2026, 9, 28),
+            shift_id=self.base_shift,
+            attendance_day=self.monday,
+            attendance_clock_in_date=date(2026, 9, 28),
+            attendance_clock_in=time(8, 0),
+            attendance_worked_hour="01:00",
+            minimum_hour="09:00",
+        )
+        request = RequestFactory().post(
+            "/attendance/portal/shift-schedule/",
+            {
+                "employee_id": str(self.employee.id),
+                "start_time": "07:30",
+                "end_time": "16:30",
+            },
+        )
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": str(self.employee.id),
+            "verified_at": datetime.now().timestamp(),
+        }
+
+        with patch.object(
+            Attendance,
+            "save",
+            side_effect=AssertionError("Attendance.save should not run for a shift edit"),
+        ):
+            response = portal_shift_schedule(request)
+
+        payload = json.loads(response.content)
+        self.assertTrue(payload["success"])
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.shift_id.employee_shift, "2022785_shift")
+        self.assertEqual(attendance.minimum_hour, "09:00")
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 18, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_endpoint_updates_clocked_out_attendance_schedule(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+    ):
+        attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=date(2026, 9, 28),
+            shift_id=self.base_shift,
+            attendance_day=self.monday,
+            attendance_clock_in_date=date(2026, 9, 28),
+            attendance_clock_in=time(8, 0),
+            attendance_clock_out_date=date(2026, 9, 28),
+            attendance_clock_out=time(17, 0),
+            attendance_worked_hour="09:00",
+            minimum_hour="09:00",
+        )
+
+        response = self._post_shift_schedule(start_time="07:30", end_time="16:30")
+        payload = json.loads(response.content)
+
+        self.assertTrue(payload["success"])
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.shift_id.employee_shift, "2022785_shift")
+        self.assertEqual(attendance.minimum_hour, "09:00")
 
 
 class PortalEmployeeLookupTests(SimpleTestCase):
@@ -6925,7 +7380,7 @@ class DailyActivityRowsTests(SimpleTestCase):
         self.assertEqual(row.early_out_duration, "")
 
     @patch("attendance.views.views.Attendance")
-    def test_open_work_after_lunch_keeps_clock_out_blank(self, attendance_model):
+    def test_open_work_after_lunch_keeps_real_clock_out(self, attendance_model):
         employee = SimpleNamespace(id=101)
         attendance_model.objects.filter.return_value = []
 
@@ -6937,7 +7392,6 @@ class DailyActivityRowsTests(SimpleTestCase):
                         employee,
                         "work",
                         time(9, 0),
-                        time(12, 0),
                     ),
                     self._activity(
                         2,
@@ -6958,12 +7412,12 @@ class DailyActivityRowsTests(SimpleTestCase):
 
         row = rows[0]
         self.assertEqual(row.work_in.clock_in, time(9, 0))
-        self.assertIsNone(row.work_out)
+        self.assertEqual(row.work_out.clock_out, time(13, 0))
         self.assertEqual(len(row.lunch_segments), 1)
         self.assertEqual(row.lunch_segments[0].clock_out, time(13, 0))
 
     @patch("attendance.views.views.Attendance")
-    def test_open_work_after_break_keeps_clock_out_blank(self, attendance_model):
+    def test_open_work_after_break_keeps_real_clock_out(self, attendance_model):
         employee = SimpleNamespace(id=101)
         attendance_model.objects.filter.return_value = []
 
@@ -6996,12 +7450,26 @@ class DailyActivityRowsTests(SimpleTestCase):
 
         row = rows[0]
         self.assertEqual(row.work_in.clock_in, time(9, 0))
-        self.assertIsNone(row.work_out)
+        self.assertEqual(row.work_out.clock_out, time(10, 0))
         self.assertEqual(len(row.break_segments), 1)
         self.assertEqual(row.break_segments[0].clock_out, time(10, 15))
 
     @patch("attendance.views.views.Attendance")
-    def test_work_only_open_segment_preserves_effective_clock_out(self, attendance_model):
+    def test_single_open_work_segment_keeps_clock_out_blank(self, attendance_model):
+        employee = SimpleNamespace(id=101)
+        attendance_model.objects.filter.return_value = []
+
+        rows = build_daily_activity_rows(
+            FakeActivityQuerySet(
+                [self._activity(1, employee, "work", time(9, 0))]
+            )
+        )
+
+        self.assertEqual(rows[0].work_in.clock_in, time(9, 0))
+        self.assertIsNone(rows[0].work_out)
+
+    @patch("attendance.views.views.Attendance")
+    def test_work_only_open_segments_use_latest_clock_in_as_display_clock_out(self, attendance_model):
         employee = SimpleNamespace(id=101)
         attendance_model.objects.filter.return_value = []
 
@@ -7013,7 +7481,6 @@ class DailyActivityRowsTests(SimpleTestCase):
                         employee,
                         "work",
                         time(9, 0),
-                        time(12, 0),
                     ),
                     self._activity(
                         2,
@@ -7028,6 +7495,68 @@ class DailyActivityRowsTests(SimpleTestCase):
         row = rows[0]
         self.assertEqual(row.work_in.clock_in, time(9, 0))
         self.assertEqual(row.work_out.clock_out, time(13, 0))
+
+    @patch("attendance.views.views.Attendance")
+    def test_real_clock_out_remains_authoritative_over_later_open_clock_in(self, attendance_model):
+        employee = SimpleNamespace(id=101)
+        attendance_model.objects.filter.return_value = []
+
+        rows = build_daily_activity_rows(
+            FakeActivityQuerySet(
+                [
+                    self._activity(1, employee, "work", time(8, 0), time(12, 0)),
+                    self._activity(2, employee, "work", time(13, 0)),
+                ]
+            )
+        )
+
+        row = rows[0]
+        self.assertEqual(row.work_in.clock_in, time(8, 0))
+        self.assertEqual(row.work_out.clock_out, time(12, 0))
+
+    @patch("attendance.views.views.Attendance")
+    def test_latest_real_clock_out_wins_for_multiple_closed_work_segments(self, attendance_model):
+        employee = SimpleNamespace(id=101)
+        attendance_model.objects.filter.return_value = []
+
+        rows = build_daily_activity_rows(
+            FakeActivityQuerySet(
+                [
+                    self._activity(1, employee, "work", time(8, 0), time(12, 0)),
+                    self._activity(2, employee, "work", time(13, 0), time(17, 0)),
+                ]
+            )
+        )
+
+        row = rows[0]
+        self.assertEqual(row.work_in.clock_in, time(8, 0))
+        self.assertEqual(row.work_out.clock_out, time(17, 0))
+
+    @patch("attendance.views.views.Attendance")
+    @patch("attendance.views.views.format_export_value")
+    def test_export_uses_synthetic_clock_out(self, format_export_value, attendance_model):
+        format_export_value.side_effect = lambda value, employee: value
+        employee = SimpleNamespace(id=101)
+        attendance_model.objects.filter.return_value = []
+
+        rows = build_daily_activity_rows(
+            FakeActivityQuerySet(
+                [
+                    self._activity(1, employee, "work", time(8, 30)),
+                    self._activity(2, employee, "work", time(17, 0)),
+                ]
+            )
+        )
+
+        row = rows[0]
+        self.assertEqual(
+            _attendance_activity_daily_export_value(row, "daily_clock_in", employee),
+            "08:30",
+        )
+        self.assertEqual(
+            _attendance_activity_daily_export_value(row, "daily_clock_out", employee),
+            "17:00",
+        )
 
     def test_build_daily_rows_treats_blank_shift_schedule_as_rest_day(self):
         saturday = date(2026, 4, 11)
@@ -7258,6 +7787,104 @@ class DailyActivityRowsTests(SimpleTestCase):
             'data-cell-index="7"', 1
         )[0]
         self.assertNotIn("&mdash;", clock_image_cell)
+
+    def test_activity_table_declares_stable_shift_schedule_column(self):
+        template_path = (
+            Path(__file__).resolve().parent
+            / "templates"
+            / "attendance"
+            / "attendance_activity"
+            / "activity_list.html"
+        )
+        template = template_path.read_text(encoding="utf-8")
+        self.assertIn('data-cell-index="shift-schedule"', template)
+        self.assertIn('data-cell-title="{% trans \'Shift Schedule\' %}"', template)
+        own_attendance_template = (
+            Path(__file__).resolve().parent
+            / "templates"
+            / "attendance"
+            / "own_attendance"
+            / "attendances.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("show_shift_schedule=True", own_attendance_template)
+
+    def test_daily_activity_row_renders_date_specific_shift_schedule(self):
+        row = self._multi_work_image_row()
+        row.schedule = SimpleNamespace(
+            start_time=time(20, 30),
+            end_time=time(21, 0),
+        )
+        row.is_rest_day = False
+        row.is_leave_only = False
+        html = render_to_string(
+            "attendance/attendance_activity/daily_activity_row.html",
+            {"row": row, "pd": ""},
+        )
+
+        schedule_cell = html.split('data-cell-index="shift-schedule"', 1)[1].split(
+            'data-cell-index="13"', 1
+        )[0]
+        self.assertIn("8:30PM - 9:00PM", schedule_cell)
+        self.assertNotIn("Mon, Tue, Wed, Thu, Fri", schedule_cell)
+
+    def test_daily_activity_row_shows_empty_schedule_for_rest_day(self):
+        row = self._multi_work_image_row()
+        row.schedule = SimpleNamespace(
+            start_time=time(20, 30),
+            end_time=time(21, 0),
+        )
+        row.is_rest_day = True
+        row.is_leave_only = False
+        html = render_to_string(
+            "attendance/attendance_activity/daily_activity_row.html",
+            {"row": row, "pd": ""},
+        )
+
+        schedule_cell = html.split('data-cell-index="shift-schedule"', 1)[1].split(
+            'data-cell-index="13"', 1
+        )[0]
+        self.assertIn("&mdash;", schedule_cell)
+
+    def test_my_attendance_table_declares_shift_schedule_column(self):
+        template_path = (
+            Path(__file__).resolve().parent
+            / "templates"
+            / "attendance"
+            / "attendance"
+            / "daily_attendance_headers.html"
+        )
+        template = template_path.read_text(encoding="utf-8")
+        self.assertIn('data-cell-index="shift-schedule"', template)
+        self.assertIn('data-cell-title="{% trans \'Shift Schedule\' %}"', template)
+
+    def test_my_attendance_row_renders_date_specific_shift_schedule(self):
+        row = self._multi_work_image_row()
+        row.schedule = SimpleNamespace(
+            start_time=time(20, 30),
+            end_time=time(21, 0),
+        )
+        row.is_rest_day = False
+        row.is_leave_only = False
+        row.attendance = SimpleNamespace(id=1)
+        row.employee_avatar_url = "/static/images/ui/default_avatar.jpg"
+        html = render_to_string(
+            "attendance/attendance/daily_attendance_row.html",
+            {
+                "row": row,
+                "show_checkbox": False,
+                "show_status": False,
+                "show_actions": False,
+                "show_confirmation": False,
+                "show_shift_schedule": True,
+                "detail_query": "my_attendance=true",
+                "instances_ids": "[]",
+            },
+        )
+
+        schedule_cell = html.split('data-cell-index="shift-schedule"', 1)[1].split(
+            'data-cell-index="13"', 1
+        )[0]
+        self.assertIn("8:30PM - 9:00PM", schedule_cell)
 
     def test_daily_activity_modal_renders_all_work_segment_images(self):
         row = self._multi_work_image_row()

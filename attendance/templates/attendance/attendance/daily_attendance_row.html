@@ -133,6 +133,15 @@
         {% endfor %}
     </div>
     <div data-cell-index="12" class="oh-sticky-table__td">{{ row.shift|default:"&mdash;" }}</div>
+    {% if show_shift_schedule %}
+        <div data-cell-index="shift-schedule" class="oh-sticky-table__td">
+            {% if row.schedule and row.schedule.start_time and row.schedule.end_time and not row.is_rest_day and not row.is_leave_only %}
+                {{ row.schedule.start_time|time:"g:iA" }} - {{ row.schedule.end_time|time:"g:iA" }}
+            {% else %}
+                <span class="oh-text--light">&mdash;</span>
+            {% endif %}
+        </div>
+    {% endif %}
     <div data-cell-index="13" class="oh-sticky-table__td">{{ row.late_come_duration|default:"&mdash;" }}</div>
     <div data-cell-index="14" class="oh-sticky-table__td">{{ row.early_out_duration|default:"&mdash;" }}</div>
     <div data-cell-index="15" class="oh-sticky-table__td">{{ row.work_hours|default:"&mdash;" }}</div>

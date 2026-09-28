@@ -490,33 +490,23 @@ def _daily_activity_segment(activity):
 
 def _effective_work_out_segment(work_out, latest_unclosed):
     """
-    Build the work_out display segment. When an employee clocked in after their
-    last clock_out and never clocked out (e.g., forgot to clock out after overtime),
-    use that later clock_in time as the effective clock_out for display.
-    latest_unclosed is pre-validated to be more recent than work_out's clock_out.
+    Build the display work-out segment.
+
+    When there is no real clock-out, latest_unclosed is a later clock-in that
+    is used only as a synthetic display clock-out. A real clock-out always
+    remains authoritative.
     """
-    if work_out is None:
+    if work_out is None and latest_unclosed is None:
         return None
-    seg = _daily_activity_segment(work_out)
-    if latest_unclosed and latest_unclosed.clock_in_date and latest_unclosed.clock_in:
+    seg = _daily_activity_segment(work_out or latest_unclosed)
+    if work_out is None and latest_unclosed and latest_unclosed.clock_in_date and latest_unclosed.clock_in:
         seg.clock_out = latest_unclosed.clock_in
         seg.clock_out_date = latest_unclosed.clock_in_date
+        seg.out_datetime = datetime.combine(
+            latest_unclosed.clock_in_date,
+            latest_unclosed.clock_in,
+        )
     return seg
-
-
-def _activity_occurs_between(activity, start, end):
-    if not activity or not start or not end:
-        return False
-
-    activity_start = _activity_in_datetime(activity)
-    activity_end = _activity_out_datetime(activity) if activity.clock_out else None
-    if activity_start == datetime.min:
-        return False
-
-    if activity_end and activity_end != datetime.min:
-        return activity_start < end and activity_end > start
-
-    return start < activity_start < end
 
 
 def _activity_duration_seconds(activity):
@@ -1328,34 +1318,15 @@ def build_daily_activity_rows(
             if latest_work_activity and latest_work_activity.clock_out
             else None
         )
-        # Find the latest unclosed clock-in that is more recent than the last clock-out.
-        # This handles the case where an employee clocked in after their last clock-out
-        # (e.g., returned for overtime) and forgot to clock out.
         unclosed_work = [a for a in work_activities if not a.clock_out]
         latest_unclosed = None
-        if unclosed_work and work_out and work_out.clock_out_date and work_out.clock_out:
-            last_out_dt = datetime.combine(work_out.clock_out_date, work_out.clock_out)
-            for act in unclosed_work:
-                if act.clock_in_date and act.clock_in:
-                    act_in_dt = datetime.combine(act.clock_in_date, act.clock_in)
-                    has_non_work_between = any(
-                        _activity_occurs_between(
-                            non_work_activity,
-                            last_out_dt,
-                            act_in_dt,
-                        )
-                        for non_work_activity in break_activities + lunch_activities
-                    )
-                    if act_in_dt > last_out_dt and not has_non_work_between:
-                        if latest_unclosed is None or act_in_dt > datetime.combine(
-                            latest_unclosed.clock_in_date, latest_unclosed.clock_in
-                        ):
-                            latest_unclosed = act
-        display_work_out = (
-            work_out
-            if latest_work_activity and latest_work_activity.clock_out
-            else (work_out if latest_unclosed else None)
-        )
+        if not work_out and work_in and unclosed_work:
+            candidate = max(unclosed_work, key=_activity_in_datetime)
+            first_in_dt = _activity_in_datetime(work_in)
+            candidate_in_dt = _activity_in_datetime(candidate)
+            if candidate is not work_in and candidate_in_dt > first_in_dt:
+                latest_unclosed = candidate
+        display_work_out = work_out
         attendance = attendance_by_key.get((employee_id, attendance_date))
         hours = _attendance_row_hours(attendance)
         shift = _row_shift(attendance, row_data["employee"])
@@ -1698,6 +1669,28 @@ def get_absent_employees(request, date_from, date_to):
 def _empty_daily_attendance_row(attendance):
     attendance_date = getattr(attendance, "attendance_date", None)
     employee = getattr(attendance, "employee_id", None)
+    shift = _row_shift(attendance, employee)
+    shift_id = _row_shift_id(attendance, employee)
+    shift_day_name = (
+        attendance_date.strftime("%A").lower() if attendance_date else None
+    )
+    schedule_by_key = _employee_shift_schedules(
+        {(shift_id, None, shift_day_name)}
+        if shift_id and shift_day_name
+        else set()
+    )
+    exact_schedule = schedule_by_key.get((shift_id, None, shift_day_name))
+    fallback_schedule = schedule_by_key.get(
+        (shift_id, None, "__weekday_fallback__")
+    )
+    schedule = (
+        fallback_schedule
+        if _schedule_is_blank_rest_day(exact_schedule) and fallback_schedule
+        else exact_schedule or fallback_schedule
+    )
+    shift_schedule_days = _shift_schedule_days_by_shift_id({shift_id}).get(
+        shift_id, []
+    )
     fallback_work_in = None
     fallback_work_out = None
     if getattr(attendance, "attendance_clock_in", None):
@@ -1722,9 +1715,10 @@ def _empty_daily_attendance_row(attendance):
         work_out=fallback_work_out,
         has_work_images=False,
         shift=hours.shift,
-        shift_schedule="",
-        shift_schedule_days=[],
-        has_shift_schedule=False,
+        shift_schedule=_shift_schedule_days_label(shift_schedule_days),
+        shift_schedule_days=shift_schedule_days,
+        has_shift_schedule=bool(exact_schedule),
+        schedule=schedule,
         work_type=hours.work_type,
         min_hour=hours.min_hour,
         late_come_duration="",
@@ -1740,7 +1734,11 @@ def _empty_daily_attendance_row(attendance):
         is_leave_only=False,
         holiday=None,
         holiday_type=None,
-        is_rest_day=False,
+        is_rest_day=(
+            _schedule_is_explicit_rest_day(exact_schedule)
+            or _schedule_is_blank_rest_day(exact_schedule)
+            or _shift_day_is_rest_day(shift_schedule_days, shift_day_name)
+        ),
     )
 
 

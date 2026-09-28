@@ -356,6 +356,10 @@
             z-index: 10000 !important;
         }
 
+        .portal-shift-swal {
+            z-index: 11000 !important;
+        }
+
         /* ── Fullscreen clock step ── */
         .selection-fullscreen {
             position: fixed;
@@ -529,6 +533,75 @@
             line-height: 1.2;
             color: #6b7280;
             white-space: nowrap;
+        }
+
+        .attendance-shift-card {
+            width: 100%;
+            margin: 0 0 14px;
+            padding: 12px 14px;
+            border: 1px solid #cfe0f5;
+            border-radius: 10px;
+            background: #f5f9ff;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-align: left;
+            cursor: pointer;
+            transition: background .15s, border-color .15s, transform .08s;
+        }
+
+        .attendance-shift-card:hover:not(:disabled) {
+            background: #eaf3ff;
+            border-color: #8dbcf0;
+        }
+
+        .attendance-shift-card:active:not(:disabled) {
+            transform: scale(.99);
+        }
+
+        .attendance-shift-card:disabled {
+            cursor: not-allowed;
+            opacity: .62;
+        }
+
+        .attendance-shift-card ion-icon {
+            flex: 0 0 auto;
+            font-size: 25px;
+            color: #2563eb;
+        }
+
+        .attendance-shift-card-content {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .attendance-shift-card-label,
+        .attendance-shift-card-note {
+            display: block;
+            line-height: 1.25;
+        }
+
+        .attendance-shift-card-label {
+            color: #6b7280;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+
+        .attendance-shift-card-value {
+            display: block;
+            margin-top: 2px;
+            color: #111827;
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .attendance-shift-card-note {
+            margin-top: 2px;
+            color: #6b7280;
+            font-size: 11px;
         }
 
         .attendance-history-btn {
@@ -1439,19 +1512,48 @@
             /* transform: scaleX(-1); - moved inline to avoid Safari blank frame issue */
         }
 
-        .clock-camera-panel::before {
-            content: "";
+        .face-guide {
             position: absolute;
             top: 50%;
             left: 50%;
-            width: min(60%, 360px);
+            width: min(76%, 440px);
             aspect-ratio: 1 / 1;
             transform: translate(-50%, -50%);
             border: 2px solid rgba(255, 255, 255, 0.42);
-            border-radius: 18px;
+            border-radius: 22px;
             box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), inset 0 0 18px rgba(255, 255, 255, 0.06);
             pointer-events: none;
-            z-index: 1;
+            z-index: 2;
+        }
+
+        .face-status-pill {
+            position: absolute;
+            top: calc(100% + 10px);
+            left: 50%;
+            display: none;
+            align-items: center;
+            gap: 5px;
+            transform: translateX(-50%);
+            padding: 5px 10px;
+            border: 1px solid rgba(187, 247, 208, 0.9);
+            border-radius: 999px;
+            background: rgba(22, 101, 52, 0.92);
+            color: #f0fdf4;
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1;
+            white-space: nowrap;
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.24);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .face-status-pill.is-visible {
+            display: inline-flex;
+        }
+
+        .face-status-pill ion-icon {
+            font-size: 14px;
         }
 
         .clock-camera-panel.face-detected::after {
@@ -2750,6 +2852,15 @@
                                 </div>
                             </div>
 
+                            <button type="button" class="attendance-shift-card" id="attendance-shift-card" disabled>
+                                <ion-icon name="time-outline"></ion-icon>
+                                <span class="attendance-shift-card-content">
+                                    <span class="attendance-shift-card-label">{% trans "Today's Shift" %}</span>
+                                    <strong class="attendance-shift-card-value" id="attendance-shift-value">--</strong>
+                                    <span class="attendance-shift-card-note" id="attendance-shift-note">{% trans "Shift schedule unavailable" %}</span>
+                                </span>
+                            </button>
+
                             <div class="selection-grid">
                                 <button type="button" class="selection-option btn-clock-in-option" id="attendance-clock-in-option" data-attendance-action="clock_in">
                                     <ion-icon name="log-in-outline"></ion-icon>
@@ -2818,6 +2929,13 @@
                             <video id="video-preview" playsinline webkit-playsinline autoplay muted style="display:none; transform: scaleX(-1);"></video>
                             <img id="captured-photo" class="captured-photo-full" src="" style="display:none;" />
                             <canvas id="canvas"></canvas>
+
+                            <div class="face-guide">
+                                <span id="face-status-pill" class="face-status-pill" role="status" aria-live="polite" hidden>
+                                    <ion-icon name="checkmark-circle-outline" aria-hidden="true"></ion-icon>
+                                    <span id="face-status-text">{% trans "Face detected." %}</span>
+                                </span>
+                            </div>
 
                             <!-- Switch between front (selfie) and back camera -->
                             <button type="button" id="camera-switch-btn" aria-label="{% trans 'Switch Camera' %}">
@@ -3096,8 +3214,8 @@
         const FACE_DETECTION_INTERVAL_MS = 220;
         const FACE_DETECTION_SCORE_THRESHOLD = 0.5;
         const FACE_DETECTION_MIN_FACE_AREA = 0.03;
-        const FACE_DETECTION_CENTER_WIDTH = 0.60;
-        const FACE_DETECTION_CENTER_HEIGHT = 0.70;
+        const FACE_DETECTION_CENTER_WIDTH = 0.76;
+        const FACE_DETECTION_CENTER_HEIGHT = 0.82;
         const FACE_DETECTION_REQUIRED_LANDMARKS = 6;
 
         function addPortalMapTiles(map) {
@@ -3242,14 +3360,11 @@
             if (!state) {
                 return '--:--';
             }
-            
-            // If not clocked in, always show --:-- regardless of worked seconds
-            if (!state.is_clocked_in) {
-                return '--:--';
-            }
-            
+
+            // Keep completed attendance visible; active sessions are updated by
+            // the caller's interval through workedTotalSecondsFromState().
             const totalSeconds = workedTotalSecondsFromState(state);
-            return formatDurationHMS(totalSeconds);
+            return totalSeconds > 0 ? formatDurationHMS(totalSeconds) : '--:--';
         }
 
         function attendanceHistoryDurationValue(value) {
@@ -3539,9 +3654,17 @@
             return '#clock-in-btn, #clock-out-btn, #activity-transition-btn';
         }
 
-        function setFaceDetectionStatus() {
-            // Detection feedback is intentionally visual-only: the camera border
-            // is green only while a valid face is detected.
+        function setFaceDetectionStatus(message, status) {
+            const statusPill = document.getElementById('face-status-pill');
+            const statusText = document.getElementById('face-status-text');
+            const showSuccess = faceDetectionRequired && faceDetected && status === 'success';
+            if (statusPill) {
+                statusPill.hidden = !showSuccess;
+                statusPill.classList.toggle('is-visible', showSuccess);
+            }
+            if (showSuccess && statusText && message) {
+                statusText.textContent = message;
+            }
             syncFaceDetectionVisual();
         }
 
@@ -3980,12 +4103,141 @@
                 .toggleClass('is-disabled', disabled);
         }
 
+        function updateTodayShiftCard() {
+            const shift = selectedEmployee && selectedEmployee.today_shift;
+            const $card = $('#attendance-shift-card');
+            const hasEmployee = !!selectedEmployee;
+            if (!shift || !shift.configured) {
+                $card
+                    .prop('disabled', !hasEmployee)
+                    .attr('aria-disabled', hasEmployee ? 'false' : 'true');
+                $('#attendance-shift-value').text('--');
+                $('#attendance-shift-note').text(
+                    hasEmployee
+                        ? "{% trans "Loading today's shift..." %}"
+                        : (shift && shift.message) || '{% trans "Shift schedule unavailable" %}'
+                );
+                return;
+            }
+
+            $card.prop('disabled', false).attr('aria-disabled', 'false');
+            $('#attendance-shift-value').text(
+                `${shift.day} ${shift.start_display} – ${shift.end_display}`
+            );
+            $('#attendance-shift-note').text(
+                '{% trans "Click to Change Shift" %}'
+            );
+        }
+
+        async function editTodayShift() {
+            if (!selectedEmployee) {
+                return;
+            }
+
+            if (!selectedEmployee.today_shift || !selectedEmployee.today_shift.configured) {
+                await refreshTodayShift();
+            }
+            const shift = selectedEmployee.today_shift;
+            if (!shift || !shift.configured) {
+                Toast.fire({
+                    icon: 'error',
+                    title: (shift && shift.message) || '{% trans "Shift schedule unavailable" %}'
+                });
+                return;
+            }
+            const result = await Swal.fire({
+                title: '{% trans "Change Shift" %}',
+                customClass: {
+                    container: 'portal-shift-swal'
+                },
+                html: `
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:left;">
+                        <label style="font-size:12px; font-weight:700; color:#374151;">
+                            {% trans "Start time" %}
+                            <input id="portal-shift-start" type="time" value="${escapeHtml(shift.start_time || '')}" class="swal2-input" style="width:100%; margin:6px 0 0;">
+                        </label>
+                        <label style="font-size:12px; font-weight:700; color:#374151;">
+                            {% trans "End time" %}
+                            <input id="portal-shift-end" type="time" value="${escapeHtml(shift.end_time || '')}" class="swal2-input" style="width:100%; margin:6px 0 0;">
+                        </label>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: '{% trans "Save Shift" %}',
+                cancelButtonText: '{% trans "Cancel" %}',
+                focusConfirm: false,
+                preConfirm: function () {
+                    const start = $('#portal-shift-start').val();
+                    const end = $('#portal-shift-end').val();
+                    if (!start || !end) {
+                        Swal.showValidationMessage('{% trans "Start and end times are required." %}');
+                        return false;
+                    }
+                    if (start === end) {
+                        Swal.showValidationMessage('{% trans "Start and end times must be different." %}');
+                        return false;
+                    }
+                    return { start: start, end: end };
+                }
+            });
+
+            if (!result.isConfirmed || !result.value) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('employee_id', selectedEmployee.id);
+            formData.append('start_time', result.value.start);
+            formData.append('end_time', result.value.end);
+
+            try {
+                const response = await fetch('{% url "portal-shift-schedule" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.message || '{% trans "Unable to save the shift." %}');
+                }
+                selectedEmployee.today_shift = data.today_shift;
+                updateTodayShiftCard();
+                Toast.fire({ icon: 'success', title: data.message || '{% trans "Shift saved." %}' });
+            } catch (error) {
+                console.error('Portal shift save error:', error);
+                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to save the shift." %}' });
+            }
+        }
+
+        async function refreshTodayShift() {
+            if (!selectedEmployee) {
+                return;
+            }
+
+            try {
+                const query = new URLSearchParams({ employee_id: String(selectedEmployee.id) });
+                const response = await fetch(`{% url "portal-shift-schedule" %}?${query.toString()}`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.message || "{% trans "Unable to load today's shift." %}");
+                }
+                selectedEmployee.today_shift = data.today_shift || null;
+            } catch (error) {
+                console.error('Portal shift load error:', error);
+            } finally {
+                updateTodayShiftCard();
+            }
+        }
+
         function updateAttendanceActionSelection() {
             if (!selectedEmployee) {
                 return;
             }
 
             syncSelectionEmployeeSummary('attendance');
+            updateTodayShiftCard();
             updateAttendanceSummaryStrip();
             const isMultiPunch = !!selectedEmployee.multi_punch_enabled;
             const multiActions = ['morning_in', 'morning_out', 'afternoon_in', 'afternoon_out'];
@@ -4071,6 +4323,7 @@
             resetAttendanceSummaryStrip();
             showStep('attendance-actions');
             deferAttendanceUiUpdate(updateAttendanceActionSelection);
+            refreshTodayShift();
         }
 
         function selectAttendanceAction(action) {
@@ -5894,6 +6147,13 @@
                 showAttendanceHistoryModal();
             });
 
+            $('#attendance-shift-card').on('click', function () {
+                if ($(this).prop('disabled')) {
+                    return;
+                }
+                editTodayShift();
+            });
+
             $('[data-attendance-action]').on('click', function () {
                 if ($(this).prop('disabled')) {
                     return;
@@ -6125,6 +6385,7 @@
                 multi_punch_can_afternoon_in: !!cached.multi_punch_can_afternoon_in,
                 multi_punch_can_afternoon_out: !!cached.multi_punch_can_afternoon_out,
                 multi_punch_work_segments: Number(cached.multi_punch_work_segments || 0),
+                today_shift: cached.today_shift || null,
             };
 
             clearInterval(searchLiveHoursInterval);

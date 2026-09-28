@@ -26,7 +26,7 @@ from django.core.exceptions import ValidationError
 from django.core import signing
 from django.core.mail import EmailMessage
 from django.core.signing import BadSignature, SignatureExpired
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -44,6 +44,7 @@ from attendance.methods.utils import (
     calculate_worked_hours,
     format_time,
     shift_schedule_today,
+    shift_schedule_with_weekday_fallback,
     strtime_seconds,
 )
 from attendance.models import (
@@ -51,23 +52,32 @@ from attendance.models import (
     AttendanceActivity,
     AttendanceGeneralSetting,
     AttendancePortalMultiPunchEmployee,
+    AttendancePortalShiftContext,
+    AttendancePortalShiftOverride,
     AttendanceRequestComment,
     AttendanceRequestFile,
 )
 from attendance.views.clock_in_out import (
     clock_in_attendance_and_activity,
     clock_out_attendance_and_activity,
+    early_out,
+    late_come,
 )
 from base.backends import ConfiguredEmailBackend
 from base.models import (
     AttendanceAllowedIP,
     Company,
     EmployeeShiftDay,
+    EmployeeShift,
     EmployeeShiftSchedule,
 )
 from employee.models import Employee, EmployeeBankDetails, EmployeeInsurance
 
 logger = logging.getLogger(__name__)
+
+
+class PortalShiftScheduleError(Exception):
+    """Expected failure while resolving a portal shift schedule."""
 
 PORTAL_WORK_ACTIVITY = "work"
 PORTAL_BREAK_ACTIVITY = "break"
@@ -83,6 +93,15 @@ PORTAL_MULTI_AFTERNOON_IN_START = time(12, 0)
 PORTAL_MULTI_AFTERNOON_IN_END = time(14, 0)
 PORTAL_MULTI_AFTERNOON_OUT_FALLBACK_START = time(14, 0)
 PORTAL_DEFAULT_BREAK_LIMIT = 2
+PORTAL_WEEKDAYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
 PORTAL_DEFAULT_BREAK_MINUTES = 15
 PORTAL_DEFAULT_LUNCH_MINUTES = 60
 PORTAL_HELPDESK_BLOCKED_EXTENSIONS = {
@@ -882,7 +901,233 @@ def _portal_multi_punch_time_in_window(current_clock, start, end):
     return bool(current_clock and start <= current_clock < end)
 
 
-def _portal_current_attendance_context(work_info, current_time, require_shift=False):
+def _portal_day_index(day_name):
+    return {
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6,
+    }.get(day_name, -1)
+
+
+def _portal_shift_duration_seconds(start_time, end_time):
+    start_seconds = start_time.hour * 3600 + start_time.minute * 60 + start_time.second
+    end_seconds = end_time.hour * 3600 + end_time.minute * 60 + end_time.second
+    duration = end_seconds - start_seconds
+    if duration < 0:
+        duration += 24 * 60 * 60
+    return duration
+
+
+def _portal_copy_shift_context(employee, base_shift):
+    context = AttendancePortalShiftContext._base_manager.filter(
+        employee_id=employee,
+    ).select_related("shift_id").first()
+    if context:
+        return context
+
+    work_info = getattr(employee, "employee_work_info", None)
+    portal_shift = EmployeeShift.objects.create(
+        employee_shift=f"{employee.employee_no or employee.pk}_shift",
+        weekly_full_time=getattr(base_shift, "weekly_full_time", "40:00"),
+        full_time=getattr(base_shift, "full_time", "200:00"),
+        grace_time_id=getattr(base_shift, "grace_time_id", None),
+    )
+    company_id = getattr(work_info, "company_id_id", None) if work_info else None
+    if isinstance(company_id, int):
+        portal_shift.company_id.add(company_id)
+
+    return AttendancePortalShiftContext._base_manager.create(
+        employee_id=employee,
+        shift_id=portal_shift,
+    )
+
+
+def _portal_override_map(employee):
+    return {
+        override.day.day: override
+        for override in AttendancePortalShiftOverride._base_manager.filter(
+            employee_id=employee,
+            is_active=True,
+        ).select_related("day")
+    }
+
+
+def _portal_base_schedule(employee, schedule_date):
+    work_info = getattr(employee, "employee_work_info", None)
+    base_shift = getattr(work_info, "shift_id", None) if work_info else None
+    if not base_shift:
+        return base_shift, None, None
+    day_name = schedule_date.strftime("%A").lower()
+    day = EmployeeShiftDay.objects.filter(day=day_name).first()
+    if not day:
+        return base_shift, day, None
+
+    minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
+        day=day,
+        shift=base_shift,
+    )
+    if start_time_sec == 0 and end_time_sec == 0:
+        return base_shift, day, None
+
+    def seconds_to_time(value):
+        value = value % (24 * 60 * 60)
+        return time(value // 3600, (value % 3600) // 60, value % 60)
+
+    start_time = seconds_to_time(start_time_sec)
+    end_time = seconds_to_time(end_time_sec)
+    source_schedule = None
+    if isinstance(getattr(base_shift, "pk", None), int) and isinstance(
+        getattr(day, "pk", None), int
+    ):
+        source_schedule = shift_schedule_with_weekday_fallback(
+            day=day,
+            shift=base_shift,
+        )
+    return (
+        base_shift,
+        day,
+        {
+            "start_time": start_time,
+            "end_time": end_time,
+            "minimum_working_hour": minimum_hour,
+            "is_night_shift": start_time > end_time,
+            "is_auto_punch_out_enabled": bool(
+                getattr(source_schedule, "is_auto_punch_out_enabled", False)
+            ),
+            "auto_punch_out_time": getattr(source_schedule, "auto_punch_out_time", None),
+            "override_day": None,
+        },
+    )
+
+
+def _portal_effective_schedule(employee, schedule_date):
+    base_shift, day, base_schedule = _portal_base_schedule(employee, schedule_date)
+    if not base_shift or not day:
+        return base_shift, day, None
+
+    if isinstance(getattr(base_shift, "pk", None), int) and isinstance(
+        getattr(employee, "pk", None), int
+    ):
+        overrides = _portal_override_map(employee)
+    else:
+        overrides = {}
+    day_name = schedule_date.strftime("%A").lower()
+    target_index = _portal_day_index(day_name)
+    selected_override = None
+    if target_index >= 0:
+        for candidate_day in reversed(PORTAL_WEEKDAYS[: target_index + 1]):
+            if candidate_day in overrides:
+                selected_override = overrides[candidate_day]
+                break
+
+    if selected_override:
+        return (
+            base_shift,
+            day,
+            {
+                "start_time": selected_override.start_time,
+                "end_time": selected_override.end_time,
+                "minimum_working_hour": selected_override.minimum_working_hour,
+                "is_night_shift": selected_override.is_night_shift,
+                "is_auto_punch_out_enabled": bool(
+                    base_schedule.get("is_auto_punch_out_enabled", False)
+                )
+                if base_schedule
+                else False,
+                "auto_punch_out_time": base_schedule.get("auto_punch_out_time")
+                if base_schedule
+                else None,
+                "override_day": selected_override.day.day,
+            },
+        )
+
+    if not base_schedule:
+        return base_shift, day, None
+    return base_shift, day, base_schedule
+
+
+def _portal_sync_shift_schedule(portal_shift, day, schedule):
+    portal_schedule = EmployeeShiftSchedule._base_manager.filter(
+        shift_id=portal_shift,
+        day=day,
+    ).first()
+    if not portal_schedule:
+        portal_schedule = EmployeeShiftSchedule(
+            shift_id=portal_shift,
+            day=day,
+        )
+    portal_schedule.minimum_working_hour = schedule["minimum_working_hour"]
+    portal_schedule.start_time = schedule["start_time"]
+    portal_schedule.end_time = schedule["end_time"]
+    portal_schedule.is_night_shift = schedule["is_night_shift"]
+    portal_schedule.is_rest_day = False
+    portal_schedule.is_auto_punch_out_enabled = schedule.get(
+        "is_auto_punch_out_enabled", False
+    )
+    portal_schedule.auto_punch_out_time = schedule.get("auto_punch_out_time")
+    portal_schedule.save()
+    return portal_schedule
+
+
+def _portal_schedule_context(employee, schedule_date, persist=False):
+    base_shift, day, schedule = _portal_effective_schedule(employee, schedule_date)
+    if not base_shift:
+        return {
+            "shift": None,
+            "day": day,
+            "schedule": None,
+            "error": "Employee shift not configured",
+        }
+    if not day:
+        return {
+            "shift": base_shift,
+            "day": None,
+            "schedule": None,
+            "error": "Shift day configuration error",
+        }
+    if not schedule:
+        return {
+            "shift": base_shift,
+            "day": day,
+            "schedule": None,
+            "error": "Employee shift schedule not configured",
+        }
+
+    shift = base_shift
+    if persist and not isinstance(getattr(base_shift, "pk", None), int):
+        # Keep lightweight mocked/simple employee objects usable in callers
+        # and tests that patch the existing shift helpers.
+        persist = False
+    if persist:
+        portal_context = _portal_copy_shift_context(employee, base_shift)
+        shift = portal_context.shift_id
+        _portal_sync_shift_schedule(shift, day, schedule)
+
+    start_time_sec = strtime_seconds(schedule["start_time"].strftime("%H:%M"))
+    end_time_sec = strtime_seconds(schedule["end_time"].strftime("%H:%M"))
+    return {
+        "shift": shift,
+        "day": day,
+        "schedule": schedule,
+        "minimum_hour": schedule["minimum_working_hour"],
+        "start_time_sec": start_time_sec,
+        "end_time_sec": end_time_sec,
+        "is_night_shift": schedule["is_night_shift"],
+        "error": "",
+    }
+
+
+def _portal_current_attendance_context(
+    work_info,
+    current_time,
+    require_shift=False,
+    employee=None,
+    persist=False,
+):
     current_time = _make_naive_datetime(current_time)
     date_today = current_time.date()
     now_str = current_time.strftime("%H:%M")
@@ -898,13 +1143,61 @@ def _portal_current_attendance_context(work_info, current_time, require_shift=Fa
         "error": "",
     }
 
+    employee = employee or getattr(work_info, "employee_id", None)
+    if employee:
+        schedule_context = _portal_schedule_context(
+            employee,
+            date_today,
+            persist=False,
+        )
+        if schedule_context["error"]:
+            if require_shift:
+                context["error"] = schedule_context["error"]
+            return context
+
+        now_sec = strtime_seconds(now_str)
+        mid_day_sec = strtime_seconds("12:00")
+        attendance_date = date_today
+        if (
+            schedule_context["start_time_sec"] > schedule_context["end_time_sec"]
+            and mid_day_sec > now_sec
+        ):
+            attendance_date = date_today - timedelta(days=1)
+            schedule_context = _portal_schedule_context(
+                employee,
+                attendance_date,
+                persist=False,
+            )
+            if schedule_context["error"]:
+                if require_shift:
+                    context["error"] = schedule_context["error"]
+                return context
+
+        if persist:
+            schedule_context = _portal_schedule_context(
+                employee,
+                attendance_date,
+                persist=True,
+            )
+
+        context.update(
+            {
+                "attendance_date": attendance_date,
+                "day": schedule_context["day"],
+                "shift": schedule_context["shift"],
+                "minimum_hour": schedule_context["minimum_hour"],
+                "start_time_sec": schedule_context["start_time_sec"],
+                "end_time_sec": schedule_context["end_time_sec"],
+            }
+        )
+        return context
+
     shift = getattr(work_info, "shift_id", None) if work_info else None
     if not shift:
         if require_shift:
             context["error"] = "Employee shift not configured"
         return context
 
-    context["shift"] = shift
     day_name = date_today.strftime("%A").lower()
     day = EmployeeShiftDay.objects.filter(day=day_name).first()
     if not day:
@@ -918,12 +1211,11 @@ def _portal_current_attendance_context(work_info, current_time, require_shift=Fa
         day=day,
         shift=shift,
     )
-
     attendance_date = date_today
     if start_time_sec > end_time_sec and mid_day_sec > now_sec:
-        date_yesterday = date_today - timedelta(days=1)
-        day_yesterday = date_yesterday.strftime("%A").lower()
-        day = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
+        attendance_date = date_today - timedelta(days=1)
+        day_name = attendance_date.strftime("%A").lower()
+        day = EmployeeShiftDay.objects.filter(day=day_name).first()
         if not day:
             if require_shift:
                 context["error"] = "Shift day configuration error"
@@ -932,18 +1224,41 @@ def _portal_current_attendance_context(work_info, current_time, require_shift=Fa
             day=day,
             shift=shift,
         )
-        attendance_date = date_yesterday
 
     context.update(
         {
             "attendance_date": attendance_date,
             "day": day,
+            "shift": shift,
             "minimum_hour": minimum_hour,
             "start_time_sec": start_time_sec,
             "end_time_sec": end_time_sec,
         }
     )
     return context
+
+
+def _portal_shift_payload(employee, schedule_date=None):
+    schedule_date = schedule_date or get_real_now().date()
+    context = _portal_schedule_context(employee, schedule_date, persist=False)
+    schedule = context.get("schedule")
+    if context.get("error") or not schedule:
+        return {
+            "configured": False,
+            "day": schedule_date.strftime("%a"),
+            "message": context.get("error") or "Employee shift schedule not configured",
+        }
+    return {
+        "configured": True,
+        "day": schedule_date.strftime("%a"),
+        "weekday": schedule_date.strftime("%A").lower(),
+        "start_time": schedule["start_time"].strftime("%H:%M"),
+        "end_time": schedule["end_time"].strftime("%H:%M"),
+        "start_display": schedule["start_time"].strftime("%I:%M %p").lstrip("0"),
+        "end_display": schedule["end_time"].strftime("%I:%M %p").lstrip("0"),
+        "is_night_shift": bool(schedule["is_night_shift"]),
+        "minimum_working_hour": schedule["minimum_working_hour"],
+    }
 
 
 def _portal_multi_punch_state_from_activities(
@@ -1519,6 +1834,41 @@ def _update_attendance_worked_hours(employee, attendance_date):
     return attendance
 
 
+def _portal_update_current_attendance_schedule(employee, attendance_context):
+    """Apply a newly saved portal schedule to today's attendance, if present."""
+    attendance = Attendance.objects.filter(
+        employee_id=employee,
+        attendance_date=attendance_context.get("attendance_date"),
+    ).first()
+    if not attendance or not attendance_context.get("shift"):
+        return attendance
+
+    # Update only the schedule fields. Calling Attendance.save() here also
+    # runs overtime/accounting side effects, which can reject an otherwise
+    # valid portal shift change for an attendance that is already clocked in.
+    Attendance.objects.filter(pk=attendance.pk).update(
+        shift_id=attendance_context["shift"].pk,
+        minimum_hour=attendance_context["minimum_hour"],
+    )
+    attendance.shift_id = attendance_context["shift"]
+    attendance.minimum_hour = attendance_context["minimum_hour"]
+    attendance.late_come_early_out.all().delete()
+    late_come(
+        attendance=attendance,
+        start_time=attendance_context["start_time_sec"],
+        end_time=attendance_context["end_time_sec"],
+        shift=attendance_context["shift"],
+    )
+    if attendance.attendance_clock_out:
+        early_out(
+            attendance=attendance,
+            start_time=attendance_context["start_time_sec"],
+            end_time=attendance_context["end_time_sec"],
+            shift=attendance_context["shift"],
+        )
+    return attendance
+
+
 def _portal_display_value(value):
     if value is None or value == "":
         return ""
@@ -2030,7 +2380,11 @@ def employee_lookup(request):
             _maybe_auto_checkout_employee(emp, lookup_now)
             active_activity = _open_portal_activity(emp)
             work_info = getattr(emp, "employee_work_info", None)
-            attendance_context = _portal_current_attendance_context(work_info, lookup_now)
+            attendance_context = _portal_current_attendance_context(
+                work_info,
+                lookup_now,
+                employee=emp,
+            )
             current_attendance_date = attendance_context["attendance_date"]
             # When not clocked in, only use today's activities so the summary strip
             # shows --:-- instead of the previous day's times.
@@ -2127,6 +2481,7 @@ def employee_lookup(request):
                 "geo_fence": geo_data,
                 "branch": branch_name,
                 "face_detection_required": _portal_face_detection_required(emp),
+                "today_shift": _portal_shift_payload(emp, lookup_now.date()),
             })
 
         return JsonResponse({"success": True, "results": results})
@@ -2135,6 +2490,155 @@ def employee_lookup(request):
         return JsonResponse(
             {"success": False, "message": f"Search error: {str(e)}"}, status=200
         )
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def portal_shift_schedule(request):
+    """Read or save the selected employee's recurring shift for today's weekday."""
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    request_data = request.POST if request.method == "POST" else request.GET
+    employee_id = request_data.get("employee_id", "").strip()
+    if not employee_id:
+        return JsonResponse({"success": False, "message": "Employee ID required"}, status=200)
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message}, status=200)
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse({"success": False, "message": "Employee not found"}, status=200)
+
+    work_info = getattr(employee, "employee_work_info", None)
+    if not work_info or not getattr(work_info, "shift_id", None):
+        return JsonResponse(
+            {"success": False, "message": "Employee shift not configured"},
+            status=200,
+        )
+
+    datetime_now = get_real_now()
+    date_today = datetime_now.date()
+    if request.method == "GET":
+        return JsonResponse(
+            {
+                "success": True,
+                "today_shift": _portal_shift_payload(employee, date_today),
+            },
+            status=200,
+        )
+
+    start_time_value = (request.POST.get("start_time") or "").strip()
+    end_time_value = (request.POST.get("end_time") or "").strip()
+    try:
+        start_time = time.fromisoformat(start_time_value)
+        end_time = time.fromisoformat(end_time_value)
+    except ValueError:
+        return JsonResponse(
+            {"success": False, "message": "Valid start and end times are required."},
+            status=200,
+        )
+
+    if start_time == end_time:
+        return JsonResponse(
+            {"success": False, "message": "Start and end times must be different."},
+            status=200,
+        )
+
+    day_name = date_today.strftime("%A").lower()
+    day = EmployeeShiftDay.objects.filter(day=day_name).first()
+    if not day:
+        return JsonResponse(
+            {"success": False, "message": "Shift day configuration error"},
+            status=200,
+        )
+
+    minimum_working_hour = format_time(
+        _portal_shift_duration_seconds(start_time, end_time)
+    )
+    is_night_shift = start_time > end_time
+
+    try:
+        with transaction.atomic():
+            AttendancePortalShiftOverride._base_manager.update_or_create(
+                employee_id=employee,
+                day=day,
+                defaults={
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "minimum_working_hour": minimum_working_hour,
+                    "is_night_shift": is_night_shift,
+                    "is_active": True,
+                },
+            )
+            today_schedule_context = _portal_schedule_context(
+                employee,
+                date_today,
+                persist=True,
+            )
+            if today_schedule_context["error"]:
+                raise PortalShiftScheduleError(today_schedule_context["error"])
+
+            attendance_context = _portal_current_attendance_context(
+                work_info,
+                datetime_now,
+                require_shift=False,
+                employee=employee,
+                persist=True,
+            )
+            _portal_update_current_attendance_schedule(employee, attendance_context)
+    except PortalShiftScheduleError as error:
+        logger.warning(
+            "Portal shift schedule rejected for employee %s: %s",
+            employee_id,
+            error,
+        )
+        return JsonResponse(
+            {"success": False, "message": str(error)},
+            status=200,
+        )
+    except DatabaseError:
+        logger.exception(
+            "Portal shift schedule database error for employee %s",
+            employee_id,
+        )
+        return JsonResponse(
+            {
+                "success": False,
+                "message": (
+                    "Shift schedule storage is unavailable. "
+                    "Please ask an administrator to apply the latest attendance migrations."
+                ),
+            },
+            status=503,
+        )
+    except Exception:
+        logger.exception(
+            "Unexpected portal shift schedule failure for employee %s",
+            employee_id,
+        )
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Unable to save the shift schedule. Please try again or contact an administrator.",
+            },
+            status=200,
+        )
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "Today’s shift was saved successfully.",
+            "today_shift": _portal_shift_payload(employee, date_today),
+        },
+        status=200,
+    )
 
 
 @csrf_exempt
@@ -3427,10 +3931,9 @@ def public_clock_in(request):
         if geo_error:
             return _portal_geo_error_response(geo_error)
 
-        # Get shift and schedule info
-        shift = work_info.shift_id
-
-        if not shift:
+        # The portal requires a normal employee shift as its base schedule,
+        # then resolves the employee-specific portal schedule below.
+        if not work_info.shift_id:
             logger.warning(f"No shift configured for employee: {employee_id}")
             return JsonResponse(
                 {"success": False, "message": "Employee shift not configured"}, status=200
@@ -3442,6 +3945,8 @@ def public_clock_in(request):
             work_info,
             datetime_now,
             require_shift=True,
+            employee=employee,
+            persist=True,
         )
         if attendance_context["error"]:
             logger.error(
@@ -3460,6 +3965,7 @@ def public_clock_in(request):
         start_time_sec = attendance_context["start_time_sec"]
         end_time_sec = attendance_context["end_time_sec"]
         attendance_date = attendance_context["attendance_date"]
+        shift = attendance_context["shift"]
 
         multi_punch_enabled = _portal_multi_punch_enabled(employee)
         if multi_punch_enabled:
@@ -3926,6 +4432,8 @@ def public_clock_out(request):
                     work_info_out,
                     datetime_now,
                     require_shift=True,
+                    employee=employee,
+                    persist=True,
                 )
                 if multi_punch_context["error"]:
                     return JsonResponse(
@@ -3992,41 +4500,30 @@ def public_clock_out(request):
             # Auto clock-in with the current time so clock-in == clock-out
             if not multi_punch_enabled:
                 work_info_ci = getattr(employee, "employee_work_info", None)
-                shift_ci = getattr(work_info_ci, "shift_id", None)
-                if not shift_ci:
-                    return JsonResponse(
-                        {"success": False, "message": "Employee shift not configured"}, status=200
-                    )
                 datetime_now_ci = get_real_now()
-                date_today_ci = datetime_now_ci.date()
-                day_name_ci = date_today_ci.strftime("%A").lower()
-                day_ci = EmployeeShiftDay.objects.filter(day=day_name_ci).first()
-                if not day_ci:
-                    return JsonResponse(
-                        {"success": False, "message": "Shift day configuration error"}, status=200
-                    )
-                now_str_ci = datetime_now_ci.strftime("%H:%M")
-                now_sec_ci = strtime_seconds(now_str_ci)
-                mid_day_sec_ci = strtime_seconds("12:00")
-                minimum_hour_ci, start_time_sec_ci, end_time_sec_ci = shift_schedule_today(
-                    day=day_ci, shift=shift_ci
+                auto_clock_in_context = _portal_current_attendance_context(
+                    work_info_ci,
+                    datetime_now_ci,
+                    require_shift=True,
+                    employee=employee,
+                    persist=True,
                 )
-                attendance_date_ci = date_today_ci
-                if start_time_sec_ci > end_time_sec_ci and mid_day_sec_ci > now_sec_ci:
-                    attendance_date_ci = date_today_ci - timedelta(days=1)
-                    day_name_ci = attendance_date_ci.strftime("%A").lower()
-                    day_ci = EmployeeShiftDay.objects.filter(day=day_name_ci).first() or day_ci
+                if auto_clock_in_context["error"]:
+                    return JsonResponse(
+                        {"success": False, "message": auto_clock_in_context["error"]},
+                        status=200,
+                    )
                 try:
                     clock_in_attendance_and_activity(
                         employee=employee,
-                        date_today=date_today_ci,
-                        attendance_date=attendance_date_ci,
-                        day=day_ci,
-                        now=now_str_ci,
-                        shift=shift_ci,
-                        minimum_hour=minimum_hour_ci,
-                        start_time=start_time_sec_ci,
-                        end_time=end_time_sec_ci,
+                        date_today=auto_clock_in_context["date_today"],
+                        attendance_date=auto_clock_in_context["attendance_date"],
+                        day=auto_clock_in_context["day"],
+                        now=auto_clock_in_context["now_str"],
+                        shift=auto_clock_in_context["shift"],
+                        minimum_hour=auto_clock_in_context["minimum_hour"],
+                        start_time=auto_clock_in_context["start_time_sec"],
+                        end_time=auto_clock_in_context["end_time_sec"],
                         in_datetime=datetime_now_ci,
                     )
                 except Exception as e:
