@@ -46,7 +46,7 @@ from attendance.views.portal import (
     _make_portal_pin_reset_token,
     _portal_activity_total_seconds,
     _portal_break_policy,
-    _portal_face_detection_error,
+    _portal_face_detection_required,
     _portal_multi_punch_action_error,
     _portal_multi_punch_state_from_activities,
     _portal_effective_schedule,
@@ -2066,6 +2066,23 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn('portal-shift-swal', self.portal_template)
         self.assertIn('{% url "portal-shift-schedule" %}', self.portal_template)
 
+    def test_service_selection_uses_only_large_icons_and_labels(self):
+        self.assertIn("#step-service-menu .selection-option ion-icon", self.portal_template)
+        self.assertIn("font-size: 34px;", self.portal_template)
+        service_menu = self.portal_template.split('id="step-service-menu"', 1)[1].split(
+            'id="step-attendance-actions"', 1
+        )[0]
+        self.assertNotIn("<span>", service_menu)
+        for service_id in (
+            "service-attendance-btn",
+            "service-profile-btn",
+            "service-leave-btn",
+            "service-document-request-btn",
+            "service-helpdesk-btn",
+            "service-faq-btn",
+        ):
+            self.assertIn(f'id="{service_id}"', service_menu)
+
     def test_face_detection_gate_requires_runtime_and_visible_face(self):
         self.assertIn("face_detection_required", self.portal_template)
         self.assertIn("window.HRISFaceDetection.detect(video)", self.portal_template)
@@ -2082,7 +2099,9 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn("const FACE_DETECTION_CENTER_HEIGHT = 0.82;", self.portal_template)
         self.assertIn("function facePredictionIsCenteredAndVisible(prediction, video)", self.portal_template)
         self.assertIn("facePredictionIsCenteredAndVisible(visibleFaces[0], video)", self.portal_template)
-        self.assertIn("&& facePredictionIsCenteredAndVisible(visibleFaces[0], video);", self.portal_template)
+        self.assertIn("else if (!facePredictionIsCenteredAndVisible(visibleFaces[0], video))", self.portal_template)
+        self.assertIn("if (faceDetectionRequired && (!faceDetectionReady || !faceDetected))", self.portal_template)
+        self.assertNotIn("verifyFaceBeforeAction", self.portal_template)
 
     def test_face_detection_feedback_includes_larger_guide_and_success_pill(self):
         self.assertIn('id="face-status-pill"', self.portal_template)
@@ -2096,11 +2115,80 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn("aspect-ratio: 1 / 1;", self.portal_template)
         self.assertIn("border: 2px solid rgba(255, 255, 255, 0.42);", self.portal_template)
 
+    def test_mobile_face_guide_is_positioned_above_camera_info_overlay(self):
+        self.assertIn("#step-clock .clock-camera-panel .face-guide", self.portal_template)
+        self.assertIn("top: 43%;", self.portal_template)
+
+    def test_mobile_attendance_selection_is_compact_and_scrollable(self):
+        self.assertIn("#step-attendance-actions .selection-fullscreen", self.portal_template)
+        self.assertIn("align-items: center;", self.portal_template)
+        self.assertIn("justify-content: center;", self.portal_template)
+        self.assertIn("height: 100dvh;", self.portal_template)
+        self.assertIn("overflow-y: auto;", self.portal_template)
+        self.assertIn(
+            "padding: max(12px, env(safe-area-inset-top)) 10px max(28px, calc(env(safe-area-inset-bottom) + 28px));",
+            self.portal_template,
+        )
+        self.assertIn("#step-attendance-actions .selection-grid .selection-option", self.portal_template)
+        self.assertIn("min-height: 76px;", self.portal_template)
+        self.assertIn("flex-direction: row;", self.portal_template)
+        self.assertIn("font-size: 28px;", self.portal_template)
+        self.assertIn("#step-attendance-actions .selection-grid .selection-option > span", self.portal_template)
+        self.assertIn("display: none;", self.portal_template)
+        self.assertIn("@media (max-height: 720px)", self.portal_template)
+
+    def test_attendance_history_metrics_have_scoped_colors(self):
+        metric_classes = (
+            "attendance-history-metric--clock-in",
+            "attendance-history-metric--clock-out",
+            "attendance-history-metric--working-hours",
+            "attendance-history-metric--breaks",
+            "attendance-history-metric--lunch",
+        )
+        for metric_class in metric_classes:
+            self.assertIn(metric_class, self.portal_template)
+
+        self.assertIn(
+            ".attendance-history-row .attendance-history-metric--clock-in",
+            self.portal_template,
+        )
+        self.assertIn(
+            ".attendance-history-row .attendance-history-metric--clock-out",
+            self.portal_template,
+        )
+        self.assertIn(
+            ".attendance-history-row .attendance-history-metric--working-hours",
+            self.portal_template,
+        )
+        self.assertIn(
+            ".attendance-history-row .attendance-history-metric--breaks",
+            self.portal_template,
+        )
+        self.assertIn(
+            ".attendance-history-row .attendance-history-metric--lunch",
+            self.portal_template,
+        )
+        self.assertIn("background: #f0fdf4;", self.portal_template)
+        self.assertIn("background: #fef2f2;", self.portal_template)
+        self.assertIn("background: #eff6ff;", self.portal_template)
+        self.assertIn("background: #fffbeb;", self.portal_template)
+        self.assertIn("background: #faf5ff;", self.portal_template)
+
     def test_working_hours_status_displays_completed_attendance(self):
         self.assertIn("function attendanceWorkedStatusText(state)", self.portal_template)
         self.assertIn("const totalSeconds = workedTotalSecondsFromState(state);", self.portal_template)
         self.assertIn("return totalSeconds > 0 ? formatDurationHMS(totalSeconds) : '--:--';", self.portal_template)
         self.assertNotIn("if (!state.is_clocked_in) {\n                return '--:--';", self.portal_template)
+
+    def test_working_hours_status_is_clock_in_gated(self):
+        self.assertIn("const clockInMs = parsePortalDateMs(state.clock_in_datetime);", self.portal_template)
+        self.assertIn("if (clockInMs === null) {\n                return 0;", self.portal_template)
+        self.assertIn("if (parsePortalDateMs(state.clock_in_datetime) === null) {", self.portal_template)
+        self.assertIn("return Math.max(0, totalSeconds);", self.portal_template)
+        worked_duration_function = self.portal_template.split(
+            "function workedTotalSecondsFromState", 1
+        )[1].split("function attendanceWorkedStatusText", 1)[0]
+        self.assertNotIn("const elapsedSincePayload", worked_duration_function)
 
     def test_saved_map_fits_user_and_full_geofence_bounds(self):
         self.assertIn("L.latLng(pointLatitude, pointLongitude).toBounds(radius)", self.portal_template)
@@ -2129,67 +2217,52 @@ class PortalFaceDetectionEndpointTests(SimpleTestCase):
             employee_work_info=SimpleNamespace(company_id=company),
         )
 
-    def test_enabled_face_detection_rejects_missing_client_gate(self):
-        request = self.factory.post("/attendance/portal/clock-in/", {})
-        response = _portal_face_detection_error(request, self._employee(True))
-        payload = json.loads(response.content)
-
-        self.assertFalse(payload["success"])
-        self.assertTrue(payload["face_detection_required"])
-
-    def test_face_detection_is_required_without_company_setting(self):
-        request = self.factory.post("/attendance/portal/clock-in/", {})
-        response = _portal_face_detection_error(request, self._employee(False))
-        payload = json.loads(response.content)
-
-        self.assertFalse(payload["success"])
-        self.assertTrue(payload["face_detection_required"])
-
-    def test_enabled_face_detection_accepts_detected_face(self):
-        request = self.factory.post(
-            "/attendance/portal/clock-in/",
-            {"face_detected": "true"},
-        )
-        self.assertIsNone(_portal_face_detection_error(request, self._employee(True)))
+    def test_face_detection_remains_required_for_the_client_gate(self):
+        self.assertTrue(_portal_face_detection_required(self._employee(True)))
+        self.assertTrue(_portal_face_detection_required(self._employee(False)))
 
     @patch("attendance.views.portal._maybe_auto_checkout_employee")
     @patch("attendance.views.portal.Employee")
     @patch("attendance.views.portal._require_verified_pin", return_value=(True, ""))
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    def test_all_portal_attendance_endpoints_reject_missing_or_false_face(
+    def test_all_portal_attendance_endpoints_do_not_reject_missing_or_false_face(
         self,
         _ip_allowed_mock,
         _pin_mock,
         employee_model,
         _auto_checkout_mock,
     ):
-        employee_model.objects.get.return_value = MagicMock(
-            employee_work_info=MagicMock()
-        )
-        endpoint_cases = (
-            (public_clock_in, "/attendance/portal/clock-in/", {"employee_id": "1"}),
-            (public_clock_out, "/attendance/portal/clock-out/", {"employee_id": "1"}),
-            (
-                public_activity_transition,
-                "/attendance/portal/activity-transition/",
-                {
-                    "employee_id": "1",
-                    "activity_type": "break",
-                    "transition": "start",
-                },
-            ),
-        )
+        with patch("attendance.views.portal._geofence_check", return_value=None):
+            employee_model.objects.get.return_value = MagicMock(
+                employee_work_info=MagicMock()
+            )
+            endpoint_cases = (
+                (public_clock_in, "/attendance/portal/clock-in/", {"employee_id": "1"}),
+                (public_clock_out, "/attendance/portal/clock-out/", {"employee_id": "1"}),
+                (
+                    public_activity_transition,
+                    "/attendance/portal/activity-transition/",
+                    {
+                        "employee_id": "1",
+                        "activity_type": "break",
+                        "transition": "start",
+                    },
+                ),
+            )
 
-        for endpoint, path, data in endpoint_cases:
-            for face_value in (None, "false"):
-                request_data = dict(data)
-                if face_value is not None:
-                    request_data["face_detected"] = face_value
-                response = endpoint(self.factory.post(path, request_data))
-                payload = json.loads(response.content)
+            for endpoint, path, data in endpoint_cases:
+                for face_value in (None, "false"):
+                    request_data = dict(data)
+                    if face_value is not None:
+                        request_data["face_detected"] = face_value
+                    response = endpoint(self.factory.post(path, request_data))
+                    payload = json.loads(response.content)
 
-                self.assertFalse(payload["success"])
-                self.assertTrue(payload["face_detection_required"])
+                    self.assertNotEqual(
+                        payload.get("message"),
+                        "Show one face in the camera before continuing.",
+                    )
+                    self.assertFalse(payload.get("face_detection_required", False))
 
 
 class PortalAutoCheckoutTests(SimpleTestCase):

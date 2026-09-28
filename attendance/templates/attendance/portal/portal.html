@@ -782,6 +782,62 @@
             font-size: 8.5px;
         }
 
+        .attendance-history-row .attendance-history-metric {
+            border: 1px solid transparent;
+            border-radius: 8px;
+            padding: 5px 2px 6px;
+        }
+
+        .attendance-history-row .attendance-history-metric--clock-in {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+        }
+
+        .attendance-history-row .attendance-history-metric--clock-in .attendance-status-icon {
+            background: #dcfce7;
+            color: #15803d;
+        }
+
+        .attendance-history-row .attendance-history-metric--clock-out {
+            background: #fef2f2;
+            border-color: #fecaca;
+        }
+
+        .attendance-history-row .attendance-history-metric--clock-out .attendance-status-icon {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        .attendance-history-row .attendance-history-metric--working-hours {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+        }
+
+        .attendance-history-row .attendance-history-metric--working-hours .attendance-status-icon {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .attendance-history-row .attendance-history-metric--breaks {
+            background: #fffbeb;
+            border-color: #fde68a;
+        }
+
+        .attendance-history-row .attendance-history-metric--breaks .attendance-status-icon {
+            background: #fef3c7;
+            color: #b45309;
+        }
+
+        .attendance-history-row .attendance-history-metric--lunch {
+            background: #faf5ff;
+            border-color: #e9d5ff;
+        }
+
+        .attendance-history-row .attendance-history-metric--lunch .attendance-status-icon {
+            background: #f3e8ff;
+            color: #7e22ce;
+        }
+
         .attendance-history-note {
             margin: 8px 0 0;
             color: #6b7280;
@@ -1473,6 +1529,20 @@
             margin-top: 4px;
         }
 
+        #step-service-menu .selection-option {
+            align-items: center;
+            gap: 10px;
+            text-align: center;
+        }
+
+        #step-service-menu .selection-option ion-icon {
+            font-size: 34px;
+        }
+
+        #step-service-menu .selection-option strong {
+            font-size: 15px;
+        }
+
         .clock-fullscreen {
             position: fixed;
             top: 0;
@@ -2081,6 +2151,139 @@
 
         /* Phone */
         @media (max-width: 600px) {
+            #step-clock .clock-camera-panel .face-guide {
+                top: 43%;
+            }
+
+            /* Keep the attendance action picker compact and scrollable on phones. */
+            #step-attendance-actions .selection-fullscreen {
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                height: 100dvh;
+                min-height: 100vh;
+                min-height: 100dvh;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                overscroll-behavior: contain;
+                padding: max(12px, env(safe-area-inset-top)) 10px max(28px, calc(env(safe-area-inset-bottom) + 28px));
+                box-sizing: border-box;
+            }
+
+            #step-attendance-actions .selection-card {
+                padding: 14px;
+                margin: 0 auto;
+            }
+
+            #step-attendance-actions .selection-title {
+                margin-bottom: 10px;
+                font-size: 17px;
+            }
+
+            #step-attendance-actions .selection-employee-summary {
+                gap: 10px;
+                margin-bottom: 10px;
+                padding-bottom: 9px;
+            }
+
+            #step-attendance-actions .selection-employee-summary img {
+                width: 48px;
+                height: 48px;
+            }
+
+            #step-attendance-actions .selection-employee-summary h4 {
+                font-size: 15px;
+            }
+
+            #step-attendance-actions .selection-employee-summary p {
+                font-size: 11px;
+            }
+
+            #step-attendance-actions .attendance-status-strip {
+                gap: 4px;
+                margin-bottom: 9px;
+                padding-bottom: 6px;
+            }
+
+            #step-attendance-actions .attendance-status-icon {
+                width: 26px;
+                height: 26px;
+            }
+
+            #step-attendance-actions .attendance-status-icon ion-icon {
+                font-size: 20px;
+            }
+
+            #step-attendance-actions .attendance-status-value {
+                font-size: 11px;
+            }
+
+            #step-attendance-actions .attendance-status-label {
+                font-size: 9px;
+            }
+
+            #step-attendance-actions .attendance-shift-card {
+                gap: 8px;
+                margin-bottom: 10px;
+                padding: 10px 11px;
+            }
+
+            #step-attendance-actions .attendance-shift-card ion-icon {
+                font-size: 22px;
+            }
+
+            #step-attendance-actions .attendance-shift-card-value {
+                font-size: 15px;
+            }
+
+            #step-attendance-actions .attendance-shift-card-note {
+                font-size: 10px;
+            }
+
+            #step-attendance-actions .selection-grid {
+                gap: 8px;
+                margin-bottom: 10px;
+            }
+
+            #step-attendance-actions .selection-grid .selection-option {
+                min-height: 76px;
+                padding: 12px;
+                flex-direction: row;
+                align-items: center;
+                justify-content: flex-start;
+                gap: 10px;
+            }
+
+            #step-attendance-actions .selection-grid .selection-option ion-icon {
+                flex: 0 0 auto;
+                font-size: 28px;
+            }
+
+            #step-attendance-actions .selection-grid .selection-option strong {
+                font-size: 15px;
+                line-height: 1.15;
+            }
+
+            #step-attendance-actions .selection-grid .selection-option > span {
+                display: none;
+            }
+
+            @media (max-height: 720px) {
+                #step-attendance-actions .selection-fullscreen {
+                    align-items: flex-start;
+                }
+            }
+
+            #step-attendance-actions .btn-attendance-request,
+            #step-attendance-actions .attendance-history-btn,
+            #step-attendance-actions .selection-back-btn {
+                min-height: 40px;
+                margin-bottom: 6px;
+                padding: 8px 10px !important;
+                font-size: 14px !important;
+                gap: 6px;
+            }
+
             .portal-auth-card {
                 width: calc(100% - 20px);
                 padding: 16px 14px;
@@ -2764,32 +2967,26 @@
                                 <button type="button" class="selection-option" id="service-attendance-btn">
                                     <ion-icon name="time-outline"></ion-icon>
                                     <strong>{% trans "Attendance" %}</strong>
-                                    <span>{% trans "Clock in, breaks, lunch, or clock out." %}</span>
                                 </button>
                                 <button type="button" class="selection-option" id="service-profile-btn">
                                     <ion-icon name="person-circle-outline"></ion-icon>
                                     <strong>{% trans "Profile" %}</strong>
-                                    <span>{% trans "Personal, work, bank, and insurance info." %}</span>
                                 </button>
                                 <button type="button" class="selection-option" id="service-leave-btn">
                                     <ion-icon name="calendar-outline"></ion-icon>
                                     <strong>{% trans "Leave" %}</strong>
-                                    <span>{% trans "Request leave or view balances." %}</span>
                                 </button>
                                 <button type="button" class="selection-option" id="service-document-request-btn">
                                     <ion-icon name="document-text-outline"></ion-icon>
                                     <strong>{% trans "Document Request" %}</strong>
-                                    <span>{% trans "Request certificates, records, or HR documents." %}</span>
                                 </button>
                                 <button type="button" class="selection-option" id="service-helpdesk-btn">
                                     <ion-icon name="help-circle-outline"></ion-icon>
                                     <strong>{% trans "Helpdesk" %}</strong>
-                                    <span>{% trans "Create or view support tickets." %}</span>
                                 </button>
                                 <button type="button" class="selection-option" id="service-faq-btn">
                                     <ion-icon name="information-circle-outline"></ion-icon>
                                     <strong>{% trans "FAQ" %}</strong>
-                                    <span>{% trans "Browse helpdesk questions and answers." %}</span>
                                 </button>
                             </div>
 
@@ -3331,6 +3528,10 @@
             const totalSeconds = Number(state.worked_total_seconds || 0);
             const nowMs = Date.now() + serverTimeOffset;
             const clockInMs = parsePortalDateMs(state.clock_in_datetime);
+            if (clockInMs === null) {
+                return 0;
+            }
+
             if (state.is_clocked_in && clockInMs !== null) {
                 const grossSeconds = Math.floor(Math.max(0, nowMs - clockInMs) / 1000);
                 return Math.max(totalSeconds, grossSeconds);
@@ -3342,22 +3543,16 @@
                 return Math.max(totalSeconds, grossSeconds);
             }
 
-            const updatedAtMs = Number(state.activity_totals_updated_at_ms || nowMs);
-            const startedAtMs = parsePortalDateMs(state.active_activity_started_at);
-            if (startedAtMs !== null) {
-                const elapsedAtPayload = Math.floor(Math.max(0, updatedAtMs - startedAtMs) / 1000);
-                const elapsedNow = Math.floor(Math.max(0, nowMs - startedAtMs) / 1000);
-                const closedTotalSeconds = Math.max(0, totalSeconds - elapsedAtPayload);
-                return closedTotalSeconds + elapsedNow;
-            }
-
-            const elapsedSincePayload = Math.floor(Math.max(0, nowMs - updatedAtMs) / 1000);
-            return totalSeconds + elapsedSincePayload;
+            return Math.max(0, totalSeconds);
         }
 
 
         function attendanceWorkedStatusText(state) {
             if (!state) {
+                return '--:--';
+            }
+
+            if (parsePortalDateMs(state.clock_in_datetime) === null) {
                 return '--:--';
             }
 
@@ -4406,35 +4601,35 @@
                 <div class="attendance-history-row">
                     <p class="attendance-history-date">${attendanceHistoryValue(row.attendance_date, '')}</p>
                     <div class="attendance-status-strip">
-                        <div class="attendance-status-item">
+                        <div class="attendance-status-item attendance-history-metric attendance-history-metric--clock-in">
                             <span class="attendance-status-icon">
                                 <ion-icon name="time-outline"></ion-icon>
                             </span>
                             <strong class="attendance-status-value">${attendanceHistoryValue(row.clock_in_time, '--:--')}</strong>
                             <span class="attendance-status-label">{% trans "Clock In" %}</span>
                         </div>
-                        <div class="attendance-status-item">
+                        <div class="attendance-status-item attendance-history-metric attendance-history-metric--clock-out">
                             <span class="attendance-status-icon">
                                 <ion-icon name="log-out-outline"></ion-icon>
                             </span>
                             <strong class="attendance-status-value">${attendanceHistoryValue(row.clock_out_time, '--:--')}</strong>
                             <span class="attendance-status-label">{% trans "Clock Out" %}</span>
                         </div>
-                        <div class="attendance-status-item">
+                        <div class="attendance-status-item attendance-history-metric attendance-history-metric--working-hours">
                             <span class="attendance-status-icon">
                                 <ion-icon name="checkmark-circle-outline"></ion-icon>
                             </span>
                             <strong class="attendance-status-value">${attendanceHistoryValue(row.worked_hours, '--:--')}</strong>
                             <span class="attendance-status-label">{% trans "Working Hrs" %}</span>
                         </div>
-                        <div class="attendance-status-item">
+                        <div class="attendance-status-item attendance-history-metric attendance-history-metric--breaks">
                             <span class="attendance-status-icon">
                                 <ion-icon name="pause-circle-outline"></ion-icon>
                             </span>
                             <strong class="attendance-status-value">${attendanceHistoryDurationValue(row.break_time)}</strong>
                             <span class="attendance-status-label">{% trans "Breaks" %}</span>
                         </div>
-                        <div class="attendance-status-item">
+                        <div class="attendance-status-item attendance-history-metric attendance-history-metric--lunch">
                             <span class="attendance-status-icon">
                                 <ion-icon name="restaurant-outline"></ion-icon>
                             </span>
@@ -7413,54 +7608,6 @@
             $('#location-overlay-text').html(locationText);
         }
 
-        async function verifyFaceBeforeAction() {
-            if (!faceDetectionRequired) {
-                return true;
-            }
-            if (!faceDetectionReady || !window.HRISFaceDetection) {
-                faceDetected = false;
-                setFaceDetectionStatus('{% trans "Face detection is still loading." %}', 'warning');
-                updateFaceGatedButtons();
-                return false;
-            }
-
-            const video = document.getElementById('video-preview');
-            if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
-                faceDetected = false;
-                setFaceDetectionStatus('{% trans "Show your face in the camera." %}', 'warning');
-                updateFaceGatedButtons();
-                return false;
-            }
-
-            try {
-                const predictions = await window.HRISFaceDetection.detect(video);
-                const visibleFaces = Array.isArray(predictions)
-                    ? predictions.filter(function (prediction) {
-                        return facePredictionScore(prediction) >= FACE_DETECTION_SCORE_THRESHOLD;
-                    })
-                    : [];
-                const validFace = visibleFaces.length === 1
-                    && facePredictionIsCenteredAndVisible(visibleFaces[0], video);
-                faceDetected = validFace;
-                faceDetectionPositiveStreak = validFace ? 2 : 0;
-                if (visibleFaces.length > 1) {
-                    setFaceDetectionStatus('{% trans "Show only one face in the camera." %}', 'warning');
-                } else if (!validFace) {
-                    setFaceDetectionStatus('{% trans "Show your face in the camera." %}', 'warning');
-                } else {
-                    setFaceDetectionStatus('{% trans "Face detected." %}', 'success');
-                }
-                updateFaceGatedButtons();
-                return validFace;
-            } catch (error) {
-                console.error('Face verification error:', error);
-                faceDetected = false;
-                setFaceDetectionStatus('{% trans "Face detection is unavailable. Please reload and try again." %}', 'error');
-                updateFaceGatedButtons();
-                return false;
-            }
-        }
-
         // Clock in (selfie is captured automatically on click)
         async function clockInEmployee() {
             if (!selectedEmployee) {
@@ -7470,10 +7617,6 @@
             if (!ensureLocationReadyForClockAction()) {
                 return;
             }
-            if (!await verifyFaceBeforeAction()) {
-                return;
-            }
-
             const btn = $('#clock-in-btn');
             const originalText = btn.html();
             btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
@@ -7525,10 +7668,6 @@
             if (!ensureLocationReadyForClockAction()) {
                 return;
             }
-            if (!await verifyFaceBeforeAction()) {
-                return;
-            }
-
             const btn = $('#clock-out-btn');
             const originalText = btn.html();
             btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);
@@ -7586,10 +7725,6 @@
             if (!ensureLocationReadyForClockAction()) {
                 return;
             }
-            if (!await verifyFaceBeforeAction()) {
-                return;
-            }
-
             const btn = $('#activity-transition-btn');
             const originalText = btn.html();
             btn.html('<span class="loading"></span> {% trans "Processing..." %}').prop('disabled', true);

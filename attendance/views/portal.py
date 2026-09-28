@@ -548,20 +548,6 @@ def _portal_face_detection_required(employee):
     return True
 
 
-def _portal_face_detection_error(request, employee):
-    """Reject portal attendance requests that bypass the face-presence gate."""
-    if _portal_face_detection_required(employee) and request.POST.get("face_detected") != "true":
-        return JsonResponse(
-            {
-                "success": False,
-                "face_detection_required": True,
-                "message": _("Show one face in the camera before continuing."),
-            },
-            status=200,
-        )
-    return None
-
-
 def _employee_is_excluded_from_geofence(employee, geofence):
     excluded_employees = getattr(geofence, "excluded_employees", None)
     if excluded_employees is None:
@@ -3922,10 +3908,6 @@ def public_clock_in(request):
                 status=200,
             )
 
-        face_error = _portal_face_detection_error(request, employee)
-        if face_error:
-            return face_error
-
         # Geofence check
         geo_error = _geofence_check(employee, work_info, latitude, longitude)
         if geo_error:
@@ -4132,10 +4114,6 @@ def public_activity_transition(request):
             return JsonResponse(
                 {"success": False, "message": "Employee not found"}, status=200
             )
-
-        face_error = _portal_face_detection_error(request, employee)
-        if face_error:
-            return face_error
 
         _maybe_auto_checkout_employee(employee)
 
@@ -4397,10 +4375,6 @@ def public_clock_out(request):
             return JsonResponse(
                 {"success": False, "message": "Employee not found"}, status=200
             )
-
-        face_error = _portal_face_detection_error(request, employee)
-        if face_error:
-            return face_error
 
         _maybe_auto_checkout_employee(employee)
 
