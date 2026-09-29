@@ -310,7 +310,9 @@ def filter_own_attendance(request):
             if param != "attendance_date__gte" and param != "attendance_date__lte"
         ]
 
-    attendances = Attendance.objects.filter(employee_id=request.user.employee_get)
+    attendances = Attendance.objects.filter(
+        employee_id=request.user.employee_get
+    ).select_related("modified_by__employee_get")
     attendances = AttendanceFilters(request.GET, queryset=attendances).qs
     previous_data = request.GET.urlencode()
     data_dict = parse_qs(previous_data)
@@ -360,7 +362,9 @@ def own_attendance_sort(request):
     """
     This method is used to sort out attendances
     """
-    attendances = Attendance.objects.filter(employee_id=request.user.employee_get)
+    attendances = Attendance.objects.filter(
+        employee_id=request.user.employee_get
+    ).select_related("modified_by__employee_get")
     previous_data = request.GET.urlencode()
     attendances = sortby(request, attendances, "orderby")
     paginated_attendances = paginator_qry(attendances, request.GET.get("page"))

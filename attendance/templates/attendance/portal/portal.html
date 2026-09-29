@@ -2270,7 +2270,7 @@
 
             @media (max-height: 720px) {
                 #step-attendance-actions .selection-fullscreen {
-                    align-items: flex-start;
+                    align-items: center;
                 }
             }
 
@@ -3414,6 +3414,7 @@
         const FACE_DETECTION_CENTER_WIDTH = 0.76;
         const FACE_DETECTION_CENTER_HEIGHT = 0.82;
         const FACE_DETECTION_REQUIRED_LANDMARKS = 6;
+        const PORTAL_SHIFT_REQUEST_TIMEOUT_MS = 8000;
 
         function addPortalMapTiles(map) {
             return L.tileLayer(PORTAL_MAP_TILE_TEMPLATE, {
@@ -4298,18 +4299,29 @@
                 .toggleClass('is-disabled', disabled);
         }
 
+        function hasUsableTodayShift(shift) {
+            return !!(
+                shift &&
+                shift.configured &&
+                shift.start_time &&
+                shift.end_time &&
+                shift.start_display &&
+                shift.end_display
+            );
+        }
+
         function updateTodayShiftCard() {
             const shift = selectedEmployee && selectedEmployee.today_shift;
             const $card = $('#attendance-shift-card');
             const hasEmployee = !!selectedEmployee;
-            if (!shift || !shift.configured) {
+            if (!hasUsableTodayShift(shift)) {
                 $card
-                    .prop('disabled', !hasEmployee)
-                    .attr('aria-disabled', hasEmployee ? 'false' : 'true');
+                    .prop('disabled', true)
+                    .attr('aria-disabled', 'true');
                 $('#attendance-shift-value').text('--');
                 $('#attendance-shift-note').text(
-                    hasEmployee
-                        ? "{% trans "Loading today's shift..." %}"
+                    hasEmployee && selectedEmployee.today_shift_loading
+                        ? '{% trans "Shift schedule unavailable" %}'
                         : (shift && shift.message) || '{% trans "Shift schedule unavailable" %}'
                 );
                 return;
@@ -4329,15 +4341,11 @@
                 return;
             }
 
-            if (!selectedEmployee.today_shift || !selectedEmployee.today_shift.configured) {
+            if (!hasUsableTodayShift(selectedEmployee.today_shift)) {
                 await refreshTodayShift();
             }
             const shift = selectedEmployee.today_shift;
-            if (!shift || !shift.configured) {
-                Toast.fire({
-                    icon: 'error',
-                    title: (shift && shift.message) || '{% trans "Shift schedule unavailable" %}'
-                });
+            if (!hasUsableTodayShift(shift)) {
                 return;
             }
             const result = await Swal.fire({
@@ -4408,20 +4416,48 @@
                 return;
             }
 
+            const employeeId = String(selectedEmployee.id);
+            const fallbackShift = hasUsableTodayShift(selectedEmployee.today_shift)
+                ? selectedEmployee.today_shift
+                : selectedEmployee.default_today_shift;
+            if (hasUsableTodayShift(fallbackShift)) {
+                selectedEmployee.today_shift = fallbackShift;
+            }
+            selectedEmployee.today_shift_loading = true;
+            updateTodayShiftCard();
+
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(
+                function () { controller.abort(); },
+                PORTAL_SHIFT_REQUEST_TIMEOUT_MS
+            );
+
             try {
-                const query = new URLSearchParams({ employee_id: String(selectedEmployee.id) });
+                const query = new URLSearchParams({ employee_id: employeeId });
                 const response = await fetch(`{% url "portal-shift-schedule" %}?${query.toString()}`, {
                     method: 'GET',
-                    headers: { 'Accept': 'application/json' }
+                    headers: { 'Accept': 'application/json' },
+                    signal: controller.signal
                 });
-                const data = await response.json();
-                if (!data.success) {
-                    throw new Error(data.message || "{% trans "Unable to load today's shift." %}");
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                selectedEmployee.today_shift = data.today_shift || null;
+                const data = await response.json();
+                if (!selectedEmployee || String(selectedEmployee.id) !== employeeId) {
+                    return;
+                }
+                if (data.success && hasUsableTodayShift(data.today_shift)) {
+                    selectedEmployee.today_shift = data.today_shift;
+                } else if (!hasUsableTodayShift(selectedEmployee.today_shift) && hasUsableTodayShift(fallbackShift)) {
+                    selectedEmployee.today_shift = fallbackShift;
+                }
             } catch (error) {
                 console.error('Portal shift load error:', error);
             } finally {
+                window.clearTimeout(timeoutId);
+                if (selectedEmployee && String(selectedEmployee.id) === employeeId) {
+                    selectedEmployee.today_shift_loading = false;
+                }
                 updateTodayShiftCard();
             }
         }
@@ -6580,7 +6616,9 @@
                 multi_punch_can_afternoon_in: !!cached.multi_punch_can_afternoon_in,
                 multi_punch_can_afternoon_out: !!cached.multi_punch_can_afternoon_out,
                 multi_punch_work_segments: Number(cached.multi_punch_work_segments || 0),
+                default_today_shift: cached.today_shift || null,
                 today_shift: cached.today_shift || null,
+                today_shift_loading: false,
             };
 
             clearInterval(searchLiveHoursInterval);

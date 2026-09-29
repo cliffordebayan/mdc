@@ -41,10 +41,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from attendance.methods.utils import (
+    WEEKDAY_SHIFT_FALLBACK_DAYS,
     calculate_worked_hours,
     format_time,
     shift_schedule_today,
-    shift_schedule_with_weekday_fallback,
     strtime_seconds,
 )
 from attendance.models import (
@@ -942,6 +942,37 @@ def _portal_override_map(employee):
     }
 
 
+def _portal_assigned_shift_schedule(base_shift, day):
+    """Return a usable schedule from the employee's assigned shift.
+
+    The public portal does not have the company context used by the regular
+    ``objects`` manager.  Resolve through its unfiltered ``entire()`` queryset
+    so an employee's assigned shift remains available even when the
+    company-filtered manager returns no rows. Exact-day and weekday fallback
+    schedules retain their existing precedence; the first configured working
+    schedule is the final default.
+    """
+    if not isinstance(getattr(base_shift, "pk", None), int):
+        return None
+
+    schedule_qs = EmployeeShiftSchedule.objects.entire().filter(
+        shift_id=base_shift,
+        is_rest_day=False,
+        start_time__isnull=False,
+        end_time__isnull=False,
+    ).order_by("id")
+
+    if isinstance(getattr(day, "pk", None), int):
+        schedule = schedule_qs.filter(day=day).first()
+        if schedule:
+            return schedule
+
+    schedule = schedule_qs.filter(
+        day__day__in=WEEKDAY_SHIFT_FALLBACK_DAYS,
+    ).first()
+    return schedule or schedule_qs.first()
+
+
 def _portal_base_schedule(employee, schedule_date):
     work_info = getattr(employee, "employee_work_info", None)
     base_shift = getattr(work_info, "shift_id", None) if work_info else None
@@ -952,12 +983,20 @@ def _portal_base_schedule(employee, schedule_date):
     if not day:
         return base_shift, day, None
 
-    minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
-        day=day,
-        shift=base_shift,
-    )
-    if start_time_sec == 0 and end_time_sec == 0:
-        return base_shift, day, None
+    source_schedule = _portal_assigned_shift_schedule(base_shift, day)
+    if source_schedule:
+        minimum_hour = source_schedule.minimum_working_hour
+        start_time_sec = strtime_seconds(source_schedule.start_time.strftime("%H:%M"))
+        end_time_sec = strtime_seconds(source_schedule.end_time.strftime("%H:%M"))
+    else:
+        # Keep lightweight mocked/simple shift objects usable in callers and
+        # tests that patch the existing shift helper.
+        minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
+            day=day,
+            shift=base_shift,
+        )
+        if start_time_sec == 0 and end_time_sec == 0:
+            return base_shift, day, None
 
     def seconds_to_time(value):
         value = value % (24 * 60 * 60)
@@ -965,14 +1004,6 @@ def _portal_base_schedule(employee, schedule_date):
 
     start_time = seconds_to_time(start_time_sec)
     end_time = seconds_to_time(end_time_sec)
-    source_schedule = None
-    if isinstance(getattr(base_shift, "pk", None), int) and isinstance(
-        getattr(day, "pk", None), int
-    ):
-        source_schedule = shift_schedule_with_weekday_fallback(
-            day=day,
-            shift=base_shift,
-        )
     return (
         base_shift,
         day,

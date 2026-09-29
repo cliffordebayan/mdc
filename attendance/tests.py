@@ -24,7 +24,11 @@ from openpyxl import load_workbook
 import pandas as pd
 
 from attendance.filters import AttendanceActivityFilter
-from attendance.forms import AttendanceActivityExportForm, AttendanceExportForm
+from attendance.forms import (
+    AttendanceActivityExportForm,
+    AttendanceActivityUpdateForm,
+    AttendanceExportForm,
+)
 from attendance.export_jobs import create_export_job, file_path, update_job
 from attendance.methods import utils as attendance_utils
 from attendance.scheduler import auto_checkout_attendance
@@ -35,6 +39,7 @@ from attendance.models import (
     AttendanceOverTime,
     AttendancePortalShiftContext,
     AttendancePortalShiftOverride,
+    AttendanceScheduleOverride,
 )
 from attendance.views import clock_in_out as clock_in_out_views
 from attendance.views.clock_in_out import clock_out_attendance_and_activity
@@ -50,6 +55,7 @@ from attendance.views.portal import (
     _portal_multi_punch_action_error,
     _portal_multi_punch_state_from_activities,
     _portal_effective_schedule,
+    _portal_shift_payload,
     _portal_schedule_context,
     _portal_worked_duration_metadata,
     _send_portal_pin_reset_email,
@@ -2066,6 +2072,28 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn('portal-shift-swal', self.portal_template)
         self.assertIn('{% url "portal-shift-schedule" %}', self.portal_template)
 
+    def test_today_shift_refresh_has_a_default_fallback_and_timeout(self):
+        self.assertIn("default_today_shift", self.portal_template)
+        self.assertIn("hasUsableTodayShift", self.portal_template)
+        self.assertIn("AbortController", self.portal_template)
+        self.assertIn("PORTAL_SHIFT_REQUEST_TIMEOUT_MS", self.portal_template)
+        self.assertNotIn("Loading today's shift...", self.portal_template)
+
+    def test_attendance_action_card_stays_vertically_centered_on_short_viewports(self):
+        self.assertIn(
+            "@media (max-height: 720px) {\n"
+            "                #step-attendance-actions .selection-fullscreen {\n"
+            "                    align-items: center;\n"
+            "                }",
+            self.portal_template,
+        )
+        self.assertNotIn(
+            "@media (max-height: 720px) {\n"
+            "                #step-attendance-actions .selection-fullscreen {\n"
+            "                    align-items: flex-start;",
+            self.portal_template,
+        )
+
     def test_service_selection_uses_only_large_icons_and_labels(self):
         self.assertIn("#step-service-menu .selection-option ion-icon", self.portal_template)
         self.assertIn("font-size: 34px;", self.portal_template)
@@ -2847,6 +2875,7 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         self.wednesday = EmployeeShiftDay.objects.get_or_create(day="wednesday")[0]
         self.thursday = EmployeeShiftDay.objects.get_or_create(day="thursday")[0]
         self.friday = EmployeeShiftDay.objects.get_or_create(day="friday")[0]
+        self.sunday = EmployeeShiftDay.objects.get_or_create(day="sunday")[0]
         EmployeeShiftSchedule.objects.create(
             shift_id=self.base_shift,
             day=self.monday,
@@ -2891,6 +2920,23 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         )
         self.assertEqual(wednesday_context[2]["start_time"], time(10, 0))
         self.assertEqual(wednesday_context[2]["end_time"], time(19, 0))
+
+    def test_portal_shift_payload_uses_assigned_shift_default_when_weekday_is_missing(self):
+        EmployeeShiftSchedule._base_manager.filter(shift_id=self.base_shift).delete()
+        saturday = EmployeeShiftDay.objects.get_or_create(day="saturday")[0]
+        EmployeeShiftSchedule._base_manager.create(
+            shift_id=self.base_shift,
+            day=saturday,
+            minimum_working_hour="08:00",
+            start_time=time(10, 0),
+            end_time=time(19, 0),
+        )
+
+        payload = _portal_shift_payload(self.employee, date(2026, 10, 4))
+
+        self.assertTrue(payload["configured"])
+        self.assertEqual(payload["start_time"], "10:00")
+        self.assertEqual(payload["end_time"], "19:00")
 
     def test_portal_context_creates_employee_owned_shift_schedule(self):
         context = _portal_schedule_context(
@@ -5296,6 +5342,93 @@ class AttendanceActivityUpdateViewTests(TestCase):
         self.assertEqual(self.break_activity.activity_type, "break")
         recalculate_mock.assert_called_once_with(self.shift)
 
+    @patch("attendance.views.views.recalculate_attendance_for_shift")
+    def test_post_saves_daily_notes_and_editor(self, recalculate_mock):
+        self.client.force_login(self.user)
+        data = self._post_data()
+        data["notes"] = "Adjusted after manager confirmation"
+
+        response = self.client.post(
+            self.url,
+            data=data,
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.attendance.refresh_from_db()
+        self.assertEqual(self.attendance.notes, "Adjusted after manager confirmation")
+        self.assertEqual(self.attendance.modified_by_id, self.user.id)
+
+        activity_row = build_daily_activity_rows(
+            AttendanceActivity.objects.filter(
+                employee_id=self.employee,
+                attendance_date=self.attendance_date,
+            )
+        )[0]
+        request = RequestFactory().get("/")
+        request.user = self.user
+        activity_html = render_to_string(
+            "attendance/attendance_activity/daily_activity_row.html",
+            {"row": activity_row, "pd": "", "request": request},
+        )
+        attendance_html = render_to_string(
+            "attendance/attendance/daily_attendance_row.html",
+            {
+                "row": activity_row,
+                "pd": "",
+                "request": request,
+                "detail_query": "",
+                "instances_ids": "",
+                "show_checkbox": False,
+                "show_status": False,
+                "show_actions": False,
+                "show_confirmation": False,
+            },
+        )
+        self.assertIn("Activity Editor", activity_html)
+        self.assertIn("Activity Editor", attendance_html)
+        self.assertNotIn(self.user.username, activity_html)
+        self.assertNotIn(self.user.username, attendance_html)
+        recalculate_mock.assert_called_once_with(self.shift)
+
+    def test_edited_by_falls_back_when_user_has_no_employee(self):
+        self.attendance.modified_by = self.user
+        self.attendance.save(update_fields=["modified_by"])
+        Employee.objects.filter(pk=self.employee.pk).update(employee_user_id=None)
+
+        activity_row = build_daily_activity_rows(
+            AttendanceActivity.objects.filter(
+                employee_id=self.employee,
+                attendance_date=self.attendance_date,
+            )
+        )[0]
+        request = RequestFactory().get("/")
+        request.user = self.user
+        html = render_to_string(
+            "attendance/attendance_activity/daily_activity_row.html",
+            {"row": activity_row, "pd": "", "request": request},
+        )
+
+        self.assertNotIn(self.user.username, html)
+        self.assertIn("&mdash;", html)
+
+    def test_post_saves_a_schedule_override_for_the_selected_date(self):
+        self.client.force_login(self.user)
+        data = self._post_data()
+        data.update({"daily_shift_start": "09:00", "daily_shift_end": "18:00"})
+
+        response = self.client.post(self.url, data=data, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        override = AttendanceScheduleOverride.objects.get(attendance_id=self.attendance)
+        self.assertEqual(override.start_time, time(9, 0))
+        self.assertEqual(override.end_time, time(18, 0))
+        self.assertEqual(override.minimum_working_hour, "09:00")
+        self.assertFalse(override.is_night_shift)
+        recurring_schedule = EmployeeShiftSchedule.objects.get(shift_id=self.shift)
+        self.assertEqual(recurring_schedule.start_time, time(8, 0))
+        self.assertEqual(recurring_schedule.end_time, time(17, 0))
+
     def test_repeated_post_recalculates_late_and_early_records_without_duplicates(self):
         self.client.force_login(self.user)
 
@@ -5433,6 +5566,156 @@ class AttendanceActivityUpdateViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "attendanceActivityUpdateForm")
+
+
+class AttendanceScheduleOverrideTests(TestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        unique_id = uuid.uuid4().hex[:8]
+        self.attendance_date = date(2026, 6, 1)
+        self.shift_day, _created = EmployeeShiftDay.objects.get_or_create(day="monday")
+        self.shift = EmployeeShift.objects.create(
+            employee_shift=f"Daily Override Shift {unique_id}",
+            weekly_full_time="40:00",
+            full_time="200:00",
+        )
+        self.schedule = EmployeeShiftSchedule.objects.create(
+            day=self.shift_day,
+            shift_id=self.shift,
+            minimum_working_hour="09:00",
+            start_time=time(8, 0),
+            end_time=time(17, 0),
+        )
+        self.employee = Employee.objects.create(
+            employee_first_name="Daily",
+            employee_last_name="Override",
+            email=f"daily-override-{unique_id}@example.com",
+            phone=f"0920{unique_id[:7]}",
+            gender="male",
+            is_active=True,
+        )
+        self.attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.attendance_date,
+            shift_id=self.shift,
+            attendance_day=self.shift_day,
+            attendance_clock_in_date=self.attendance_date,
+            attendance_clock_in=time(8, 0),
+            attendance_worked_hour="09:00",
+            minimum_hour="09:00",
+        )
+
+    def _form_data(self, **daily_times):
+        data = {
+            "employee_id": str(self.employee.id),
+            "attendance_date": self.attendance_date.isoformat(),
+            "shift_id": str(self.shift.id),
+            "attendance_clock_in_date": self.attendance_date.isoformat(),
+            "attendance_clock_in": "08:00",
+            "attendance_worked_hour": "09:00",
+            "minimum_hour": "09:00",
+        }
+        data.update(daily_times)
+        return data
+
+    def test_daily_fields_load_from_recurring_schedule(self):
+        form = AttendanceActivityUpdateForm(instance=self.attendance)
+
+        self.assertEqual(form.initial["daily_shift_start"], "08:00")
+        self.assertEqual(form.initial["daily_shift_end"], "17:00")
+
+    def test_existing_override_loads_and_night_duration_is_derived(self):
+        AttendanceScheduleOverride.objects.create(
+            attendance_id=self.attendance,
+            start_time=time(22, 0),
+            end_time=time(2, 0),
+            minimum_working_hour="04:00",
+        )
+        attendance = Attendance.objects.select_related(
+            "daily_schedule_override"
+        ).get(pk=self.attendance.pk)
+        form = AttendanceActivityUpdateForm(instance=attendance)
+
+        self.assertEqual(form.initial["daily_shift_start"], "22:00")
+        self.assertEqual(form.initial["daily_shift_end"], "02:00")
+        self.assertTrue(attendance.is_night_shift())
+
+    def test_daily_schedule_validation_rejects_missing_and_identical_times(self):
+        missing = AttendanceActivityUpdateForm(
+            data=self._form_data(daily_shift_start="", daily_shift_end="17:00"),
+            instance=self.attendance,
+        )
+        identical = AttendanceActivityUpdateForm(
+            data=self._form_data(daily_shift_start="08:00", daily_shift_end="08:00"),
+            instance=self.attendance,
+        )
+
+        self.assertFalse(missing.is_valid())
+        self.assertIn("daily_shift_start", missing.errors)
+        self.assertFalse(identical.is_valid())
+        self.assertIn("daily_shift_end", identical.errors)
+
+    def test_effective_override_does_not_change_recurring_schedule(self):
+        AttendanceScheduleOverride.objects.create(
+            attendance_id=self.attendance,
+            start_time=time(22, 0),
+            end_time=time(2, 0),
+            minimum_working_hour="04:00",
+        )
+
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.start_time, time(8, 0))
+        self.assertEqual(self.schedule.end_time, time(17, 0))
+        self.assertEqual(
+            attendance_utils.get_effective_attendance_schedule(
+                self.attendance
+            ).start_time,
+            time(22, 0),
+        )
+
+    def test_activity_rows_display_the_daily_override(self):
+        AttendanceScheduleOverride.objects.create(
+            attendance_id=self.attendance,
+            start_time=time(10, 0),
+            end_time=time(14, 0),
+            minimum_working_hour="04:00",
+        )
+        AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.attendance_date,
+            shift_day=self.shift_day,
+            clock_in_date=self.attendance_date,
+            clock_in=time(10, 0),
+            clock_out_date=self.attendance_date,
+            clock_out=time(14, 0),
+            activity_type="work",
+        )
+
+        row = build_daily_activity_rows(
+            AttendanceActivity.objects.filter(
+                employee_id=self.employee,
+                attendance_date=self.attendance_date,
+            )
+        )[0]
+
+        self.assertEqual(row.schedule.start_time, time(10, 0))
+        self.assertEqual(row.schedule.end_time, time(14, 0))
+
+    def test_day_recalculation_does_not_update_another_attendance_date(self):
+        other_date = self.attendance_date + timedelta(days=1)
+        other_attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=other_date,
+            shift_id=self.shift,
+            attendance_day=self.shift_day,
+            attendance_worked_hour="01:00",
+            minimum_hour="06:00",
+        )
+
+        attendance_utils.recalculate_attendance_for_day(self.attendance)
+
+        other_attendance.refresh_from_db()
+        self.assertEqual(other_attendance.minimum_hour, "06:00")
 
 
 class AttendanceActivityMetaBuilderTests(SimpleTestCase):

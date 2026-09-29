@@ -103,6 +103,7 @@ from attendance.methods.utils import (
     attendance_day_checking,
     calculate_schedule_end_overtime,
     format_time,
+    get_effective_attendance_schedule,
     is_reportingmanger,
     monthly_leave_days,
     paginator_qry,
@@ -122,6 +123,7 @@ from attendance.models import (
     AttendanceOverTime,
     AttendanceRequestComment,
     AttendanceRequestFile,
+    AttendanceScheduleOverride,
     AttendanceValidationCondition,
     BatchAttendance,
     GraceTime,
@@ -607,6 +609,8 @@ ATTENDANCE_RELATED_FIELDS = (
     "shift_id",
     "work_type_id",
     "attendance_day",
+    "daily_schedule_override",
+    "modified_by__employee_get",
 )
 
 ATTENDANCE_ACTIVITY_RELATED_FIELDS = (
@@ -620,6 +624,21 @@ ATTENDANCE_ACTIVITY_RELATED_FIELDS = (
     "employee_id__employee_work_info__work_type_id",
     "shift_day",
 )
+
+
+def recalculate_attendance_for_day(attendance):
+    """Recalculate only the attendance date edited in the activity modal."""
+    shift = getattr(attendance, "shift_id", None) if attendance else None
+    if not shift:
+        return recalculate_attendance_for_shift(None, attendance=attendance)
+    setattr(shift, "_daily_attendance_scope", attendance)
+    try:
+        # Keep the existing function seam for callers/tests while the scoped
+        # marker makes this invocation date-specific inside the helper.
+        return recalculate_attendance_for_shift(shift)
+    finally:
+        with contextlib.suppress(AttributeError):
+            delattr(shift, "_daily_attendance_scope")
 
 
 def attendance_active_tab(tab):
@@ -1387,6 +1406,12 @@ def build_daily_activity_rows(
         fallback_schedule = schedule_by_key.get(
             (schedule_key[0], None, "__weekday_fallback__")
         )
+        daily_schedule_override = None
+        if attendance:
+            try:
+                daily_schedule_override = attendance.daily_schedule_override
+            except Exception:
+                daily_schedule_override = None
         schedule = (
             fallback_schedule
             if _schedule_is_blank_rest_day(exact_schedule) and fallback_schedule
@@ -1399,6 +1424,11 @@ def build_daily_activity_rows(
             or _schedule_is_blank_rest_day(exact_schedule)
             or _shift_day_is_rest_day(shift_schedule_days, schedule_key[2])
         )
+        if daily_schedule_override and getattr(
+            daily_schedule_override, "start_time", None
+        ) and getattr(daily_schedule_override, "end_time", None):
+            schedule = get_effective_attendance_schedule(attendance) or schedule
+            is_rest_day = False
         late_early_durations = {
             report_type: _activity_late_early_duration(
                 first_work_clock_in,
@@ -1441,7 +1471,7 @@ def build_daily_activity_rows(
                 shift=row_context["shift"],
                 shift_schedule=shift_schedule,
                 shift_schedule_days=shift_schedule_days,
-                has_shift_schedule=bool(exact_schedule),
+                has_shift_schedule=bool(schedule),
                 schedule=schedule,
                 work_type=hours.work_type,
                 min_hour=hours.min_hour,
@@ -4231,7 +4261,9 @@ def view_my_attendance(request):
     except:
         return redirect("/employee/employee-profile")
     employee = user.employee_get
-    employee_attendances = employee.employee_attendances.all()
+    employee_attendances = employee.employee_attendances.all().select_related(
+        "modified_by__employee_get"
+    )
     filter = AttendanceFilters()
     if employee_attendances.exists():
         template = "attendance/own_attendance/view_own_attendances.html"
@@ -4541,7 +4573,7 @@ def attendance_activity_update(request, employee_id, attendance_date):
             employee_id_id=employee_id,
             attendance_date=parsed_attendance_date,
         )
-        .select_related("shift_id", "work_type_id")
+        .select_related("shift_id", "work_type_id", "daily_schedule_override")
         .first()
     )
     work_activities = AttendanceActivity.objects.filter(
@@ -4661,8 +4693,25 @@ def attendance_activity_update(request, employee_id, attendance_date):
                 updated_attendance.attendance_clock_out = clock_out
                 updated_attendance.save()
 
-                if updated_attendance.shift_id:
-                    recalculate_attendance_for_shift(updated_attendance.shift_id)
+                daily_shift_start = form.cleaned_data.get("daily_shift_start")
+                daily_shift_end = form.cleaned_data.get("daily_shift_end")
+                if daily_shift_start and daily_shift_end:
+                    # The company-filtered manager adds nullable joins to the
+                    # update_or_create SELECT FOR UPDATE query on PostgreSQL.
+                    # Lock only the override row; the attendance has already
+                    # been scoped to this employee/date and permission check.
+                    AttendanceScheduleOverride._base_manager.update_or_create(
+                        attendance_id=updated_attendance,
+                        defaults={
+                            "start_time": daily_shift_start,
+                            "end_time": daily_shift_end,
+                            "minimum_working_hour": form.cleaned_data[
+                                "daily_shift_minimum_hour"
+                            ],
+                        },
+                    )
+
+                recalculate_attendance_for_day(updated_attendance)
             messages.success(request, _("Attendance activity updated."))
             saved = True
         elif form.is_valid():

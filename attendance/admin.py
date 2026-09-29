@@ -15,6 +15,7 @@ from .models import (
     AttendancePortalShiftContext,
     AttendancePortalShiftOverride,
     AttendanceRequestComment,
+    AttendanceScheduleOverride,
     AttendanceValidationCondition,
     GraceTime,
     WorkRecords,
@@ -28,6 +29,7 @@ admin.site.register(AttendanceLateComeEarlyOut)
 admin.site.register(AttendancePortalMultiPunchEmployee)
 admin.site.register(AttendancePortalShiftContext)
 admin.site.register(AttendancePortalShiftOverride)
+admin.site.register(AttendanceScheduleOverride)
 admin.site.register(AttendanceValidationCondition)
 admin.site.register(GraceTime)
 admin.site.register(AttendanceRequestComment)

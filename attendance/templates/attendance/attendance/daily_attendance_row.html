@@ -150,6 +150,12 @@
     <div data-cell-index="18" class="oh-sticky-table__td">{{ row.overtime|default:"&mdash;" }}</div>
     <div data-cell-index="19" class="oh-sticky-table__td">{{ row.leave|default:"&mdash;" }}</div>
     <div data-cell-index="20" class="oh-sticky-table__td">{{ row.holiday|default:"&mdash;" }}</div>
+    <div data-cell-index="21" class="oh-sticky-table__td">
+        {% if attendance.notes %}{{ attendance.notes }}{% else %}<span class="oh-text--light">&mdash;</span>{% endif %}
+    </div>
+    <div data-cell-index="22" class="oh-sticky-table__td">
+        {% if attendance.modified_by.employee_get %}{{ attendance.modified_by.employee_get.get_full_name }}{% else %}<span class="oh-text--light">&mdash;</span>{% endif %}
+    </div>
     {% if show_actions %}
         <div class="oh-sticky-table__td{% if not show_confirmation %} oh-sticky-table__right{% endif %}">
             <div class="oh-btn-group">

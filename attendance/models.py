@@ -24,6 +24,8 @@ from attendance.methods.utils import (
     attendance_date_validate,
     format_time,
     get_diff_dict,
+    get_effective_attendance_schedule,
+    schedule_duration_minimum_hour,
     schedule_end_overtime_calculation,
     shift_schedule_with_weekday_fallback,
     strtime_seconds,
@@ -404,6 +406,11 @@ class Attendance(HorillaModel):
     request_description = models.TextField(
         null=True, verbose_name=_("Request Description")
     )
+    notes = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name=_("Notes"),
+    )
     request_type = models.CharField(
         max_length=18, null=True, choices=status, default="update_request"
     )
@@ -454,9 +461,7 @@ class Attendance(HorillaModel):
         """
         check is night shift or not
         """
-        schedule = shift_schedule_with_weekday_fallback(
-            self.attendance_day, self.shift_id
-        )
+        schedule = get_effective_attendance_schedule(self)
         if not schedule:
             return False
         return schedule.is_night_shift
@@ -932,6 +937,44 @@ class Attendance(HorillaModel):
                 )
 
 
+class AttendanceScheduleOverride(HorillaModel):
+    """A shift schedule override that applies to one attendance date only."""
+
+    attendance_id = models.OneToOneField(
+        Attendance,
+        on_delete=models.CASCADE,
+        related_name="daily_schedule_override",
+        verbose_name=_("Attendance"),
+    )
+    start_time = models.TimeField(verbose_name=_("Start Time"))
+    end_time = models.TimeField(verbose_name=_("End Time"))
+    minimum_working_hour = models.CharField(
+        max_length=10,
+        default="00:00",
+        validators=[validate_time_format],
+        verbose_name=_("Minimum Working Hours"),
+    )
+    is_night_shift = models.BooleanField(default=False, verbose_name=_("Night Shift"))
+    objects = HorillaCompanyManager(
+        related_company_field="attendance_id__employee_id__employee_work_info__company_id"
+    )
+
+    class Meta:
+        verbose_name = _("Attendance Schedule Override")
+        verbose_name_plural = _("Attendance Schedule Overrides")
+
+    def save(self, *args, **kwargs):
+        if self.start_time and self.end_time:
+            self.is_night_shift = self.start_time > self.end_time
+            self.minimum_working_hour = schedule_duration_minimum_hour(
+                self.start_time, self.end_time
+            )
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.attendance_id} - {self.start_time} - {self.end_time}"
+
+
 class AttendanceRequestFile(HorillaModel):
     file = models.FileField(upload_to=upload_path)
 
@@ -1147,11 +1190,7 @@ class AttendanceLateComeEarlyOut(HorillaModel):
 
     def get_late_early_duration(self):
         attendance = self.attendance_id
-        if not attendance.shift_id:
-            return None
-        schedule = shift_schedule_with_weekday_fallback(
-            attendance.attendance_day, attendance.shift_id
-        )
+        schedule = get_effective_attendance_schedule(attendance)
         if not schedule:
             return None
 

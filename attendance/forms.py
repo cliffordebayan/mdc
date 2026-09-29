@@ -54,6 +54,11 @@ from attendance.models import (
     strtime_seconds,
     validate_time_format,
 )
+from attendance.methods.utils import (
+    get_effective_attendance_schedule,
+    schedule_duration_minimum_hour,
+    shift_schedule_with_weekday_fallback,
+)
 from base.forms import ModelForm as BaseModelForm
 from base.methods import (
     filtersubordinatesemployeemodel,
@@ -62,6 +67,7 @@ from base.methods import (
     reload_queryset,
 )
 from base.models import Company, EmployeeShift, WorkType
+from base.models import EmployeeShiftDay
 from employee.filters import EmployeeFilter
 from employee.models import Employee
 from horilla import horilla_middlewares
@@ -440,6 +446,17 @@ class AttendanceActivityUpdateForm(BaseModelForm):
     Day-level work activity editor for the attendance activity modal.
     """
 
+    daily_shift_start = forms.TimeField(
+        label=_("Daily Shift Start"),
+        required=False,
+        widget=forms.TimeInput(attrs={"type": "time"}),
+    )
+    daily_shift_end = forms.TimeField(
+        label=_("Daily Shift End"),
+        required=False,
+        widget=forms.TimeInput(attrs={"type": "time"}),
+    )
+
     class Meta:
         model = Attendance
         fields = [
@@ -453,6 +470,7 @@ class AttendanceActivityUpdateForm(BaseModelForm):
             "attendance_clock_out",
             "attendance_worked_hour",
             "minimum_hour",
+            "notes",
         ]
         widgets = {
             "attendance_date": DateTimeInput(attrs={"type": "date"}),
@@ -488,6 +506,7 @@ class AttendanceActivityUpdateForm(BaseModelForm):
 
     def __init__(self, *args, **kwargs):
         instance = kwargs.get("instance")
+        supplied_initial = kwargs.pop("initial", {})
         if instance:
             initial = {
                 "employee_id": instance.employee_id,
@@ -501,6 +520,22 @@ class AttendanceActivityUpdateForm(BaseModelForm):
                 "attendance_worked_hour": instance.attendance_worked_hour,
                 "minimum_hour": instance.minimum_hour,
             }
+            schedule = get_effective_attendance_schedule(instance)
+            if not schedule and instance.attendance_date and instance.shift_id:
+                attendance_day = EmployeeShiftDay.objects.filter(
+                    day=instance.attendance_date.strftime("%A").lower()
+                ).first()
+                schedule = shift_schedule_with_weekday_fallback(
+                    attendance_day, instance.shift_id
+                )
+            self._daily_schedule_available = bool(
+                schedule
+                and getattr(schedule, "start_time", None)
+                and getattr(schedule, "end_time", None)
+            )
+            if self._daily_schedule_available:
+                initial["daily_shift_start"] = schedule.start_time.strftime("%H:%M")
+                initial["daily_shift_end"] = schedule.end_time.strftime("%H:%M")
             if instance.attendance_clock_in_date:
                 initial["attendance_clock_in_date"] = (
                     instance.attendance_clock_in_date.strftime("%Y-%m-%d")
@@ -519,12 +554,19 @@ class AttendanceActivityUpdateForm(BaseModelForm):
                 )
             extra_initial = {
                 key: self._html_initial_value(value)
-                for key, value in kwargs.pop("initial", {}).items()
+                for key, value in supplied_initial.items()
             }
             initial.update(extra_initial)
             kwargs["initial"] = initial
+        else:
+            kwargs["initial"] = {
+                key: self._html_initial_value(value)
+                for key, value in supplied_initial.items()
+            }
 
         super().__init__(*args, **kwargs)
+        if not hasattr(self, "_daily_schedule_available"):
+            self._daily_schedule_available = False
         reload_queryset(self.fields)
         self.fields["employee_id"].widget.attrs.update({"id": str(uuid.uuid4())})
         self.fields["work_type_id"].widget.attrs.update({"id": str(uuid.uuid4())})
@@ -563,6 +605,39 @@ class AttendanceActivityUpdateForm(BaseModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        daily_shift_start = cleaned_data.get("daily_shift_start")
+        daily_shift_end = cleaned_data.get("daily_shift_end")
+        daily_fields_submitted = any(
+            field_name in self.data
+            for field_name in ("daily_shift_start", "daily_shift_end")
+        )
+        if self.is_bound and not daily_fields_submitted and self._daily_schedule_available:
+            daily_shift_start = self.fields["daily_shift_start"].to_python(
+                self.initial.get("daily_shift_start")
+            )
+            daily_shift_end = self.fields["daily_shift_end"].to_python(
+                self.initial.get("daily_shift_end")
+            )
+            cleaned_data["daily_shift_start"] = daily_shift_start
+            cleaned_data["daily_shift_end"] = daily_shift_end
+        if bool(daily_shift_start) != bool(daily_shift_end):
+            message = _("Daily shift start and end must be provided together.")
+            if not daily_shift_start:
+                self.add_error("daily_shift_start", message)
+            if not daily_shift_end:
+                self.add_error("daily_shift_end", message)
+        elif self._daily_schedule_available and not daily_shift_start:
+            self.add_error("daily_shift_start", _("Daily shift start is required."))
+            self.add_error("daily_shift_end", _("Daily shift end is required."))
+        elif daily_shift_start and daily_shift_end:
+            if daily_shift_start == daily_shift_end:
+                self.add_error(
+                    "daily_shift_end", _("Daily shift start and end must be different.")
+                )
+            else:
+                cleaned_data["daily_shift_minimum_hour"] = (
+                    schedule_duration_minimum_hour(daily_shift_start, daily_shift_end)
+                )
         clock_in_date = cleaned_data.get("attendance_clock_in_date")
         clock_in = cleaned_data.get("attendance_clock_in")
         clock_out_date = cleaned_data.get("attendance_clock_out_date")

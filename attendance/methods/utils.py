@@ -5,6 +5,7 @@ This module is used write custom methods
 """
 
 import calendar
+import contextlib
 from datetime import datetime, time, timedelta
 
 import pandas as pd
@@ -18,7 +19,13 @@ from django.utils import timezone as django_timezone
 from django.utils.translation import gettext_lazy as _
 
 from base.methods import get_pagination
-from base.models import WEEK_DAYS, CompanyLeaves, EmployeeShiftSchedule, Holidays
+from base.models import (
+    WEEK_DAYS,
+    CompanyLeaves,
+    EmployeeShiftDay,
+    EmployeeShiftSchedule,
+    Holidays,
+)
 from employee.models import Employee
 from horilla.horilla_settings import HORILLA_DATE_FORMATS, HORILLA_TIME_FORMATS
 
@@ -231,6 +238,48 @@ def shift_schedule_today(day, shift):
     return (minimum_hour, start_time_sec, end_time_sec)
 
 
+def get_effective_attendance_schedule(attendance):
+    """Return the schedule that applies to one attendance date.
+
+    A date-specific override takes precedence over the recurring shift
+    schedule.  The related object lookup is deliberately defensive so this
+    helper can also be used with unsaved attendance instances and lightweight
+    test doubles.
+    """
+    if not attendance:
+        return None
+
+    try:
+        override = attendance.daily_schedule_override
+    except Exception:
+        override = None
+    if override and getattr(override, "start_time", None) and getattr(
+        override, "end_time", None
+    ):
+        return override
+
+    attendance_day = getattr(attendance, "attendance_day", None)
+    if not attendance_day and getattr(attendance, "attendance_date", None):
+        attendance_day = EmployeeShiftDay.objects.filter(
+            day=attendance.attendance_date.strftime("%A").lower()
+        ).first()
+    return shift_schedule_with_weekday_fallback(
+        attendance_day,
+        getattr(attendance, "shift_id", None),
+    )
+
+
+def schedule_duration_minimum_hour(start_time, end_time):
+    """Return the duration between two shift times as an ``HH:MM`` value."""
+    if not start_time or not end_time or start_time == end_time:
+        return "00:00"
+    start_seconds = clock_time_seconds(start_time)
+    end_seconds = clock_time_seconds(end_time)
+    if end_seconds < start_seconds:
+        end_seconds += 24 * 60 * 60
+    return format_time(end_seconds - start_seconds)
+
+
 def calculate_worked_hours(employee, attendance_date):
     """
     Return total worked time for closed work activities on an attendance date.
@@ -341,10 +390,7 @@ def schedule_end_overtime_calculation(
         return "00:00"
 
     if schedule is None:
-        schedule = shift_schedule_with_weekday_fallback(
-            getattr(attendance, "attendance_day", None),
-            getattr(attendance, "shift_id", None),
-        )
+        schedule = get_effective_attendance_schedule(attendance)
     if work_activities is None:
         from attendance.models import AttendanceActivity
 
@@ -508,7 +554,7 @@ def _recalculate_overtime_account(employee, attendance_date):
     overtime_account.save()
 
 
-def recalculate_attendance_for_shift(shift):
+def recalculate_attendance_for_shift(shift, attendance=None):
     """
     Recalculate persisted attendance summaries and late/early records for a shift.
     """
@@ -521,26 +567,30 @@ def recalculate_attendance_for_shift(shift):
     from base.context_processors import enable_late_come_early_out_tracking
     from base.models import EmployeeShiftDay
 
-    if not shift:
+    attendance = attendance or getattr(shift, "_daily_attendance_scope", None)
+    if not shift and attendance is None:
         return 0
 
     tracking_enabled = enable_late_come_early_out_tracking(None).get("tracking")
     recalculated_count = 0
     overtime_accounts_to_refresh = set()
-    attendances = Attendance.objects.filter(shift_id=shift).select_related(
-        "employee_id", "shift_id", "attendance_day"
-    )
+    if attendance is not None:
+        attendances = [attendance]
+    else:
+        attendances = Attendance.objects.filter(shift_id=shift).select_related(
+            "employee_id", "shift_id", "attendance_day", "daily_schedule_override"
+        )
 
-    for attendance in attendances.iterator():
+    attendance_iterable = (
+        attendances.iterator() if hasattr(attendances, "iterator") else attendances
+    )
+    for attendance in attendance_iterable:
         if not attendance.attendance_day and attendance.attendance_date:
             attendance.attendance_day = EmployeeShiftDay.objects.filter(
                 day=attendance.attendance_date.strftime("%A").lower()
             ).first()
 
-        schedule = shift_schedule_with_weekday_fallback(
-            attendance.attendance_day,
-            attendance.shift_id,
-        )
+        schedule = get_effective_attendance_schedule(attendance)
         minimum_hour = schedule.minimum_working_hour if schedule else "00:00"
         minimum_hour = attendance_day_checking(
             str(attendance.attendance_date),
@@ -622,6 +672,21 @@ def recalculate_attendance_for_shift(shift):
         _recalculate_overtime_account(employee, attendance_date)
 
     return recalculated_count
+
+
+def recalculate_attendance_for_day(attendance):
+    """Recalculate one persisted attendance record without touching other dates."""
+    if not attendance:
+        return 0
+    shift = getattr(attendance, "shift_id", None)
+    if not shift:
+        return recalculate_attendance_for_shift(None, attendance=attendance)
+    setattr(shift, "_daily_attendance_scope", attendance)
+    try:
+        return recalculate_attendance_for_shift(shift)
+    finally:
+        with contextlib.suppress(AttributeError):
+            delattr(shift, "_daily_attendance_scope")
 
 
 def overtime_calculation(attendance):
