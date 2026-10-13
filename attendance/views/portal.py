@@ -54,8 +54,6 @@ from attendance.models import (
     AttendancePortalMultiPunchEmployee,
     AttendancePortalShiftContext,
     AttendancePortalShiftOverride,
-    AttendanceRequestComment,
-    AttendanceRequestFile,
 )
 from attendance.views.clock_in_out import (
     clock_in_attendance_and_activity,
@@ -392,6 +390,135 @@ def _send_portal_pin_reset_email(request, employee):
         return True
     except Exception:
         logger.exception("Failed to send attendance portal PIN reset email")
+        return False
+
+
+def _portal_shift_request_time(value):
+    """Parse a portal shift-request time and return a ``time`` instance."""
+    try:
+        return datetime.strptime(value.strip(), "%H:%M").time()
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _portal_shift_request_time_display(value):
+    return value.strftime("%I:%M %p").lstrip("0")
+
+
+def _send_portal_shift_request_email(
+    employee,
+    current_shift,
+    start_time,
+    end_time,
+    reason,
+):
+    employee_name = employee.get_full_name()
+    employee_no = employee.employee_no or ""
+    subject_employee = (
+        f"{employee_name} ({employee_no})" if employee_no else employee_name
+    )
+    subject = f"Attendance Shift Request - {subject_employee}"
+    requested_shift = (
+        f"{_portal_shift_request_time_display(start_time)} – "
+        f"{_portal_shift_request_time_display(end_time)}"
+    )
+    body = "\n".join(
+        [
+            "Hello IT Helpdesk,",
+            "",
+            "I would like to request a change to my attendance shift.",
+            "",
+            f"Employee Name: {employee_name}",
+            f"Employee Number: {employee_no}",
+            f"Current Shift: {current_shift}",
+            f"Requested Shift: {requested_shift}",
+            f"Reason: {reason}",
+            "",
+            "Thank you.",
+        ]
+    )
+
+    email_backend = ConfiguredEmailBackend()
+    email = EmailMessage(
+        subject=subject,
+        body=body,
+        from_email=email_backend.dynamic_from_email_with_display_name,
+        to=["ithelpdesk@martindevcorp.com"],
+        connection=email_backend,
+    )
+    try:
+        return email.send() == 1
+    except Exception:
+        logger.exception("Failed to send attendance portal shift request email")
+        return False
+
+
+def _portal_attendance_request_display(value, fallback="Not provided"):
+    if value is None or value == "" or value == "None":
+        return fallback
+    if isinstance(value, time):
+        return value.strftime("%H:%M")
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ")
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
+def _send_portal_attendance_request_email(
+    employee,
+    request_data,
+):
+    employee_name = employee.get_full_name()
+    employee_no = employee.employee_no or ""
+    subject_employee = (
+        f"{employee_name} ({employee_no})" if employee_no else employee_name
+    )
+    subject = f"Attendance Request - {subject_employee}"
+    attendance_date = request_data.get("attendance_date")
+    clock_in_date = request_data.get("attendance_clock_in_date")
+    clock_in = request_data.get("attendance_clock_in")
+    clock_out_date = request_data.get("attendance_clock_out_date")
+    clock_out_time = request_data.get("attendance_clock_out")
+    clock_out = (
+        f"{_portal_attendance_request_display(clock_out_date)} "
+        f"{_portal_attendance_request_display(clock_out_time)}"
+        if clock_out_date not in (None, "", "None")
+        and clock_out_time not in (None, "", "None")
+        else "Not provided"
+    )
+    body = "\n".join(
+        [
+            "Hello IT Helpdesk,",
+            "",
+            "An attendance correction request has been submitted.",
+            "",
+            f"Employee Name: {employee_name}",
+            f"Employee Number: {employee_no}",
+            f"Attendance Date: {_portal_attendance_request_display(attendance_date)}",
+            f"Clock In: {_portal_attendance_request_display(clock_in_date)} "
+            f"{_portal_attendance_request_display(clock_in)}",
+            f"Clock Out: {clock_out}",
+            f"Reason: {request_data.get('request_description', '')}",
+            "",
+            "Please review this requested attendance correction.",
+            "",
+            "Thank you.",
+        ]
+    )
+
+    email_backend = ConfiguredEmailBackend()
+    email = EmailMessage(
+        subject=subject,
+        body=body,
+        from_email=email_backend.dynamic_from_email_with_display_name,
+        to=["ithelpdesk@martindevcorp.com"],
+        connection=email_backend,
+    )
+    try:
+        return email.send() == 1
+    except Exception:
+        logger.exception("Failed to send attendance portal attendance request email")
         return False
 
 
@@ -2612,6 +2739,87 @@ def portal_shift_schedule(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+def portal_shift_request(request):
+    """Email the selected employee's requested shift to the IT helpdesk."""
+    if not _ip_is_allowed(request):
+        return JsonResponse(
+            {"success": False, "message": "Access denied: your network is not allowed."},
+            status=403,
+        )
+
+    employee_id = request.POST.get("employee_id", "").strip()
+    start_time_value = request.POST.get("start_time", "").strip()
+    end_time_value = request.POST.get("end_time", "").strip()
+    reason = request.POST.get("reason", "").strip()
+    if not employee_id:
+        return JsonResponse({"success": False, "message": "Employee ID required"})
+
+    has_verified_pin, pin_message = _require_verified_pin(request, employee_id)
+    if not has_verified_pin:
+        return JsonResponse({"success": False, "message": pin_message})
+
+    start_time = _portal_shift_request_time(start_time_value)
+    end_time = _portal_shift_request_time(end_time_value)
+    if not start_time or not end_time:
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Start and end times are required and must be valid.",
+            }
+        )
+    if start_time == end_time:
+        return JsonResponse(
+            {"success": False, "message": "Start and end times must be different."}
+        )
+    if not reason:
+        return JsonResponse({"success": False, "message": "Reason is required."})
+    if len(reason) > 1000:
+        return JsonResponse(
+            {"success": False, "message": "Reason must be 1000 characters or fewer."}
+        )
+
+    try:
+        employee = Employee.objects.get(id=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return JsonResponse({"success": False, "message": "Employee not found"})
+
+    datetime_now = get_real_now()
+    current_shift = _portal_shift_payload(employee, datetime_now.date())
+    if not current_shift.get("configured"):
+        return JsonResponse(
+            {
+                "success": False,
+                "message": current_shift.get(
+                    "message", "Employee shift schedule not configured"
+                ),
+            }
+        )
+
+    current_shift_display = (
+        f"{current_shift['day']} {current_shift['start_display']} – "
+        f"{current_shift['end_display']}"
+    )
+    if not _send_portal_shift_request_email(
+        employee,
+        current_shift_display,
+        start_time,
+        end_time,
+        reason,
+    ):
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Unable to send the shift request. Please try again.",
+            }
+        )
+
+    return JsonResponse(
+        {"success": True, "message": "Shift request sent to IT Helpdesk."}
+    )
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
 def attendance_history(request):
     """
     Return the selected employee's recent attendance rows for the public portal.
@@ -3263,7 +3471,10 @@ def document_request_create(request):
 
 def attendance_request_create(request):
     """
-    Create a manual attendance correction request from the public attendance portal.
+    Email an attendance correction request from the public attendance portal.
+
+    This endpoint intentionally does not create or update an HRIS attendance
+    record or an in-app notification. The email is the request.
     """
     if not _ip_is_allowed(request):
         return JsonResponse(
@@ -3330,79 +3541,39 @@ def attendance_request_create(request):
                 status=200,
             )
 
-    work_info = getattr(employee, "employee_work_info", None)
-    shift = getattr(work_info, "shift_id", None)
-    work_type = getattr(work_info, "work_type_id", None)
-
     clock_in_date = clock_in_date or attendance_date
     clock_out_date_final = clock_out_date if clock_out_time else None
 
+    request_data = {
+        "attendance_date": attendance_date,
+        "attendance_clock_in_date": clock_in_date,
+        "attendance_clock_in": clock_in_time,
+        "attendance_clock_out_date": clock_out_date_final,
+        "attendance_clock_out": clock_out_time,
+        "request_description": reason,
+    }
+
     try:
-        attendance = Attendance(
-            employee_id=employee,
-            attendance_date=attendance_date,
-            attendance_clock_in_date=clock_in_date,
-            attendance_clock_in=clock_in_time,
-            attendance_clock_out_date=clock_out_date_final,
-            attendance_clock_out=clock_out_time,
-            request_description=reason,
-            is_validate_request=True,
-            request_type="create_request",
-            shift_id=shift,
-            work_type_id=work_type,
-        )
-        attendance.save()
-    except ValidationError as error:
+        email_sent = _send_portal_attendance_request_email(employee, request_data)
+    except Exception:
+        logger.exception("Portal attendance request email delivery failed")
+        email_sent = False
+
+    if not email_sent:
         return JsonResponse(
             {
                 "success": False,
-                "message": " ".join(_portal_validation_messages(error)),
+                "email_sent": False,
+                "message": "Unable to send the attendance request email. Please try again.",
             },
             status=200,
         )
-    except Exception as error:
-        logger.error(
-            "Portal attendance request creation failed: %s", error, exc_info=True
-        )
-        return JsonResponse(
-            {"success": False, "message": f"Attendance request failed: {error}"},
-            status=200,
-        )
-
-    proof_image = request.FILES.get("proof_image")
-    if proof_image:
-        try:
-            proof_file = AttendanceRequestFile(file=proof_image)
-            proof_file.save()
-            comment = AttendanceRequestComment(
-                request_id=attendance,
-                employee_id=employee,
-                comment=reason,
-            )
-            comment.save()
-            comment.files.add(proof_file)
-        except Exception:
-            logger.debug("Portal attendance request proof save failed.", exc_info=True)
-
-    try:
-        from notifications.signals import notify
-
-        admins = User.objects.filter(is_superuser=True)
-        if admins.exists():
-            notify.send(
-                employee,
-                recipient=list(admins),
-                verb=f"{employee} submitted an attendance request for {attendance_date}",
-                redirect=reverse("request-attendance-view"),
-                icon="time",
-            )
-    except Exception:
-        logger.debug("Portal attendance request notification failed.", exc_info=True)
 
     return JsonResponse(
         {
             "success": True,
-            "message": "Attendance request submitted successfully.",
+            "email_sent": True,
+            "message": "Attendance request email sent successfully.",
         },
         status=200,
     )

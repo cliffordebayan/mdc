@@ -38,6 +38,11 @@ urlpatterns = [
         name="portal-shift-schedule",
     ),
     path(
+        "portal/shift-request/",
+        attendance.views.portal.portal_shift_request,
+        name="portal-shift-request",
+    ),
+    path(
         "portal/forgot-pin/",
         attendance.views.portal.forgot_pin,
         name="portal-forgot-pin",

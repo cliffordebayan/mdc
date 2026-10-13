@@ -4310,17 +4310,6 @@
             );
         }
 
-        function formatShiftRequestTime(value) {
-            const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
-            if (!match) {
-                return String(value || '');
-            }
-            const hours = Number(match[1]);
-            const period = hours >= 12 ? 'PM' : 'AM';
-            const displayHours = (hours % 12) || 12;
-            return `${displayHours}:${match[2]} ${period}`;
-        }
-
         function updateTodayShiftCard() {
             const shift = selectedEmployee && selectedEmployee.today_shift;
             const $card = $('#attendance-shift-card');
@@ -4375,6 +4364,10 @@
                             {% trans "End time" %}
                             <input id="portal-shift-end" type="time" value="${escapeHtml(shift.end_time || '')}" class="swal2-input" style="width:100%; margin:6px 0 0;">
                         </label>
+                        <label style="grid-column:1 / -1; font-size:12px; font-weight:700; color:#374151;">
+                            {% trans "Reason" %}
+                            <textarea id="portal-shift-reason" class="swal2-textarea" maxlength="1000" rows="3" placeholder="{% trans 'Explain why you are requesting this shift change.' %}" style="width:100%; margin:6px 0 0; resize:vertical;"></textarea>
+                        </label>
                     </div>
                 `,
                 showCancelButton: true,
@@ -4384,6 +4377,7 @@
                 preConfirm: function () {
                     const start = $('#portal-shift-start').val();
                     const end = $('#portal-shift-end').val();
+                    const reason = $('#portal-shift-reason').val().trim();
                     if (!start || !end) {
                         Swal.showValidationMessage('{% trans "Start and end times are required." %}');
                         return false;
@@ -4392,7 +4386,11 @@
                         Swal.showValidationMessage('{% trans "Start and end times must be different." %}');
                         return false;
                     }
-                    return { start: start, end: end };
+                    if (!reason) {
+                        Swal.showValidationMessage('{% trans "Reason is required." %}');
+                        return false;
+                    }
+                    return { start: start, end: end, reason: reason };
                 }
             });
 
@@ -4400,33 +4398,36 @@
                 return;
             }
 
-            const employeeName = selectedEmployee.name || '';
-            const employeeNo = selectedEmployee.employee_no || selectedEmployee.badge || '';
-            const currentShift = `${shift.day} ${shift.start_display} – ${shift.end_display}`;
-            const requestedShift = `${formatShiftRequestTime(result.value.start)} – ${formatShiftRequestTime(result.value.end)}`;
-            const subjectEmployee = employeeNo
-                ? `${employeeName} (${employeeNo})`
-                : employeeName;
-            const subject = `Attendance Shift Request - ${subjectEmployee}`;
-            const body = [
-                'Hello IT Helpdesk,',
-                '',
-                'I would like to request a change to my attendance shift.',
-                '',
-                `Employee Name: ${employeeName}`,
-                `Employee Number: ${employeeNo}`,
-                `Current Shift: ${currentShift}`,
-                `Requested Shift: ${requestedShift}`,
-                'Reason: ',
-                '',
-                'Thank you.'
-            ].join('\n');
-            const gmailComposeUrl = 'https://mail.google.com/mail/?view=cm&fs=1'
-                + `&to=${encodeURIComponent('ithelpdesk@martindevcorp.com')}`
-                + `&cc=${encodeURIComponent('careers@martindevcorp.com')}`
-                + `&su=${encodeURIComponent(subject)}`
-                + `&body=${encodeURIComponent(body)}`;
-            window.location.href = gmailComposeUrl;
+            const formData = new FormData();
+            formData.append('employee_id', selectedEmployee.id);
+            formData.append('start_time', result.value.start);
+            formData.append('end_time', result.value.end);
+            formData.append('reason', result.value.reason);
+            try {
+                const response = await fetch('{% url "portal-shift-request" %}', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    Toast.fire({
+                        icon: 'error',
+                        title: data.message || '{% trans "Unable to send the shift request." %}'
+                    });
+                    return;
+                }
+
+                Toast.fire({
+                    icon: 'success',
+                    title: data.message || '{% trans "Shift request sent to IT Helpdesk." %}'
+                });
+            } catch (error) {
+                console.error('Shift request error:', error);
+                Toast.fire({
+                    icon: 'error',
+                    title: error.message || '{% trans "Unable to send the shift request." %}'
+                });
+            }
         }
 
         async function refreshTodayShift() {
@@ -5728,10 +5729,6 @@
                                 <label for="portal-ar-reason">{% trans "Reason" %} *</label>
                                 <textarea id="portal-ar-reason" name="request_description" maxlength="500" required placeholder="{% trans 'Describe why this attendance correction is needed...' %}"></textarea>
                             </div>
-                            <div class="portal-leave-field is-full">
-                                <label for="portal-ar-proof">{% trans "Proof Image" %} *</label>
-                                <input type="file" id="portal-ar-proof" name="proof_image" accept="image/jpeg,image/png,image/jpg" required />
-                            </div>
                             <button type="submit" class="oh-btn oh-btn--secondary portal-leave-submit" id="portal-attendance-request-submit">
                                 <ion-icon name="send-outline"></ion-icon>
                                 {% trans "Submit Attendance Request" %}
@@ -5793,7 +5790,10 @@
                 }
 
                 Swal.close();
-                Toast.fire({ icon: 'success', title: data.message || '{% trans "Attendance request submitted." %}' });
+                Toast.fire({
+                    icon: 'success',
+                    title: data.message || '{% trans "Attendance request email sent successfully." %}'
+                });
             } catch (error) {
                 console.error('Attendance request error:', error);
                 Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to submit attendance request." %}' });
