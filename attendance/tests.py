@@ -5327,6 +5327,7 @@ class AttendanceActivityUpdateViewTests(TestCase):
             },
         )
         self.assertIn("Activity Editor", activity_html)
+        self.assertNotIn('data-cell-index="24"', activity_html)
         self.assertIn("Activity Editor", attendance_html)
         self.assertNotIn(self.user.username, activity_html)
         self.assertNotIn(self.user.username, attendance_html)
@@ -5351,7 +5352,7 @@ class AttendanceActivityUpdateViewTests(TestCase):
         )
 
         self.assertNotIn(self.user.username, html)
-        self.assertIn("&mdash;", html)
+        self.assertNotIn("Edited By", html)
 
     def test_post_saves_a_schedule_override_for_the_selected_date(self):
         self.client.force_login(self.user)
