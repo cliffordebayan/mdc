@@ -4310,6 +4310,17 @@
             );
         }
 
+        function formatShiftRequestTime(value) {
+            const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+            if (!match) {
+                return String(value || '');
+            }
+            const hours = Number(match[1]);
+            const period = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = (hours % 12) || 12;
+            return `${displayHours}:${match[2]} ${period}`;
+        }
+
         function updateTodayShiftCard() {
             const shift = selectedEmployee && selectedEmployee.today_shift;
             const $card = $('#attendance-shift-card');
@@ -4332,11 +4343,11 @@
                 `${shift.day} ${shift.start_display} – ${shift.end_display}`
             );
             $('#attendance-shift-note').text(
-                '{% trans "Click to Change Shift" %}'
+                '{% trans "Request Shift" %}'
             );
         }
 
-        async function editTodayShift() {
+        async function requestTodayShift() {
             if (!selectedEmployee) {
                 return;
             }
@@ -4348,8 +4359,9 @@
             if (!hasUsableTodayShift(shift)) {
                 return;
             }
+
             const result = await Swal.fire({
-                title: '{% trans "Change Shift" %}',
+                title: '{% trans "Request Shift" %}',
                 customClass: {
                     container: 'portal-shift-swal'
                 },
@@ -4366,7 +4378,7 @@
                     </div>
                 `,
                 showCancelButton: true,
-                confirmButtonText: '{% trans "Save Shift" %}',
+                confirmButtonText: '{% trans "Submit Request" %}',
                 cancelButtonText: '{% trans "Cancel" %}',
                 focusConfirm: false,
                 preConfirm: function () {
@@ -4388,27 +4400,33 @@
                 return;
             }
 
-            const formData = new FormData();
-            formData.append('employee_id', selectedEmployee.id);
-            formData.append('start_time', result.value.start);
-            formData.append('end_time', result.value.end);
-
-            try {
-                const response = await fetch('{% url "portal-shift-schedule" %}', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
-                if (!data.success) {
-                    throw new Error(data.message || '{% trans "Unable to save the shift." %}');
-                }
-                selectedEmployee.today_shift = data.today_shift;
-                updateTodayShiftCard();
-                Toast.fire({ icon: 'success', title: data.message || '{% trans "Shift saved." %}' });
-            } catch (error) {
-                console.error('Portal shift save error:', error);
-                Toast.fire({ icon: 'error', title: error.message || '{% trans "Unable to save the shift." %}' });
-            }
+            const employeeName = selectedEmployee.name || '';
+            const employeeNo = selectedEmployee.employee_no || selectedEmployee.badge || '';
+            const currentShift = `${shift.day} ${shift.start_display} – ${shift.end_display}`;
+            const requestedShift = `${formatShiftRequestTime(result.value.start)} – ${formatShiftRequestTime(result.value.end)}`;
+            const subjectEmployee = employeeNo
+                ? `${employeeName} (${employeeNo})`
+                : employeeName;
+            const subject = `Attendance Shift Request - ${subjectEmployee}`;
+            const body = [
+                'Hello IT Helpdesk,',
+                '',
+                'I would like to request a change to my attendance shift.',
+                '',
+                `Employee Name: ${employeeName}`,
+                `Employee Number: ${employeeNo}`,
+                `Current Shift: ${currentShift}`,
+                `Requested Shift: ${requestedShift}`,
+                'Reason: ',
+                '',
+                'Thank you.'
+            ].join('\n');
+            const gmailComposeUrl = 'https://mail.google.com/mail/?view=cm&fs=1'
+                + `&to=${encodeURIComponent('ithelpdesk@martindevcorp.com')}`
+                + `&cc=${encodeURIComponent('careers@martindevcorp.com')}`
+                + `&su=${encodeURIComponent(subject)}`
+                + `&body=${encodeURIComponent(body)}`;
+            window.location.href = gmailComposeUrl;
         }
 
         async function refreshTodayShift() {
@@ -6382,7 +6400,7 @@
                 if ($(this).prop('disabled')) {
                     return;
                 }
-                editTodayShift();
+                requestTodayShift();
             });
 
             $('[data-attendance-action]').on('click', function () {
@@ -6585,6 +6603,7 @@
             selectedEmployee = {
                 id: empId,
                 name: empName,
+                employee_no: empBadge || cached.employee_no || '',
                 badge: empBadge,
                 avatar: empAvatar,
                 is_clocked_in: isClockedIn,

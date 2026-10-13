@@ -26,7 +26,7 @@ from django.core.exceptions import ValidationError
 from django.core import signing
 from django.core.mail import EmailMessage
 from django.core.signing import BadSignature, SignatureExpired
-from django.db import DatabaseError, transaction
+from django.db import transaction
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -71,13 +71,21 @@ from base.models import (
     EmployeeShift,
     EmployeeShiftSchedule,
 )
-from employee.models import Employee, EmployeeBankDetails, EmployeeInsurance
+from employee.models import (
+    Employee,
+    EmployeeBankDetails,
+    EmployeeInsurance,
+    EmployeeWorkInformation,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class PortalShiftScheduleError(Exception):
-    """Expected failure while resolving a portal shift schedule."""
+def _configured_local_now():
+    """Return the current time as a naive datetime in Django's local timezone."""
+    return timezone.localtime(
+        timezone.now(), timezone.get_default_timezone()
+    ).replace(tzinfo=None)
 
 PORTAL_WORK_ACTIVITY = "work"
 PORTAL_BREAK_ACTIVITY = "break"
@@ -416,7 +424,7 @@ def _get_real_now_uncached():
             continue
     # All NTP servers failed - fall back to system time and log a warning
     logger.warning("NTP sync failed; falling back to system clock for attendance time")
-    return datetime.now()
+    return _configured_local_now()
 
 
 def get_real_now():
@@ -478,7 +486,7 @@ def get_real_now():
             "NTP sync exceeded PORTAL_NTP_TIMEOUT_TOTAL; using system clock "
             "for this request while the sync finishes in the background"
         )
-        return datetime.now()
+        return _configured_local_now()
     finally:
         _PORTAL_NTP_CACHE_LOCK.release()
 
@@ -897,15 +905,6 @@ def _portal_day_index(day_name):
         "saturday": 5,
         "sunday": 6,
     }.get(day_name, -1)
-
-
-def _portal_shift_duration_seconds(start_time, end_time):
-    start_seconds = start_time.hour * 3600 + start_time.minute * 60 + start_time.second
-    end_seconds = end_time.hour * 3600 + end_time.minute * 60 + end_time.second
-    duration = end_seconds - start_seconds
-    if duration < 0:
-        duration += 24 * 60 * 60
-    return duration
 
 
 def _portal_copy_shift_context(employee, base_shift):
@@ -1886,6 +1885,66 @@ def _portal_update_current_attendance_schedule(employee, attendance_context):
     return attendance
 
 
+def synchronize_portal_attendance_shift(employee, current_time=None):
+    """Synchronize the current attendance row to the employee portal shift.
+
+    The employee's work-information shift is the source schedule for the
+    portal, but portal attendance must use the employee-owned generated shift
+    (for example, ``2024785_shift``). Only the attendance date currently
+    resolved from the employee's schedule is changed; historical rows are
+    deliberately left untouched.
+    """
+    if not employee or not getattr(employee, "pk", None):
+        return None
+
+    # The caller may have just changed work information. Reload the relation
+    # so synchronization always resolves the newly assigned base shift.
+    try:
+        employee.refresh_from_db()
+        work_info = EmployeeWorkInformation.objects.filter(
+            employee_id=employee
+        ).select_related("shift_id").first()
+        employee._state.fields_cache["employee_work_info"] = work_info
+    except Exception:
+        work_info = getattr(employee, "employee_work_info", None)
+
+    if not work_info or not getattr(work_info, "shift_id", None):
+        return None
+
+    current_time = current_time or get_real_now()
+    context = _portal_current_attendance_context(
+        work_info,
+        current_time,
+        require_shift=False,
+        employee=employee,
+        persist=False,
+    )
+    if context.get("error") or not context.get("shift"):
+        return None
+
+    attendance_exists = Attendance.objects.filter(
+        employee_id=employee,
+        attendance_date=context.get("attendance_date"),
+    ).exists()
+    portal_context_exists = AttendancePortalShiftContext._base_manager.filter(
+        employee_id=employee,
+    ).exists()
+    if not attendance_exists and not portal_context_exists:
+        return None
+
+    context = _portal_current_attendance_context(
+        work_info,
+        current_time,
+        require_shift=False,
+        employee=employee,
+        persist=True,
+    )
+    if context.get("error") or not context.get("shift"):
+        return None
+
+    return _portal_update_current_attendance_schedule(employee, context)
+
+
 def _portal_display_value(value):
     if value is None or value == "":
         return ""
@@ -2510,17 +2569,16 @@ def employee_lookup(request):
 
 
 @csrf_exempt
-@require_http_methods(["GET", "POST"])
+@require_http_methods(["GET"])
 def portal_shift_schedule(request):
-    """Read or save the selected employee's recurring shift for today's weekday."""
+    """Read the selected employee's current shift for today's weekday."""
     if not _ip_is_allowed(request):
         return JsonResponse(
             {"success": False, "message": "Access denied: your network is not allowed."},
             status=403,
         )
 
-    request_data = request.POST if request.method == "POST" else request.GET
-    employee_id = request_data.get("employee_id", "").strip()
+    employee_id = request.GET.get("employee_id", "").strip()
     if not employee_id:
         return JsonResponse({"success": False, "message": "Employee ID required"}, status=200)
 
@@ -2542,116 +2600,10 @@ def portal_shift_schedule(request):
 
     datetime_now = get_real_now()
     date_today = datetime_now.date()
-    if request.method == "GET":
-        return JsonResponse(
-            {
-                "success": True,
-                "today_shift": _portal_shift_payload(employee, date_today),
-            },
-            status=200,
-        )
-
-    start_time_value = (request.POST.get("start_time") or "").strip()
-    end_time_value = (request.POST.get("end_time") or "").strip()
-    try:
-        start_time = time.fromisoformat(start_time_value)
-        end_time = time.fromisoformat(end_time_value)
-    except ValueError:
-        return JsonResponse(
-            {"success": False, "message": "Valid start and end times are required."},
-            status=200,
-        )
-
-    if start_time == end_time:
-        return JsonResponse(
-            {"success": False, "message": "Start and end times must be different."},
-            status=200,
-        )
-
-    day_name = date_today.strftime("%A").lower()
-    day = EmployeeShiftDay.objects.filter(day=day_name).first()
-    if not day:
-        return JsonResponse(
-            {"success": False, "message": "Shift day configuration error"},
-            status=200,
-        )
-
-    minimum_working_hour = format_time(
-        _portal_shift_duration_seconds(start_time, end_time)
-    )
-    is_night_shift = start_time > end_time
-
-    try:
-        with transaction.atomic():
-            AttendancePortalShiftOverride._base_manager.update_or_create(
-                employee_id=employee,
-                day=day,
-                defaults={
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "minimum_working_hour": minimum_working_hour,
-                    "is_night_shift": is_night_shift,
-                    "is_active": True,
-                },
-            )
-            today_schedule_context = _portal_schedule_context(
-                employee,
-                date_today,
-                persist=True,
-            )
-            if today_schedule_context["error"]:
-                raise PortalShiftScheduleError(today_schedule_context["error"])
-
-            attendance_context = _portal_current_attendance_context(
-                work_info,
-                datetime_now,
-                require_shift=False,
-                employee=employee,
-                persist=True,
-            )
-            _portal_update_current_attendance_schedule(employee, attendance_context)
-    except PortalShiftScheduleError as error:
-        logger.warning(
-            "Portal shift schedule rejected for employee %s: %s",
-            employee_id,
-            error,
-        )
-        return JsonResponse(
-            {"success": False, "message": str(error)},
-            status=200,
-        )
-    except DatabaseError:
-        logger.exception(
-            "Portal shift schedule database error for employee %s",
-            employee_id,
-        )
-        return JsonResponse(
-            {
-                "success": False,
-                "message": (
-                    "Shift schedule storage is unavailable. "
-                    "Please ask an administrator to apply the latest attendance migrations."
-                ),
-            },
-            status=503,
-        )
-    except Exception:
-        logger.exception(
-            "Unexpected portal shift schedule failure for employee %s",
-            employee_id,
-        )
-        return JsonResponse(
-            {
-                "success": False,
-                "message": "Unable to save the shift schedule. Please try again or contact an administrator.",
-            },
-            status=200,
-        )
-
+    synchronize_portal_attendance_shift(employee, datetime_now)
     return JsonResponse(
         {
             "success": True,
-            "message": "Today’s shift was saved successfully.",
             "today_shift": _portal_shift_payload(employee, date_today),
         },
         status=200,

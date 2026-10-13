@@ -165,6 +165,20 @@ def return_none(a, b):
     return None
 
 
+def _synchronize_portal_attendance_after_shift_change(
+    employee, previous_shift_id, current_shift_id
+):
+    """Keep the current portal attendance row aligned after a shift change."""
+    if previous_shift_id == current_shift_id:
+        return
+
+    # Import lazily so the employee app does not load portal view dependencies
+    # during Django app initialization.
+    from attendance.views.portal import synchronize_portal_attendance_shift
+
+    synchronize_portal_attendance_shift(employee)
+
+
 operator_mapping = {
     "equal": operator.eq,
     "notequal": operator.ne,
@@ -1912,6 +1926,7 @@ def employee_view_update(request, obj_id, **kwargs):
                 instance = EmployeeWorkInformation.objects.filter(
                     employee_id=employee
                 ).first()
+                previous_shift_id = instance.shift_id_id if instance else None
                 work_form = EmployeeWorkInformationUpdateForm(
                     request.POST, instance=instance
                 )
@@ -1919,6 +1934,11 @@ def employee_view_update(request, obj_id, **kwargs):
                     instance = work_form.save(commit=False)
                     instance.employee_id = employee
                     instance.save()
+                    _synchronize_portal_attendance_after_shift_change(
+                        employee,
+                        previous_shift_id,
+                        instance.shift_id_id,
+                    )
                     instance.tags.set(request.POST.getlist("tags"))
                     notify.send(
                         request.user.employee_get,
@@ -2145,9 +2165,15 @@ def employee_update_work_info(request, obj_id=None):
     form.fields["employee_id"].required = False
     form.employee_id = employee
     if form.is_valid() and employee is not None:
+        previous_shift_id = form.instance.shift_id_id if form.instance else None
         work_info = form.save(commit=False)
         work_info.employee_id = employee
         work_info.save()
+        _synchronize_portal_attendance_after_shift_change(
+            employee,
+            previous_shift_id,
+            work_info.shift_id_id,
+        )
         return HttpResponse(
             """
 
@@ -2742,6 +2768,11 @@ def employee_work_info_view_create(request, obj_id):
         work_info = work_form.save(commit=False)
         work_info.employee_id = employee
         work_info.save()
+        _synchronize_portal_attendance_after_shift_change(
+            employee,
+            None,
+            work_info.shift_id_id,
+        )
         messages.success(request, _("Created work information"))
     return render(
         request,
@@ -2769,8 +2800,14 @@ def employee_work_info_view_update(request, obj_id):
         request.POST,
         instance=work_information,
     )
+    previous_shift_id = work_information.shift_id_id
     if work_form.is_valid():
-        work_form.save()
+        work_information = work_form.save()
+        _synchronize_portal_attendance_after_shift_change(
+            work_information.employee_id,
+            previous_shift_id,
+            work_information.shift_id_id,
+        )
         messages.success(request, _("Work Information Updated Successfully"))
     return render(
         request,

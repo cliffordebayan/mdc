@@ -8,11 +8,12 @@ import ipaddress
 import logging
 
 logger = logging.getLogger(__name__)
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 
 from django.contrib import messages
 from django.db.models import Q
 from django.http import HttpResponse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from attendance.methods.utils import (
@@ -39,6 +40,26 @@ from base.models import AttendanceAllowedIP, Company, EmployeeShiftDay
 from horilla.decorators import hx_request_required, login_required
 from horilla.horilla_middlewares import _thread_locals
 from horilla.http import HorillaRedirect
+
+
+def _attendance_datetime_now(request):
+    """Return the attendance event time as a naive configured-local datetime.
+
+    Attendance stores separate date and time fields, so those values must be
+    derived from the same local timestamp. Explicit timestamps supplied by a
+    biometric device or the auto-checkout scheduler remain authoritative.
+    """
+    datetime_now = request.__dict__.get("datetime")
+    if datetime_now is None:
+        datetime_now = timezone.localtime(
+            timezone.now(), timezone.get_default_timezone()
+        )
+    elif timezone.is_aware(datetime_now):
+        datetime_now = timezone.localtime(
+            datetime_now, timezone.get_default_timezone()
+        )
+
+    return datetime_now.replace(tzinfo=None)
 
 
 def late_come_create(attendance):
@@ -185,6 +206,12 @@ def clock_in_attendance_and_activity(
         )
     else:
         attendance = attendance[0]
+        if str(getattr(shift, "employee_shift", "")).endswith("_shift"):
+            # Portal attendance must use the employee-owned generated shift
+            # even when today's row was created earlier with the regular
+            # employee shift.
+            attendance.shift_id = shift
+            attendance.minimum_hour = minimum_hour
         # Track this clock-in as the current last event. If the employee forgets to
         # clock out, this time will remain as attendance_clock_out. If they do clock
         # out, clock_out_attendance_and_activity will overwrite it with the actual time.
@@ -250,18 +277,16 @@ def clock_in(request):
                 return HttpResponse(_("You cannot mark attendance from this network"))
 
         employee, work_info = employee_exists(request)
-        datetime_now = datetime.now()
-        if request.__dict__.get("datetime"):
-            datetime_now = request.datetime
+        datetime_now = _attendance_datetime_now(request)
         if employee and work_info is not None:
             shift = work_info.shift_id
-            date_today = date.today()
+            date_today = datetime_now.date()
             if request.__dict__.get("date"):
                 date_today = request.date
             attendance_date = date_today
             day = date_today.strftime("%A").lower()
             day = EmployeeShiftDay.objects.filter(day=day).first()
-            now = datetime.now().strftime("%H:%M")
+            now = datetime_now.strftime("%H:%M")
             if request.__dict__.get("time"):
                 now = request.time.strftime("%H:%M")
             now_sec = strtime_seconds(now)
@@ -501,12 +526,10 @@ def clock_out(request):
         and attendance_general_settings.enable_check_in
         or request.__dict__.get("datetime")
     ):
-        datetime_now = datetime.now()
-        if request.__dict__.get("datetime"):
-            datetime_now = request.datetime
+        datetime_now = _attendance_datetime_now(request)
         employee, work_info = employee_exists(request)
         shift = work_info.shift_id
-        date_today = date.today()
+        date_today = datetime_now.date()
         if request.__dict__.get("date"):
             date_today = request.date
         day = date_today.strftime("%A").lower()
@@ -522,7 +545,7 @@ def clock_out(request):
                 attendance.attendance_day = EmployeeShiftDay.objects.filter(day=day_name).first()
                 attendance.save(update_fields=["attendance_day"])
             day = attendance.attendance_day
-        now = datetime.now().strftime("%H:%M")
+        now = datetime_now.strftime("%H:%M")
         if request.__dict__.get("time"):
             now = request.time.strftime("%H:%M")
         minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
