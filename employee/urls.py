@@ -219,6 +219,16 @@ urlpatterns = [
         views.work_info_import_file,
         name="work-info-import-file",
     ),
+    path(
+        "employee-bulk-update-import",
+        views.employee_bulk_update_import,
+        name="employee-bulk-update-import",
+    ),
+    path(
+        "employee-bulk-update-import-file",
+        views.employee_bulk_update_import_file,
+        name="employee-bulk-update-import-file",
+    ),
     path("work-info-export", views.work_info_export, name="work-info-export"),
     path("get-birthday", views.get_employees_birthday, name="get-birthday"),
     path("dashboard", views.dashboard, name="dashboard"),

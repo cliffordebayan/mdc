@@ -37,6 +37,72 @@ is_postgres = connection.vendor == "postgresql"
 DEFAULT_INSURANCE_NAMES = []
 
 
+BASE_EMPLOYEE_IMPORT_COLUMNS = [
+    "Employee No",
+    "First Name",
+    "Middle Name",
+    "Last Name",
+    "Extension",
+    "Date of Birth",
+    "Gender",
+    "Address",
+    "Country",
+    "Province",
+    "City",
+    "Qualification",
+    "Experience",
+    "Marital Status",
+    "Children",
+    "Emergency Contact",
+    "Emergency Contact Name",
+    "Emergency Contact Relation",
+    "TIN Number",
+    "SSS Number",
+    "HDMF Number",
+    "PhilHealth Number",
+    "Phone",
+    "Email",
+    "Company",
+    "Department",
+    "Job Position",
+    "Job Role",
+    "Shift Information",
+    "Employee Type",
+    "Payroll Group",
+    "Reporting Manager",
+    "Work Location",
+    "Branch",
+    "Cost Center",
+    "Business Unit",
+    "Work Type",
+    "Salary",
+    "Salary Hour",
+    "Joining Date",
+    "End Date",
+    "Employee Status",
+    "Tags",
+    "Is Active",
+    "Work Email",
+    "Work Phone",
+    "PIN",
+    "Bank",
+    "Account Number",
+]
+
+
+def get_employee_import_columns():
+    """Return the canonical employee import columns, including dynamic insurance fields."""
+    return [
+        *BASE_EMPLOYEE_IMPORT_COLUMNS,
+        *get_import_bank_names(),
+        *[
+            col
+            for name in get_import_insurance_names()
+            for col in (name, f"{name} Start Date", f"{name} End Date")
+        ],
+    ]
+
+
 def get_import_bank_names():
     """Returns the ordered list of canonical bank names from the Bank model."""
     from django.db import OperationalError, ProgrammingError
@@ -66,6 +132,7 @@ def get_import_insurance_names():
 def get_error_data_template():
     """Returns a fresh error-report template dict with dynamic bank/insurance columns."""
     insurance_names = get_import_insurance_names()
+    bank_names = get_import_bank_names()
     return {
         field: []
         for field in [
@@ -117,6 +184,7 @@ def get_error_data_template():
             "Work Phone",
             "Bank",
             "Account Number",
+            *bank_names,
             *[col for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")],
             "Email Error",
             "First Name Error",
@@ -1251,6 +1319,7 @@ def bulk_create_bank_details_import(success_lists):
     )
 
     all_banks = {b.name: b for b in Bank.objects.all()}
+    normalized_banks = {name.strip().lower(): bank for name, bank in all_banks.items()}
 
     bank_details_to_create = []
     for row in success_lists:
@@ -1259,18 +1328,25 @@ def bulk_create_bank_details_import(success_lists):
             continue
         bank_name = convert_nan("Bank", row)
         account_no = convert_nan("Account Number", row)
-        if not bank_name or not account_no:
-            continue
-        bank_obj = all_banks.get(str(bank_name).strip())
-        if bank_obj and (emp.pk, bank_obj.pk) not in existing_bank_keys:
-            bank_details_to_create.append(
-                EmployeeBankDetails(
-                    employee_id=emp,
-                    bank=bank_obj,
-                    account_number=str(account_no).strip(),
+        bank_entries = []
+        if bank_name and account_no:
+            bank_entries.append((str(bank_name).strip(), account_no))
+        for candidate_name, candidate_account in row.items():
+            bank_obj = normalized_banks.get(str(candidate_name).strip().lower())
+            if bank_obj and convert_nan(candidate_name, row):
+                bank_entries.append((bank_obj.name, candidate_account))
+
+        for bank_name, account_no in bank_entries:
+            bank_obj = normalized_banks.get(str(bank_name).strip().lower())
+            if bank_obj and (emp.pk, bank_obj.pk) not in existing_bank_keys:
+                bank_details_to_create.append(
+                    EmployeeBankDetails(
+                        employee_id=emp,
+                        bank=bank_obj,
+                        account_number=str(account_no).strip(),
+                    )
                 )
-            )
-            existing_bank_keys.add((emp.pk, bank_obj.pk))
+                existing_bank_keys.add((emp.pk, bank_obj.pk))
 
     if bank_details_to_create:
         with transaction.atomic():
@@ -1408,3 +1484,347 @@ def bulk_create_insurance_import(success_lists):
                 batch_size=None if is_postgres else 999,
                 ignore_conflicts=True,
             )
+
+
+def _import_cell_present(row, column):
+    value = row.get(column)
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return not (isinstance(value, str) and not value.strip())
+
+
+def _import_cell_value(row, column):
+    value = row.get(column)
+    if not _import_cell_present(row, column):
+        return None
+    return value.strip() if isinstance(value, str) else value
+
+
+def _bulk_update_error(errors, field, message):
+    errors[f"{field} Error"] = message
+
+
+def _lookup_import_value(model, field, value, label, errors):
+    if value is None:
+        return None
+    instance = model.objects.filter(**{field: value}).first()
+    if instance is None:
+        _bulk_update_error(errors, label, f"{label} '{value}' does not exist.")
+    return instance
+
+
+def update_employee_from_import_row(employee, row):
+    """Validate and update one existing employee from a bulk-update row.
+
+    The function performs no writes until all row validation has passed and is
+    intended to be called inside a per-row transaction.
+    """
+    from employee.models import EmployeeInsurance
+
+    errors = {}
+    email_regex = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+    phone_regex = re.compile(r"^\+?\d{10,15}$")
+    employee_values = {}
+    work_values = {}
+    provided = [
+        column
+        for column in get_employee_import_columns()
+        if column != "Employee No" and _import_cell_present(row, column)
+    ]
+    if not provided:
+        errors["Import Error"] = "No fields were supplied for update."
+        return errors
+
+    raw_email = _import_cell_value(row, "Email")
+    if raw_email is not None:
+        email = str(raw_email).strip().lower()
+        if not email_regex.match(email):
+            _bulk_update_error(errors, "Email", "Invalid email address.")
+        elif Employee.objects.filter(email=email).exclude(pk=employee.pk).exists():
+            _bulk_update_error(errors, "Email", "This email is already used by another employee.")
+        else:
+            employee_values["email"] = email
+
+    if _import_cell_present(row, "Phone"):
+        phone = normalize_phone(row.get("Phone"))
+        if not phone_regex.match(phone):
+            _bulk_update_error(errors, "Phone", "Invalid phone number format.")
+        else:
+            employee_values["phone"] = phone
+
+    raw_work_email = _import_cell_value(row, "Work Email")
+    if raw_work_email is not None:
+        work_email = str(raw_work_email).strip().lower()
+        if work_email and not email_regex.match(work_email):
+            _bulk_update_error(errors, "Work Email", "Invalid work email address.")
+        else:
+            work_values["email"] = work_email or None
+
+    if _import_cell_present(row, "Work Phone"):
+        work_values["mobile"] = normalize_phone(row.get("Work Phone"))
+
+    choice_fields = {
+        "Gender": ("gender", {choice[0] for choice in Employee.choice_gender}),
+        "Marital Status": ("marital_status", {choice[0] for choice in Employee.choice_marital}),
+        "Employee Status": (
+            "employee_status",
+            {choice[0] for choice in EmployeeWorkInformation.choice_employee_status},
+        ),
+    }
+    for column, (field, allowed) in choice_fields.items():
+        if _import_cell_present(row, column):
+            value = str(_import_cell_value(row, column)).strip().lower()
+            if value not in allowed:
+                _bulk_update_error(errors, column, f"Invalid value. Allowed values: {', '.join(sorted(allowed))}.")
+            elif field == "employee_status":
+                work_values[field] = value
+            else:
+                employee_values[field] = value
+
+    if _import_cell_present(row, "Is Active"):
+        active_value = str(_import_cell_value(row, "Is Active")).strip().lower()
+        if active_value not in {"true", "false"}:
+            _bulk_update_error(errors, "Is Active", "Enter true or false.")
+        else:
+            employee_values["is_active"] = active_value == "true"
+
+    date_fields = {
+        "Date of Birth": (employee_values, "dob", "Date of Birth"),
+        "Joining Date": (work_values, "date_joining", "Joining Date"),
+        "End Date": (work_values, "contract_end_date", "End Date"),
+    }
+    for column, (target, field, label) in date_fields.items():
+        if _import_cell_present(row, column):
+            target[field] = import_valid_date(
+                row.get(column), label, errors, f"{label} Error"
+            )
+    if "date_joining" in work_values and work_values["date_joining"]:
+        if work_values["date_joining"] > date.today():
+            _bulk_update_error(errors, "Joining Date", "Joining date cannot be in the future.")
+    if (
+        work_values.get("contract_end_date")
+        and work_values.get("date_joining")
+        and work_values["contract_end_date"] < work_values["date_joining"]
+    ):
+        _bulk_update_error(errors, "End Date", "Contract end date cannot be before joining date.")
+
+    scalar_employee_fields = {
+        "First Name": "employee_first_name",
+        "Middle Name": "employee_middle_name",
+        "Last Name": "employee_last_name",
+        "Extension": "employee_extension",
+        "Address": "address",
+        "Country": "country",
+        "Province": "state",
+        "City": "city",
+        "Qualification": "qualification",
+        "Emergency Contact": "emergency_contact",
+        "Emergency Contact Name": "emergency_contact_name",
+        "Emergency Contact Relation": "emergency_contact_relation",
+        "TIN Number": "tin_number",
+        "SSS Number": "sss_number",
+        "HDMF Number": "hdmf_number",
+        "PhilHealth Number": "philhealth_number",
+    }
+    for column, field in scalar_employee_fields.items():
+        if _import_cell_present(row, column):
+            employee_values[field] = _import_cell_value(row, column)
+
+    if _import_cell_present(row, "Work Location"):
+        work_values["location"] = _import_cell_value(row, "Work Location")
+
+    for column, field in (("Children", "children"), ("Experience", "experience")):
+        if _import_cell_present(row, column):
+            try:
+                number = float(_import_cell_value(row, column))
+                work_values[field] = int(number) if column == "Children" else number
+                if number < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                _bulk_update_error(errors, column, "Enter a valid non-negative number.")
+
+    for column, field, minimum in (
+        ("Salary", "basic_salary", 0),
+        ("Salary Hour", "salary_hour", 0),
+    ):
+        if _import_cell_present(row, column):
+            try:
+                value = float(_import_cell_value(row, column))
+                if value < minimum or (column == "Salary" and value == 0):
+                    raise ValueError
+                work_values[field] = int(value)
+            except (TypeError, ValueError):
+                _bulk_update_error(errors, column, "Enter a valid positive number.")
+
+    if _import_cell_present(row, "PIN"):
+        pin = str(_import_cell_value(row, "PIN")).strip()
+        if len(pin) > 6:
+            _bulk_update_error(errors, "PIN", "PIN must not exceed 6 characters.")
+        else:
+            work_values["pin"] = pin
+
+    current_work_info = getattr(employee, "employee_work_info", None)
+    if _import_cell_present(row, "Company"):
+        work_values["company_id"] = _lookup_import_value(
+            Company, "company", _import_cell_value(row, "Company"), "Company", errors
+        )
+    if _import_cell_present(row, "Department"):
+        work_values["department_id"] = _lookup_import_value(
+            Department, "department", _import_cell_value(row, "Department"), "Department", errors
+        )
+    target_department = work_values.get(
+        "department_id", getattr(current_work_info, "department_id", None)
+    )
+    if _import_cell_present(row, "Job Position"):
+        position_value = _import_cell_value(row, "Job Position")
+        queryset = JobPosition.objects.filter(job_position=position_value)
+        if target_department:
+            queryset = queryset.filter(department_id=target_department)
+        work_values["job_position_id"] = queryset.first()
+        if work_values["job_position_id"] is None:
+            _bulk_update_error(errors, "Job Position", f"Job Position '{position_value}' does not exist for the selected department.")
+    target_position = work_values.get(
+        "job_position_id", getattr(current_work_info, "job_position_id", None)
+    )
+    if _import_cell_present(row, "Job Role"):
+        role_value = _import_cell_value(row, "Job Role")
+        queryset = JobRole.objects.filter(job_role=role_value)
+        if target_position:
+            queryset = queryset.filter(job_position_id=target_position)
+        work_values["job_role_id"] = queryset.first()
+        if work_values["job_role_id"] is None:
+            _bulk_update_error(errors, "Job Role", f"Job Role '{role_value}' does not exist for the selected job position.")
+
+    relation_fields = {
+        "Shift Information": (EmployeeShift, "employee_shift", "shift_id"),
+        "Employee Type": (EmployeeType, "employee_type", "employee_type_id"),
+        "Payroll Group": (PayrollGroup, "name", "payroll_group_id"),
+        "Work Type": (WorkType, "work_type", "work_type_id"),
+        "Branch": (Branch, "branch", "branch_id"),
+        "Cost Center": (CostCenter, "name", "cost_center_id"),
+        "Business Unit": (BusinessUnit, "name", "business_unit_id"),
+    }
+    for column, (model, field, target) in relation_fields.items():
+        if _import_cell_present(row, column):
+            work_values[target] = _lookup_import_value(
+                model, field, _import_cell_value(row, column), column, errors
+            )
+    if _import_cell_present(row, "Reporting Manager"):
+        manager_name = str(_import_cell_value(row, "Reporting Manager")).strip()
+        manager = next(
+            (
+                manager
+                for manager in Employee.objects.filter(is_active=True)
+                if manager.get_full_name() == manager_name
+            ),
+            None,
+        )
+        if manager is None:
+            _bulk_update_error(errors, "Reporting Manager", f"Reporting Manager '{manager_name}' does not exist.")
+        elif manager.pk == employee.pk:
+            _bulk_update_error(errors, "Reporting Manager", "An employee cannot report to themselves.")
+        else:
+            work_values["reporting_manager_id"] = manager
+
+    if errors:
+        return errors
+
+    for field, value in employee_values.items():
+        setattr(employee, field, value)
+    if employee_values:
+        Employee.objects.filter(pk=employee.pk).update(**employee_values)
+    if "email" in employee_values and employee.employee_user_id:
+        employee.employee_user_id.email = employee.email
+        employee.employee_user_id.username = employee.email
+        employee.employee_user_id.save(update_fields=["email", "username"])
+
+    dynamic_bank_columns = [
+        bank_name
+        for bank_name in get_import_bank_names()
+        if _import_cell_present(row, bank_name)
+    ]
+    needs_work_info = bool(work_values) or _import_cell_present(row, "Tags") or _import_cell_present(row, "Bank") or _import_cell_present(row, "Account Number") or bool(dynamic_bank_columns)
+    insurance_names = get_import_insurance_names()
+    needs_work_info = needs_work_info or any(
+        _import_cell_present(row, column)
+        for name in insurance_names
+        for column in (name, f"{name} Start Date", f"{name} End Date")
+    )
+    work_info = None
+    if needs_work_info:
+        work_info, _ = EmployeeWorkInformation.objects.get_or_create(employee_id=employee)
+        for field, value in work_values.items():
+            setattr(work_info, field, value)
+        if work_values:
+            EmployeeWorkInformation.objects.filter(pk=work_info.pk).update(**work_values)
+
+    if _import_cell_present(row, "Tags"):
+        tags = []
+        for title in str(_import_cell_value(row, "Tags")).split(","):
+            title = title.strip()
+            if title:
+                tags.append(EmployeeTag.objects.get_or_create(title=title)[0])
+        work_info.tags.set(tags)
+
+    if _import_cell_present(row, "Bank") or _import_cell_present(row, "Account Number"):
+        if not (_import_cell_present(row, "Bank") and _import_cell_present(row, "Account Number")):
+            return {"Import Error": "Bank and Account Number must be supplied together."}
+        bank = Bank.objects.filter(name=str(_import_cell_value(row, "Bank")).strip()).first()
+        if bank is None:
+            return {"Bank Error": f"Bank '{_import_cell_value(row, 'Bank')}' does not exist."}
+        bank_detail = EmployeeBankDetails.objects.filter(employee_id=employee, bank=bank).first()
+        if bank_detail is None:
+            bank_detail = EmployeeBankDetails(employee_id=employee, bank=bank)
+        bank_detail.account_number = str(_import_cell_value(row, "Account Number")).strip()
+        bank_detail.save()
+
+    if dynamic_bank_columns:
+        banks_by_name = {
+            bank.name.strip().lower(): bank for bank in Bank.objects.all()
+        }
+        for bank_column in dynamic_bank_columns:
+            bank = banks_by_name.get(bank_column.strip().lower())
+            if bank is None:
+                return {"Import Error": f"Bank '{bank_column}' does not exist."}
+            bank_detail = EmployeeBankDetails.objects.filter(
+                employee_id=employee, bank=bank
+            ).first()
+            if bank_detail is None:
+                bank_detail = EmployeeBankDetails(employee_id=employee, bank=bank)
+            bank_detail.account_number = str(_import_cell_value(row, bank_column)).strip()
+            bank_detail.save()
+
+    for insurance_name in insurance_names:
+        enrollment_column = insurance_name
+        start_column = f"{insurance_name} Start Date"
+        end_column = f"{insurance_name} End Date"
+        supplied = any(_import_cell_present(row, column) for column in (enrollment_column, start_column, end_column))
+        if not supplied:
+            continue
+        enrollment = _import_cell_value(row, enrollment_column)
+        if enrollment is None:
+            return {"Import Error": f"{insurance_name} must specify yes or no when its dates are supplied."}
+        enrollment = str(enrollment).strip().lower()
+        if enrollment not in {"yes", "no"}:
+            return {f"{insurance_name} Error": "Enter yes or no."}
+        insurance = EmployeeInsurance.objects.filter(employee_id=employee, name=insurance_name).first()
+        if enrollment == "no":
+            if insurance:
+                insurance.delete()
+            continue
+        if insurance is None:
+            insurance = EmployeeInsurance(employee_id=employee, name=insurance_name)
+        for column, field in ((start_column, "start_date"), (end_column, "end_date")):
+            if _import_cell_present(row, column):
+                parsed = _parse_date_value(row.get(column))
+                if parsed is None:
+                    return {f"{insurance_name} Error": f"{column} is not a valid date."}
+                setattr(insurance, field, parsed)
+        insurance.save()
+
+    return {}

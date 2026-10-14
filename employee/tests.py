@@ -13,12 +13,16 @@ from django.test import Client, RequestFactory, TestCase, TransactionTestCase
 from django.urls import reverse
 
 from attendance.models import Attendance, AttendanceActivity, AttendanceOverTime
-from base.models import Branch, BusinessUnit, Company, PayrollGroup
+from base.models import Branch, BusinessUnit, Company, EmployeeShift, PayrollGroup
 from employee.filters import EmployeeFilter
+from employee.methods.methods import get_employee_import_columns
 from employee.models import (
+    Bank,
     Employee,
     EmployeeBankDetails,
+    EmployeeInsurance,
     EmployeeOnboardingPortal,
+    EmployeeTag,
     EmployeeWorkInformation,
 )
 from employee.views import _delete_employee_record, employee_delete
@@ -511,6 +515,8 @@ class EmployeeImportFlowTests(TransactionTestCase):
             gender="male",
             is_active=True,
         )
+        for bank_name in ("GCash", "Metrobank"):
+            Bank.objects.get_or_create(name=bank_name)
         self.client.force_login(self.user)
 
     def _build_excel_file(self, rows):
@@ -756,6 +762,271 @@ class EmployeeImportFlowTests(TransactionTestCase):
         bank_accounts = EmployeeBankDetails.objects.filter(employee_id=employee)
         self.assertTrue(bank_accounts.filter(bank__name="GCash").exists())
         self.assertTrue(bank_accounts.filter(bank__name="Metrobank").exists())
+
+
+class EmployeeBulkUpdateImportTests(TransactionTestCase):
+    def setUp(self):
+        _thread_locals.request = None
+        self.admin = User.objects.create_superuser(
+            username="bulk-update-admin",
+            email="bulk-update-admin@example.com",
+            password="password123",
+        )
+        Employee.objects.create(
+            employee_no="EMP-BULK-ADMIN",
+            employee_user_id=self.admin,
+            employee_first_name="Bulk",
+            employee_last_name="Admin",
+            email="bulk-update-admin@example.com",
+            phone="09170000002",
+            gender="male",
+            is_active=True,
+        )
+        self.target_user = User.objects.create_user(
+            username="bulk-target@example.com",
+            email="bulk-target@example.com",
+            password="original-password",
+        )
+        self.target = Employee.objects.create(
+            employee_no="EMP-BULK-001",
+            employee_user_id=self.target_user,
+            employee_first_name="Before",
+            employee_last_name="Update",
+            email="bulk-target@example.com",
+            phone="09170000001",
+            gender="male",
+            is_active=True,
+        )
+        self.original_shift = EmployeeShift.objects.create(
+            employee_shift="Bulk Original Shift"
+        )
+        self.updated_shift = EmployeeShift.objects.create(
+            employee_shift="Bulk Updated Shift"
+        )
+        self.work_info = self.target.employee_work_info
+        EmployeeWorkInformation.objects.filter(pk=self.work_info.pk).update(
+            shift_id=self.original_shift,
+            location="Original Location",
+            basic_salary=31500,
+            salary_hour=175,
+            employee_status="resigned",
+            email="original-work@example.com",
+            mobile="09170000009",
+            experience=4,
+            pin="123456",
+        )
+        self.old_tag = EmployeeTag.objects.create(title="Original Tag")
+        self.target.employee_work_info.tags.add(self.old_tag)
+        self.old_bank = Bank.objects.create(name="Bulk Original Bank")
+        EmployeeBankDetails.objects.create(
+            employee_id=self.target,
+            bank=self.old_bank,
+            account_number="ORIGINAL-ACCOUNT",
+        )
+        EmployeeInsurance.objects.create(
+            employee_id=self.target,
+            name="Bulk Health Plan",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+        )
+        self.client.force_login(self.admin)
+
+    def _upload(self, rows, filename="employee_bulk_update.xlsx"):
+        file_buffer = BytesIO()
+        pd.DataFrame(rows).to_excel(file_buffer, index=False)
+        return self.client.post(
+            reverse("employee-bulk-update-import"),
+            {
+                "file": SimpleUploadedFile(
+                    filename,
+                    file_buffer.getvalue(),
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+    def _blank_row(self, **values):
+        row = {column: "" for column in get_employee_import_columns()}
+        row.update(values)
+        return row
+
+    def test_bulk_update_modal_and_template_include_references(self):
+        modal_response = self.client.get(
+            reverse("employee-bulk-update-import"), HTTP_HX_REQUEST="true"
+        )
+        self.assertEqual(modal_response.status_code, 200)
+        self.assertContains(modal_response, "Bulk Update Employees")
+
+        template_response = self.client.get(reverse("employee-bulk-update-import-file"))
+        self.assertEqual(template_response.status_code, 200)
+        self.assertIn(
+            'filename="employee_bulk_update_template.xlsx"',
+            template_response.get("Content-Disposition", ""),
+        )
+        workbook = BytesIO(template_response.content)
+        self.assertIn("Employee No", pd.read_excel(workbook, sheet_name="Import Template").columns)
+        reference = pd.read_excel(BytesIO(template_response.content), sheet_name="Reference")
+        self.assertIn("Employee No", reference.columns)
+        self.assertIn("EMP-BULK-001", reference["Employee No"].dropna().tolist())
+
+    def test_bulk_update_changes_existing_employee_and_preserves_blank_fields(self):
+        response = self._upload(
+            [
+                {
+                    "Employee No": "EMP-BULK-001",
+                    "First Name": "After",
+                    "Salary": 42000,
+                    "Work Location": "Head Office",
+                    "Email": "bulk-updated@example.com",
+                }
+            ]
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Update Successful", response.content.decode("utf-8"))
+        self.target.refresh_from_db()
+        self.target.employee_user_id.refresh_from_db()
+        self.assertEqual(self.target.employee_first_name, "After")
+        self.assertEqual(self.target.phone, "09170000001")
+        self.assertEqual(self.target.employee_work_info.basic_salary, 42000)
+        self.assertEqual(self.target.employee_work_info.location, "Head Office")
+        self.assertEqual(self.target.email, "bulk-updated@example.com")
+        self.assertEqual(self.target.employee_user_id.username, "bulk-updated@example.com")
+        self.assertTrue(self.target.employee_user_id.check_password("original-password"))
+
+    def test_bulk_update_with_only_shift_changes_shift_and_preserves_blank_fields(self):
+        response = self._upload(
+            [
+                self._blank_row(
+                    **{
+                        "Employee No": "EMP-BULK-001",
+                        "Shift Information": "Bulk Updated Shift",
+                        "First Name": "   ",
+                        "Salary": float("nan"),
+                        "Tags": "   ",
+                        "Is Active": "",
+                    }
+                )
+            ]
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Update Successful", response.content.decode("utf-8"))
+        self.target.refresh_from_db()
+        work_info = EmployeeWorkInformation.objects.get(employee_id=self.target)
+        self.assertEqual(work_info.shift_id, self.updated_shift)
+        self.assertEqual(self.target.employee_first_name, "Before")
+        self.assertEqual(self.target.phone, "09170000001")
+        self.assertTrue(self.target.is_active)
+        self.assertEqual(work_info.location, "Original Location")
+        self.assertEqual(work_info.basic_salary, 31500)
+        self.assertEqual(work_info.salary_hour, 175)
+        self.assertEqual(work_info.employee_status, "resigned")
+        self.assertEqual(work_info.email, "original-work@example.com")
+        self.assertEqual(work_info.mobile, "09170000009")
+        self.assertEqual(work_info.experience, 4)
+        self.assertEqual(work_info.pin, "123456")
+        self.assertSetEqual(
+            set(work_info.tags.values_list("title", flat=True)), {"Original Tag"}
+        )
+        self.assertTrue(
+            EmployeeBankDetails.objects.filter(
+                employee_id=self.target,
+                bank=self.old_bank,
+                account_number="ORIGINAL-ACCOUNT",
+            ).exists()
+        )
+        self.assertTrue(
+            EmployeeInsurance.objects.filter(
+                employee_id=self.target,
+                name="Bulk Health Plan",
+                start_date=date(2024, 1, 1),
+                end_date=date(2024, 12, 31),
+            ).exists()
+        )
+
+    def test_bulk_update_blank_shift_preserves_existing_shift(self):
+        response = self._upload(
+            [
+                self._blank_row(
+                    **{
+                        "Employee No": "EMP-BULK-001",
+                        "First Name": "Updated Name",
+                        "Shift Information": "  ",
+                    }
+                )
+            ]
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.employee_first_name, "Updated Name")
+        self.assertEqual(
+            EmployeeWorkInformation.objects.get(employee_id=self.target).shift_id,
+            self.original_shift,
+        )
+
+    def test_bulk_update_invalid_shift_does_not_modify_the_row(self):
+        response = self._upload(
+            [
+                self._blank_row(
+                    **{
+                        "Employee No": "EMP-BULK-001",
+                        "First Name": "Should Not Change",
+                        "Shift Information": "Missing Bulk Shift",
+                    }
+                )
+            ]
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Download Error File", response.content.decode("utf-8"))
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.employee_first_name, "Before")
+        self.assertEqual(
+            EmployeeWorkInformation.objects.get(employee_id=self.target).shift_id,
+            self.original_shift,
+        )
+
+    def test_bulk_update_never_creates_unknown_employee_and_reports_errors(self):
+        response = self._upload(
+            [
+                {"Employee No": "EMP-DOES-NOT-EXIST", "First Name": "Created?"},
+                {"Employee No": "EMP-BULK-001", "First Name": "First"},
+                {"Employee No": "EMP-BULK-001", "First Name": "Duplicate"},
+            ]
+        )
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        self.assertIn("Download Error File", content)
+        self.assertFalse(Employee.objects.filter(employee_no="EMP-DOES-NOT-EXIST").exists())
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.employee_first_name, "First")
+
+    def test_bulk_update_supports_bank_and_active_state(self):
+        Bank.objects.get_or_create(name="GCash")
+        response = self._upload(
+            [
+                {
+                    "Employee No": "EMP-BULK-001",
+                    "Is Active": "false",
+                    "Bank": "GCash",
+                    "Account Number": "ACC-09179998888",
+                }
+            ]
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_active)
+        self.assertTrue(
+            EmployeeBankDetails.objects.entire().filter(
+                employee_id=self.target,
+                bank__name="GCash",
+                account_number="ACC-09179998888",
+            ).exists()
+        )
 
 
 class EmployeeStatusTransitionTests(TransactionTestCase):

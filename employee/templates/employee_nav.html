@@ -172,6 +172,15 @@
                                             </a>
                                         </li>
                                     {% endif %}
+                                    {% if perms.employee.change_employee %}
+                                        <li class="oh-dropdown__item">
+                                            <a href="#" class="oh-dropdown__link"
+                                                data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
+                                                hx-get="{% url 'employee-bulk-update-import' %}" hx-target="#objectCreateModalTarget">
+                                                {% trans "Bulk Update Import" %}
+                                            </a>
+                                        </li>
+                                    {% endif %}
                                     {% if emp %}
                                         {% if perms.employee.add_employee %}
                                             <li class="oh-dropdown__item">

@@ -79,8 +79,10 @@ function getCurrentLanguageCode(callback) {
     }
 }
 
-function template_download(e) {
+function template_download(e, templateUrl, filename) {
     e.preventDefault();
+    templateUrl = templateUrl || "/employee/work-info-import-file";
+    filename = filename || "work_info_template.xlsx";
     var languageCode = null;
     getCurrentLanguageCode(function (code) {
         languageCode = code;
@@ -97,7 +99,7 @@ function template_download(e) {
                 $("#loading").show();
 
                 var xhr = new XMLHttpRequest();
-                xhr.open("GET", "/employee/work-info-import-file", true);
+                xhr.open("GET", templateUrl, true);
                 xhr.responseType = "arraybuffer";
 
                 xhr.upload.onprogress = function (e) {
@@ -120,7 +122,7 @@ function template_download(e) {
                         const url = URL.createObjectURL(file);
                         const link = document.createElement("a");
                         link.href = url;
-                        link.download = "work_info_template.xlsx";
+                        link.download = filename;
                         document.body.appendChild(link);
                         link.click();
                     }

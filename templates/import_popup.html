@@ -8,11 +8,11 @@
             <div class="swal2-icon-content">!</div>
         </div>
 
-        <h2 class="swal2-title" id="swal2-title">{{model}} {% trans " Import Warning" %}</h2>
+        <h2 class="swal2-title" id="swal2-title">{{model}} {% if operation == "updated" %}{% trans " Update Warning" %}{% else %}{% trans " Import Warning" %}{% endif %}</h2>
 
         <div class="swal2-html-container" id="swal2-html-container" style="display: block">
-            <p>No {{model}} were imported.</p>
-            <p>There were {{error_count}} errors during the import.</p>
+            <p>{% if operation == "updated" %}No {{model}} were updated.{% else %}No {{model}} were imported.{% endif %}</p>
+            <p>There were {{error_count}} errors during the {% if operation == "updated" %}update{% else %}import{% endif %}.</p>
         </div>
         <!-- End of display warning SweetAlert when no records are imported -->
     {% else %}
@@ -20,14 +20,14 @@
             <div class="swal2-icon-content">✔</div>
         </div>
 
-        <h2 class="swal2-title" id="swal2-title">{{model}} {% trans " Import Successful" %}</h2>
+        <h2 class="swal2-title" id="swal2-title">{{model}} {% if operation == "updated" %}{% trans " Update Successful" %}{% else %}{% trans " Import Successful" %}{% endif %}</h2>
 
         <div class="swal2-html-container" id="swal2-html-container" style="display: block">
             {% if path_info %}
-                <p>{{created_count}} {{model}} were successfully imported.</p>
-                <p>{{error_count}} rows have errors during the import.</p>
+                <p>{{created_count}} {{model}} were successfully {% if operation == "updated" %}updated{% else %}imported{% endif %}.</p>
+                <p>{{error_count}} rows have errors during the {% if operation == "updated" %}update{% else %}import{% endif %}.</p>
             {% else %}
-                {{total_count}} {{model}} were successfully imported.
+                {{total_count}} {{model}} were successfully {% if operation == "updated" %}updated{% else %}imported{% endif %}.
             {% endif %}
         </div>
     {% endif %}

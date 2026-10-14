@@ -113,12 +113,15 @@ from employee.methods.methods import (
     bulk_create_work_info_import,
     bulk_create_work_types,
     bulk_set_tags_import,
+    clean_employee_no,
     get_error_data_template,
+    get_employee_import_columns,
     get_import_bank_names,
     get_import_insurance_names,
     get_ordered_employee_nos,
     process_employee_records,
     set_initial_password,
+    update_employee_from_import_row,
     valid_import_file_headers,
 )
 from employee.models import (
@@ -3087,9 +3090,7 @@ def convert_nan(field, dicts):
         return field_value
 
 
-@login_required
-@permission_required("employee.add_employee")
-def work_info_import_file(request):
+def _employee_import_file_response(request, bulk_update=False):
     """
     This method is used to return the excel file of import Employee instances
     """
@@ -3100,59 +3101,7 @@ def work_info_import_file(request):
 
     bank_names = get_import_bank_names()
     insurance_names = get_import_insurance_names()
-
-    columns = [
-        "Employee No",
-        "First Name",
-        "Middle Name",
-        "Last Name",
-        "Extension",
-        "Date of Birth",
-        "Gender",
-        "Address",
-        "Country",
-        "Province",
-        "City",
-        "Qualification",
-        "Experience",
-        "Marital Status",
-        "Children",
-        "Emergency Contact",
-        "Emergency Contact Name",
-        "Emergency Contact Relation",
-        "TIN Number",
-        "SSS Number",
-        "HDMF Number",
-        "PhilHealth Number",
-        "Phone",
-        "Email",
-        "Company",
-        "Department",
-        "Job Position",
-        "Job Role",
-        "Shift Information",
-        "Employee Type",
-        "Payroll Group",
-        "Reporting Manager",
-        "Work Location",
-        "Branch",
-        "Cost Center",
-        "Business Unit",
-        "Work Type",
-        "Salary",
-        "Salary Hour",
-        "Joining Date",
-        "End Date",
-        "Employee Status",
-        "Tags",
-        "Is Active",
-        "Work Email",
-        "Work Phone",
-        "PIN",
-        "Bank",
-        "Account Number",
-        *[col for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")],
-    ]
+    columns = get_employee_import_columns()
     example = {
         "Employee No": "EMP001",
         "First Name": "Clifford Allen",
@@ -3205,10 +3154,20 @@ def work_info_import_file(request):
         "Account Number": "",
         **{col: "" for n in insurance_names for col in (n, f"{n} Start Date", f"{n} End Date")},
     }
+    if bulk_update:
+        # A blank update template is safe to upload and forces the user to
+        # select a real Employee No from the Reference sheet.
+        example = {column: "" for column in columns}
 
     # --- Query DB values for relational fields ---
 
     db_ref_fields = {
+        "Employee No": list(
+            Employee.objects.entire()
+            .exclude(employee_no__isnull=True)
+            .exclude(employee_no="")
+            .values_list("employee_no", flat=True)
+        ),
         "Company": list(Company.objects.values_list("company", flat=True)),
         "Department": list(Department.objects.values_list("department", flat=True)),
         "Job Position": list(JobPosition.objects.values_list("job_position", flat=True)),
@@ -3221,6 +3180,11 @@ def work_info_import_file(request):
         "Cost Center": list(CostCenter.objects.values_list("name", flat=True)),
         "Business Unit": list(BusinessUnit.objects.values_list("name", flat=True)),
         "Bank": list(bank_names),
+        "Reporting Manager": [
+            employee.get_full_name()
+            for employee in Employee.objects.entire().filter(is_active=True)
+        ],
+        "Tags": list(EmployeeTag.objects.values_list("title", flat=True)),
     }
 
     philippine_provinces = [
@@ -3437,8 +3401,25 @@ def work_info_import_file(request):
         output.read(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    response["Content-Disposition"] = 'attachment; filename="work_info_template.xlsx"'
+    filename = (
+        "employee_bulk_update_template.xlsx"
+        if bulk_update
+        else "work_info_template.xlsx"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+@login_required
+@permission_required("employee.add_employee")
+def work_info_import_file(request):
+    return _employee_import_file_response(request)
+
+
+@login_required
+@permission_required("employee.change_employee")
+def employee_bulk_update_import_file(request):
+    return _employee_import_file_response(request, bulk_update=True)
 
 
 @login_required
@@ -3588,6 +3569,136 @@ def work_info_import(request):
     return render(
         request, "employee/employee_import.html", {"error_message": error_message}
     )
+
+
+@login_required
+@hx_request_required
+@permission_required("employee.change_employee")
+def employee_bulk_update_import(request):
+    """Update existing employees from a workbook keyed by Employee No."""
+    template_name = "employee/employee_bulk_update_import.html"
+
+    if request.method == "GET":
+        return render(request, template_name)
+
+    file = request.FILES.get("file")
+    if not file:
+        return render(request, template_name, {"error_message": _("No file uploaded.")})
+
+    try:
+        extension = file.name.rsplit(".", 1)[-1].lower()
+        if extension == "csv":
+            data_frame = pd.read_csv(file)
+        elif extension in {"xls", "xlsx"}:
+            data_frame = pd.read_excel(file)
+        else:
+            return render(
+                request,
+                template_name,
+                {"error_message": _("Unsupported file format. Please upload a CSV or Excel file.")},
+            )
+    except Exception as exc:
+        logger.error("Employee bulk update file error: %s", exc)
+        return render(
+            request,
+            template_name,
+            {"error_message": _("Failed to read file. Please ensure it is a valid CSV or Excel file.")},
+        )
+
+    supported_columns = set(get_employee_import_columns())
+    missing_columns = {"Employee No"} - set(data_frame.columns)
+    unknown_columns = set(data_frame.columns) - supported_columns
+    if data_frame.empty:
+        error_message = _("The uploaded file is empty, Not contain records.")
+    elif missing_columns:
+        error_message = _(
+            "These required headers are missing in the uploaded file: "
+        ) + ", ".join(sorted(missing_columns))
+    elif unknown_columns:
+        error_message = _(
+            "These headers are not supported. Please download the latest template: "
+        ) + ", ".join(sorted(unknown_columns))
+    else:
+        error_message = ""
+    if error_message:
+        return render(request, template_name, {"error_message": error_message})
+
+    rows = data_frame.to_dict("records")
+    employee_numbers = [clean_employee_no(row.get("Employee No")) for row in rows]
+    employees = {
+        employee.employee_no: employee
+        for employee in Employee.objects.filter(employee_no__in=employee_numbers)
+    }
+    seen_employee_numbers = set()
+    error_list = []
+    updated_count = 0
+
+    class RowValidationError(Exception):
+        def __init__(self, errors):
+            self.errors = errors
+
+    for row in rows:
+        employee_number = clean_employee_no(row.get("Employee No"))
+        row["Employee No"] = employee_number
+        if not employee_number:
+            row["Import Error"] = "Employee No cannot be empty."
+            error_list.append(row)
+            continue
+        if employee_number in seen_employee_numbers:
+            row["Import Error"] = "Duplicate Employee No in the uploaded file."
+            error_list.append(row)
+            continue
+        seen_employee_numbers.add(employee_number)
+        employee = employees.get(employee_number)
+        if employee is None:
+            row["Import Error"] = "Employee No was not found in the current employee scope."
+            error_list.append(row)
+            continue
+
+        try:
+            with transaction.atomic():
+                row_errors = update_employee_from_import_row(employee, row)
+                if row_errors:
+                    raise RowValidationError(row_errors)
+        except RowValidationError as exc:
+            row.update(exc.errors)
+            error_list.append(row)
+        except Exception as exc:
+            logger.exception("Employee bulk update failed for %s", employee_number)
+            row["Import Error"] = str(exc)
+            error_list.append(row)
+        else:
+            updated_count += 1
+
+    error_count = len(error_list)
+    path_info = None
+    if error_list:
+        error_template = {column: [] for column in data_frame.columns}
+        for row in error_list:
+            for key in row:
+                error_template.setdefault(key, [])
+        path_info = generate_error_report(
+            error_list,
+            error_template,
+            "EmployeesBulkUpdateImportError.xlsx",
+        )
+
+    context = {
+        "created_count": updated_count,
+        "updated_count": updated_count,
+        "total_count": len(rows),
+        "error_count": error_count,
+        "model": _("Employees"),
+        "path_info": path_info,
+        "operation": "updated",
+    }
+    result = render_to_string("import_popup.html", context)
+    result += """
+                <script>
+                    $('#objectCreateModalTarget').css('max-width', '510px');
+                </script>
+            """
+    return HttpResponse(result)
 
 
 @login_required
