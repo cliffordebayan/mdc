@@ -145,6 +145,7 @@ from base.models import (
     DynamicEmailConfiguration,
     DynamicPagination,
     EmployeeShift,
+    EmployeeShiftDay,
     EmployeeShiftSchedule,
     EmployeeType,
     Holidays,
@@ -3112,6 +3113,336 @@ def employee_shift_schedule_view(request):
         "base/shift/schedule.html",
         {"shifts": shifts, "shift_schedule": shift_schedule},
     )
+
+
+SHIFT_IMPORT_DAYS = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)
+SHIFT_IMPORT_SUBHEADERS = ("AM", "PM", "Rest Day")
+
+
+def _shift_import_is_empty(value):
+    if value is None:
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return not str(value).strip()
+
+
+def _shift_import_employee_number(value):
+    if _shift_import_is_empty(value):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    value = str(value).strip()
+    if value.endswith(".0") and value[:-2].isdigit():
+        return value[:-2]
+    return value
+
+
+def _shift_import_parse_time(value):
+    if _shift_import_is_empty(value):
+        return None
+    value = str(value).strip().upper().replace("  ", " ")
+    for time_format in ("%I:%M %p", "%I:%M:%S %p", "%I %p"):
+        try:
+            return datetime.strptime(value, time_format).time()
+        except ValueError:
+            continue
+    raise ValueError(_("Use a 12-hour time such as 8:00 AM or 5:00 PM."))
+
+
+def _shift_import_parse_rest_day(value):
+    if _shift_import_is_empty(value):
+        return False
+    normalized = str(value).strip().lower()
+    if normalized in {"yes", "y", "true", "1", "on", "x"}:
+        return True
+    if normalized in {"no", "n", "false", "0", "off"}:
+        return False
+    raise ValueError(_("Rest Day must be Yes or No."))
+
+
+def _shift_import_columns():
+    return [
+        "Employee No",
+        *[
+            f"{day} {subheader}"
+            for day in SHIFT_IMPORT_DAYS
+            for subheader in SHIFT_IMPORT_SUBHEADERS
+        ],
+    ]
+
+
+def _shift_import_flatten_frame(data_frame, is_excel=False):
+    expected_columns = _shift_import_columns()
+    if is_excel:
+        data_frame = data_frame.dropna(how="all")
+        if data_frame.empty:
+            raise ValueError(_("The uploaded file does not contain any rows."))
+
+        first_row = [
+            "" if _shift_import_is_empty(value) else str(value).strip()
+            for value in data_frame.iloc[0].tolist()
+        ]
+        second_row = (
+            [
+                "" if _shift_import_is_empty(value) else str(value).strip()
+                for value in data_frame.iloc[1].tolist()
+            ]
+            if len(data_frame.index) > 1
+            else []
+        )
+        first_row_matches_flat_headers = {
+            value.lower() for value in first_row
+        }.intersection({column.lower() for column in expected_columns})
+        if len(first_row_matches_flat_headers) >= len(expected_columns) - 1:
+            headers = first_row
+            data_frame = data_frame.iloc[1:].copy()
+        else:
+            headers = []
+            current_day = ""
+            for index, value in enumerate(first_row):
+                if value:
+                    current_day = value
+                subheader = second_row[index] if index < len(second_row) else ""
+                headers.append(
+                    "Employee No"
+                    if index == 0
+                    else f"{current_day} {subheader}".strip()
+                )
+            data_frame = data_frame.iloc[2:].copy()
+        data_frame.columns = headers
+    else:
+        data_frame.columns = [str(column).strip() for column in data_frame.columns]
+
+    if len(set(data_frame.columns)) != len(data_frame.columns):
+        raise ValueError(_("The uploaded file contains duplicate column headers."))
+    missing_columns = [column for column in expected_columns if column not in data_frame.columns]
+    unexpected_columns = [column for column in data_frame.columns if column not in expected_columns]
+    if missing_columns or unexpected_columns:
+        raise ValueError(
+            _(
+                "Invalid template headers. Please download the latest shift schedule template."
+            )
+        )
+    return data_frame[expected_columns].dropna(how="all")
+
+
+def _shift_import_apply_row(row):
+    employee_number = _shift_import_employee_number(row.get("Employee No"))
+    if not employee_number:
+        raise ValueError(_("Employee No is required."))
+
+    employee = Employee.objects.entire().filter(employee_no=employee_number).first()
+    if employee is None:
+        raise ValueError(_("Employee %(employee_no)s was not found.") % {"employee_no": employee_number})
+
+    shift_name = f"{employee_number}_shift"
+    if len(shift_name) > EmployeeShift._meta.get_field("employee_shift").max_length:
+        raise ValueError(_("The generated shift name is too long."))
+
+    day_values = []
+    for day in SHIFT_IMPORT_DAYS:
+        am_value = row.get(f"{day} AM")
+        pm_value = row.get(f"{day} PM")
+        rest_value = row.get(f"{day} Rest Day")
+        if all(_shift_import_is_empty(value) for value in (am_value, pm_value, rest_value)):
+            continue
+
+        is_rest_day = _shift_import_parse_rest_day(rest_value)
+        has_am = not _shift_import_is_empty(am_value)
+        has_pm = not _shift_import_is_empty(pm_value)
+        if has_am != has_pm:
+            raise ValueError(_("%(day)s requires both AM and PM times.") % {"day": day})
+        day_values.append(
+            (
+                day.lower(),
+                is_rest_day,
+                _shift_import_parse_time(am_value) if has_am else None,
+                _shift_import_parse_time(pm_value) if has_pm else None,
+            )
+        )
+
+    work_info, work_info_created = EmployeeWorkInformation.objects.get_or_create(
+        employee_id=employee
+    )
+    shift, shift_created = EmployeeShift._base_manager.get_or_create(
+        employee_shift=shift_name,
+        defaults={"weekly_full_time": "40:00", "full_time": "200:00"},
+    )
+    if work_info.company_id_id:
+        shift.company_id.add(work_info.company_id_id)
+
+    work_info.shift_id = shift
+    work_info.save(update_fields=["shift_id"])
+
+    for day_name, is_rest_day, start_time, end_time in day_values:
+        day, day_created = EmployeeShiftDay.objects.get_or_create(day=day_name)
+        EmployeeShiftSchedule._base_manager.update_or_create(
+            shift_id=shift,
+            day=day,
+            defaults={
+                "minimum_working_hour": "08:00",
+                "start_time": start_time,
+                "end_time": end_time,
+                "is_rest_day": is_rest_day,
+            },
+        )
+
+
+@login_required
+@permission_required("base.add_employeeshiftschedule")
+def employee_shift_schedule_import_file(request):
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Shift Schedule"
+    columns = _shift_import_columns()
+    worksheet.cell(row=1, column=1, value="Employee No")
+    worksheet.merge_cells(start_row=1, start_column=1, end_row=2, end_column=1)
+    for day_index, day in enumerate(SHIFT_IMPORT_DAYS):
+        start_column = 2 + day_index * len(SHIFT_IMPORT_SUBHEADERS)
+        worksheet.merge_cells(
+            start_row=1,
+            start_column=start_column,
+            end_row=1,
+            end_column=start_column + len(SHIFT_IMPORT_SUBHEADERS) - 1,
+        )
+        worksheet.cell(row=1, column=start_column, value=day)
+        for offset, subheader in enumerate(SHIFT_IMPORT_SUBHEADERS):
+            worksheet.cell(row=2, column=start_column + offset, value=subheader)
+
+    header_fill = PatternFill("solid", fgColor="D9EAF7")
+    for row in worksheet.iter_rows(min_row=1, max_row=2, min_col=1, max_col=len(columns)):
+        for cell in row:
+            cell.font = Font(bold=True)
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+    worksheet.append(
+        [
+            "2024785",
+            "8:00 AM",
+            "5:00 PM",
+            "No",
+            "8:00 AM",
+            "5:00 PM",
+            "No",
+            "8:00 AM",
+            "5:00 PM",
+            "No",
+            "8:00 AM",
+            "5:00 PM",
+            "No",
+            "8:00 AM",
+            "5:00 PM",
+            "No",
+            "",
+            "",
+            "Yes",
+            "",
+            "",
+            "Yes",
+        ]
+    )
+    worksheet.freeze_panes = "B3"
+    worksheet.row_dimensions[1].height = 24
+    worksheet.row_dimensions[2].height = 22
+    for column_index in range(1, len(columns) + 1):
+        worksheet.column_dimensions[get_column_letter(column_index)].width = 16
+    rest_day_columns = [4 + day_index * 3 for day_index in range(7)]
+    for column_index in rest_day_columns:
+        column_letter = worksheet.cell(row=2, column=column_index).column_letter
+        validation = DataValidation(type="list", formula1='"Yes,No"', allow_blank=True)
+        validation.add(f"{column_letter}3:{column_letter}1000")
+        worksheet.add_data_validation(validation)
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    response = HttpResponse(
+        output.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = 'attachment; filename="employee_shift_schedule_template.xlsx"'
+    return response
+
+
+@login_required
+@permission_required("base.add_employeeshiftschedule")
+def employee_shift_schedule_import(request):
+    if request.method == "GET":
+        return render(request, "base/shift/schedule_import.html")
+
+    file = request.FILES.get("file")
+    if not file:
+        return render(
+            request,
+            "base/shift/schedule_import.html",
+            {"error_message": _("No file uploaded.")},
+        )
+
+    try:
+        file_extension = file.name.rsplit(".", 1)[-1].lower()
+        if file_extension == "csv":
+            data_frame = pd.read_csv(file, dtype=str)
+            normalized_frame = _shift_import_flatten_frame(data_frame)
+        elif file_extension in {"xls", "xlsx"}:
+            data_frame = pd.read_excel(file, header=None)
+            normalized_frame = _shift_import_flatten_frame(data_frame, is_excel=True)
+        else:
+            raise ValueError(_("Unsupported file format. Please upload a CSV or Excel file."))
+    except Exception as error:
+        return render(
+            request,
+            "base/shift/schedule_import.html",
+            {"error_message": str(error)},
+        )
+
+    error_list = []
+    success_count = 0
+    for row in normalized_frame.to_dict("records"):
+        try:
+            with transaction.atomic():
+                _shift_import_apply_row(row)
+        except Exception as error:
+            error_row = dict(row)
+            error_row["Import Error"] = str(error)
+            error_list.append(error_row)
+        else:
+            success_count += 1
+
+    path_info = (
+        generate_error_report(
+            error_list,
+            {column: [] for column in [*_shift_import_columns(), "Import Error"]},
+            "EmployeeShiftScheduleImportError.xlsx",
+        )
+        if error_list
+        else None
+    )
+    context = {
+        "created_count": success_count,
+        "total_count": len(normalized_frame.index),
+        "error_count": len(error_list),
+        "model": _("Employee shift schedules"),
+        "path_info": path_info,
+    }
+    return HttpResponse(render_to_string("import_popup.html", context, request=request))
 
 
 @login_required

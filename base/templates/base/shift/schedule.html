@@ -6,16 +6,28 @@
         <div class="oh-inner-sidebar-content__header d-flex justify-content-between align-items-center">
             <h2 class="oh-inner-sidebar-content__title">{% trans "Shift Schedule" %}</h2>
             {% if perms.base.add_employeeshiftschedule %}
-                <button
-                    class="oh-btn oh-btn--secondary oh-btn--shadow"
-                    data-toggle="oh-modal-toggle"
-                    data-target="#objectCreateModal"
-                    hx-get="{% url 'employee-shift-schedule-create' %}"
-                    hx-target="#objectCreateModalTarget"
-                >
-                    <ion-icon name="add-outline" class="me-1"></ion-icon>
-                    {% trans "Create" %}
-                </button>
+                <div class="d-flex gap-2">
+                    <button
+                        class="oh-btn oh-btn--secondary oh-btn--shadow"
+                        data-toggle="oh-modal-toggle"
+                        data-target="#objectCreateModal"
+                        hx-get="{% url 'employee-shift-schedule-import' %}"
+                        hx-target="#objectCreateModalTarget"
+                    >
+                        <ion-icon name="cloud-upload-outline" class="me-1"></ion-icon>
+                        {% trans "Import" %}
+                    </button>
+                    <button
+                        class="oh-btn oh-btn--secondary oh-btn--shadow"
+                        data-toggle="oh-modal-toggle"
+                        data-target="#objectCreateModal"
+                        hx-get="{% url 'employee-shift-schedule-create' %}"
+                        hx-target="#objectCreateModalTarget"
+                    >
+                        <ion-icon name="add-outline" class="me-1"></ion-icon>
+                        {% trans "Create" %}
+                    </button>
+                </div>
             {% endif %}
         </div>
         {% if shift_schedule %}

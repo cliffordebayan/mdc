@@ -509,6 +509,16 @@ urlpatterns = [
         name="employee-shift-schedule-view",
     ),
     path(
+        "settings/employee-shift-schedule-import/",
+        views.employee_shift_schedule_import,
+        name="employee-shift-schedule-import",
+    ),
+    path(
+        "settings/employee-shift-schedule-import-file/",
+        views.employee_shift_schedule_import_file,
+        name="employee-shift-schedule-import-file",
+    ),
+    path(
         "settings/employee-shift-schedule-create/",
         views.employee_shift_schedule_create,
         name="employee-shift-schedule-create",

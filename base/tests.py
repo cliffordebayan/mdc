@@ -2,6 +2,7 @@ import json
 import shutil
 import tempfile
 from datetime import time
+from io import BytesIO
 from unittest.mock import patch
 
 from django.conf import settings as django_settings
@@ -13,6 +14,7 @@ from django.test import RequestFactory
 from django.template.loader import render_to_string
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from openpyxl import Workbook, load_workbook
 
 from base.backends import ConfiguredEmailBackend
 from base.forms import CompanyForm, HolidayForm, HolidaysColumnExportForm
@@ -407,6 +409,95 @@ class EmployeeShiftScheduleSettingsTests(TestCase):
         self.assertContains(response, "09:00 - 17:00")
         self.assertContains(response, "Minimum")
         self.assertContains(response, "08:00")
+
+
+class EmployeeShiftScheduleImportTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            username="schedule-import-admin",
+            email="",
+            password="test",
+        )
+        self.employee = Employee.objects.create(
+            employee_no="2024785",
+            employee_user_id=self.user,
+            employee_first_name="Import",
+            employee_last_name="Employee",
+            email="import-schedule@example.com",
+            phone="09170000001",
+            gender="male",
+            is_active=True,
+        )
+        self.client.force_login(self.user)
+
+    def _upload(self, employee_no="2024785", monday=None, tuesday=None):
+        workbook = Workbook()
+        worksheet = workbook.active
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        worksheet.append(["Employee No", *sum(([day, None, None] for day in days), [])])
+        worksheet.append([None, *(["AM", "PM", "Rest Day"] * len(days))])
+        monday = monday or ("8:00 AM", "5:00 PM", "No")
+        tuesday = tuesday or ("", "", "")
+        worksheet.append([employee_no, *monday, *tuesday, *(["", "", ""] * 5)])
+        output = BytesIO()
+        workbook.save(output)
+        output.seek(0)
+        return self.client.post(
+            reverse("employee-shift-schedule-import"),
+            {
+                "file": SimpleUploadedFile(
+                    "shift_schedule.xlsx",
+                    output.read(),
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+    def test_template_contains_merged_day_headers_and_subheaders(self):
+        response = self.client.get(reverse("employee-shift-schedule-import-file"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("employee_shift_schedule_template.xlsx", response["Content-Disposition"])
+        workbook = load_workbook(BytesIO(response.content))
+        worksheet = workbook.active
+        self.assertIn("B1:D1", {str(value) for value in worksheet.merged_cells.ranges})
+        self.assertEqual(worksheet["B1"].value, "Monday")
+        self.assertEqual(worksheet["B2"].value, "AM")
+        self.assertEqual(worksheet["D2"].value, "Rest Day")
+
+    def test_import_creates_employee_shift_assigns_it_and_handles_rest_day(self):
+        response = self._upload(tuesday=("8:00 AM", "5:00 PM", "Yes"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Employee shift schedules")
+        shift = EmployeeShift.objects.get(employee_shift="2024785_shift")
+        self.employee.employee_work_info.refresh_from_db()
+        self.assertEqual(self.employee.employee_work_info.shift_id, shift)
+        monday = EmployeeShiftSchedule.objects.get(shift_id=shift, day__day="monday")
+        tuesday = EmployeeShiftSchedule.objects.get(shift_id=shift, day__day="tuesday")
+        self.assertEqual(monday.start_time, time(8, 0))
+        self.assertEqual(monday.end_time, time(17, 0))
+        self.assertTrue(tuesday.is_rest_day)
+        self.assertEqual(tuesday.start_time, time(8, 0))
+        self.assertEqual(tuesday.end_time, time(17, 0))
+
+    def test_reimport_merges_and_preserves_blank_days(self):
+        self._upload(tuesday=("9:00 AM", "6:00 PM", "No"))
+        self._upload(monday=("10:00 AM", "7:00 PM", "No"))
+
+        shift = EmployeeShift.objects.get(employee_shift="2024785_shift")
+        monday = EmployeeShiftSchedule.objects.get(shift_id=shift, day__day="monday")
+        tuesday = EmployeeShiftSchedule.objects.get(shift_id=shift, day__day="tuesday")
+        self.assertEqual(monday.start_time, time(10, 0))
+        self.assertEqual(tuesday.start_time, time(9, 0))
+
+    def test_invalid_employee_and_incomplete_time_are_reported_without_creating_shifts(self):
+        response = self._upload(employee_no="missing", monday=("8:00 AM", "", "No"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Download Error File")
+        self.assertFalse(EmployeeShift.objects.filter(employee_shift="missing_shift").exists())
 
 
 class EmployeeShiftDeleteTests(TestCase):

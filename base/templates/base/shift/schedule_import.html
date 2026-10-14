@@ -1,0 +1,71 @@
+{% load i18n %}
+<div class="oh-modal__dialog-header">
+    <h2 class="oh-modal__dialog-title">{% trans "Import Employee Shift Schedule" %}</h2>
+    <button class="oh-modal__close" aria-label="Close">
+        <ion-icon name="close-outline"></ion-icon>
+    </button>
+</div>
+<div class="oh-modal__dialog-body p-0 pb-4">
+    <form hx-post="{% url 'employee-shift-schedule-import' %}"
+          hx-target="#objectCreateModalTarget"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          class="oh-profile-section"
+          id="employeeShiftScheduleImportForm">
+        {% csrf_token %}
+        <div class="oh-modal__dialog-body mr-5" id="employeeShiftScheduleUploading" style="display: none">
+            <div class="loader-container">
+                <div class="loader"></div>
+                <div class="loader-text">{% trans "Uploading..." %}</div>
+            </div>
+        </div>
+
+        <div class="modal-body" id="employeeShiftScheduleUploadContainer">
+            {% if error_message %}
+                <ul class="errorlist"><li>{{ error_message }}</li></ul>
+            {% endif %}
+            <div class="oh-dropdown__import-form">
+                <label class="oh-dropdown__import-label" for="employeeShiftScheduleImportFile">
+                    <ion-icon name="cloud-upload" class="oh-dropdown__import-form-icon md hydrated"></ion-icon>
+                    <span class="oh-dropdown__import-form-title">{% trans "Upload a File" %}</span>
+                    <span class="oh-dropdown__import-form-text">{% trans "Drag and drop files here" %}</span>
+                </label>
+                <input type="file" name="file" id="employeeShiftScheduleImportFile" accept=".csv,.xls,.xlsx" required />
+                <div class="d-inline float-end">
+                    <a href="#" class="oh-dropdown__link" id="employeeShiftScheduleTemplateDownload">
+                        <ion-icon name="cloud-download-outline" style="font-size:20px; vertical-align:middle;"></ion-icon>
+                        <span>{% trans "Download Template" %}</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer d-flex flex-row-reverse">
+            <button type="submit" class="oh-btn oh-btn--small oh-btn--secondary w-100 mt-3">{% trans "Upload" %}</button>
+        </div>
+    </form>
+</div>
+<script>
+    (function () {
+        const form = document.getElementById("employeeShiftScheduleImportForm");
+        const uploadContainer = document.getElementById("employeeShiftScheduleUploadContainer");
+        const uploading = document.getElementById("employeeShiftScheduleUploading");
+        const downloadLink = document.getElementById("employeeShiftScheduleTemplateDownload");
+
+        if (!form || !uploadContainer || !uploading || !downloadLink) return;
+
+        form.addEventListener("submit", function () {
+            uploadContainer.style.display = "none";
+            uploading.style.display = "block";
+        });
+
+        downloadLink.addEventListener("click", function (event) {
+            event.preventDefault();
+            const link = document.createElement("a");
+            link.href = "{% url 'employee-shift-schedule-import-file' %}";
+            link.download = "employee_shift_schedule_template.xlsx";
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        });
+    })();
+</script>
