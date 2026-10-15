@@ -1,0 +1,96 @@
+{% load i18n %}
+
+<section class="attendance-activity-edit__images mt-3" aria-labelledby="attendanceActivityImagesTitle">
+  <div class="oh-card oh-card--no-shadow oh-card--border">
+    <div class="oh-card__header attendance-activity-edit__images-header">
+      <div class="d-flex align-items-start">
+        <span class="attendance-activity-edit__section-icon mr-2" aria-hidden="true">
+          <ion-icon name="images-outline"></ion-icon>
+        </span>
+        <div>
+          <h3 class="oh-card__title--sm mb-1" id="attendanceActivityImagesTitle">
+            {% trans "Activity Images" %}
+          </h3>
+          <p class="attendance-activity-edit__hint mb-0">
+            {% trans "Review each activity segment and replace only the images that need updating." %}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="row attendance-activity-edit__groups">
+      {% for group in form.activity_image_groups %}
+        <div class="col-12 attendance-activity-edit__group-column">
+          <section class="oh-card oh-card--border attendance-activity-edit__group" aria-label="{{ group.activity_label }}">
+            <div class="attendance-activity-edit__group-header">
+              <div class="d-flex align-items-center min-width-0">
+                <span class="attendance-activity-edit__activity-icon mr-2" aria-hidden="true">
+                  <ion-icon name="{{ group.icon }}"></ion-icon>
+                </span>
+                <div class="min-width-0">
+                  <h4 class="oh-card__title--sm mb-1">{{ group.activity_label }}</h4>
+                  <p class="attendance-activity-edit__meta mb-0">
+                    {% if group.activity.clock_in %}
+                      <span class="timeformat_changer">{{ group.activity.clock_in }}</span>
+                    {% endif %}
+                    <ion-icon name="arrow-forward-outline" aria-hidden="true"></ion-icon>
+                    {% if group.activity.clock_out %}
+                      <span class="timeformat_changer">{{ group.activity.clock_out }}</span>
+                    {% else %}
+                      {% trans "Open" %}
+                    {% endif %}
+                  </p>
+                </div>
+              </div>
+              <span class="oh-badge oh-badge--info attendance-activity-edit__segment-badge">
+                {% trans "Segment" %}
+              </span>
+            </div>
+
+            <div class="row">
+              {% for image_field in group.fields %}
+                <div class="col-12 col-md-6 {% if not forloop.last %}mb-3 mb-md-0{% endif %}">
+                  <div class="attendance-activity-edit__image-field" id="id_{{ image_field.name }}_parent_div">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <label class="oh-label mb-0" for="id_{{ image_field.name }}">
+                        {{ image_field.field.label }}
+                      </label>
+                      {% if image_field.existing_image_url %}
+                        <span class="attendance-activity-edit__status attendance-activity-edit__status--current">
+                          {% trans "Current image" %}
+                        </span>
+                      {% else %}
+                        <span class="attendance-activity-edit__status">
+                          {% trans "No image" %}
+                        </span>
+                      {% endif %}
+                    </div>
+
+                    <div class="attendance-activity-edit__preview {% if not image_field.existing_image_url %}attendance-activity-edit__preview--empty{% endif %}">
+                      {% if image_field.existing_image_url %}
+                        <img src="{{ image_field.existing_image_url }}" alt="{{ image_field.field.label }}" width="100%" height="128" />
+                      {% else %}
+                        <ion-icon name="image-outline" aria-hidden="true"></ion-icon>
+                        <span>{% trans "No image uploaded" %}</span>
+                      {% endif %}
+                    </div>
+
+                    <label class="oh-dropdown__import-label attendance-activity-edit__upload" for="id_{{ image_field.name }}">
+                      <ion-icon name="cloud-upload-outline" class="oh-dropdown__import-form-icon" aria-hidden="true"></ion-icon>
+                      <span class="oh-dropdown__import-form-title">{% trans "Choose replacement" %}</span>
+                      <span class="oh-dropdown__import-form-text">{% trans "PNG, JPG, or JPEG" %}</span>
+                      {{ image_field.field }}
+                    </label>
+                    <div class="attendance-activity-edit__errors">
+                      {{ image_field.field.errors }}
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </section>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>

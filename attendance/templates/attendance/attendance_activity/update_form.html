@@ -1,4 +1,5 @@
 {% load i18n %}
+{% load widget_tweaks %}
 
 {% if messages %}
     <div class="oh-wrapper">
@@ -20,6 +21,8 @@
     hx-post="{% url 'attendance-activity-update' employee_id attendance_date_iso %}?{{ pd }}"
     hx-target="#updateAttendanceActivityModalBody"
     hx-swap="innerHTML"
+    hx-encoding="multipart/form-data"
+    class="attendance-activity-edit"
     id="attendanceActivityUpdateForm"
 >
     {% csrf_token %}

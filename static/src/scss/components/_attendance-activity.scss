@@ -1,0 +1,201 @@
+.attendance-activity-edit__images {
+  .oh-card {
+    background-color: $white;
+  }
+}
+
+.attendance-activity-edit__images-header,
+.attendance-activity-edit__group-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.attendance-activity-edit__section-icon,
+.attendance-activity-edit__activity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid $border-light-color;
+  background-color: rgba($border-light-color, 0.35);
+  color: $secondary-color;
+  font-size: 1.15rem;
+}
+
+.attendance-activity-edit__activity-icon {
+  width: 30px;
+  height: 30px;
+  font-size: 1rem;
+}
+
+.attendance-activity-edit__hint,
+.attendance-activity-edit__meta {
+  color: $light-text-color;
+  font-size: 0.78rem;
+}
+
+.attendance-activity-edit__groups {
+  margin-bottom: -0.75rem;
+}
+
+.attendance-activity-edit__group-column {
+  margin-bottom: 0.75rem;
+}
+
+.attendance-activity-edit__group {
+  height: 100%;
+  padding: 1rem;
+}
+
+.attendance-activity-edit__group-header {
+  align-items: center;
+  padding-bottom: 0.85rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid $border-light-color;
+}
+
+.attendance-activity-edit__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+}
+
+.attendance-activity-edit__meta ion-icon {
+  font-size: 0.8rem;
+}
+
+.attendance-activity-edit__segment-badge {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+}
+
+.attendance-activity-edit__image-field {
+  min-width: 0;
+}
+
+.attendance-activity-edit__images .min-width-0 {
+  min-width: 0;
+}
+
+.attendance-activity-edit__status {
+  flex: 0 0 auto;
+  color: $light-text-color;
+  font-size: 0.68rem;
+}
+
+.attendance-activity-edit__status--current {
+  color: $success-color-dark;
+}
+
+.attendance-activity-edit__preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 8rem !important;
+  max-height: 8rem;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+  border: 1px solid $border-light-color;
+  background-color: rgba($border-light-color, 0.2);
+}
+
+.attendance-activity-edit__preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: cover;
+}
+
+.attendance-activity-edit__preview--empty {
+  flex-direction: column;
+  gap: 0.25rem;
+  color: $light-text-color;
+  font-size: 0.75rem;
+}
+
+.attendance-activity-edit__preview--empty ion-icon {
+  font-size: 1.75rem;
+}
+
+.attendance-activity-edit__upload {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: auto;
+  min-height: 5.75rem;
+  margin-bottom: 0;
+  padding: 0.75rem;
+  border-color: $border-light-color;
+  background-color: transparent;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.attendance-activity-edit__upload:hover,
+.attendance-activity-edit__upload:focus-within {
+  border-color: $secondary-color;
+  background-color: rgba($border-light-color, 0.3);
+}
+
+.attendance-activity-edit__upload input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.attendance-activity-edit__file-input {
+  display: none !important;
+}
+
+.attendance-activity-edit__upload .oh-dropdown__import-form-icon {
+  margin-bottom: 0.1rem;
+  font-size: 1.65rem;
+  color: $secondary-color;
+}
+
+.attendance-activity-edit__upload .oh-dropdown__import-form-title {
+  font-size: 0.8rem;
+}
+
+.attendance-activity-edit__upload .oh-dropdown__import-form-text {
+  font-size: 0.7rem;
+}
+
+.attendance-activity-edit__errors {
+  color: $danger-color;
+  font-size: 0.72rem;
+}
+
+.attendance-activity-edit__errors ul {
+  padding-left: 1rem;
+  margin: 0.35rem 0 0;
+}
+
+@media (max-width: 575.98px) {
+  .attendance-activity-edit__images > .oh-card,
+  .attendance-activity-edit__group {
+    padding: 0.85rem;
+  }
+
+  .attendance-activity-edit__images-header,
+  .attendance-activity-edit__group-header {
+    gap: 0.6rem;
+  }
+
+  .attendance-activity-edit__segment-badge {
+    display: none;
+  }
+}

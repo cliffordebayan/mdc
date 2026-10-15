@@ -110,6 +110,7 @@ from attendance.methods.utils import (
     parse_date,
     parse_datetime,
     parse_time,
+    _recalculate_overtime_account,
     recalculate_attendance_for_shift,
     shift_schedule_with_weekday_fallback,
     sort_activity_dicts,
@@ -4576,16 +4577,32 @@ def attendance_activity_update(request, employee_id, attendance_date):
         .select_related("shift_id", "work_type_id", "daily_schedule_override")
         .first()
     )
-    work_activities = AttendanceActivity.objects.filter(
-        employee_id_id=employee_id,
-        attendance_date=parsed_attendance_date,
-        activity_type="work",
+    day_activities = list(
+        AttendanceActivity.objects.filter(
+            employee_id_id=employee_id,
+            attendance_date=parsed_attendance_date,
+        ).order_by("clock_in_date", "clock_in", "id")
     )
-    first_work_activity = work_activities.order_by("clock_in_date", "clock_in", "id").first()
+    work_activities = [
+        activity for activity in day_activities if activity.activity_type == "work"
+    ]
+    first_work_activity = work_activities[0] if work_activities else None
+    closed_work_activities = [
+        activity
+        for activity in work_activities
+        if activity.clock_out_date and activity.clock_out
+    ]
     clock_out_activity = (
-        work_activities.filter(clock_out_date__isnull=False, clock_out__isnull=False)
-        .order_by("-clock_out_date", "-clock_out", "-id")
-        .first()
+        sorted(
+            closed_work_activities,
+            key=lambda activity: (
+                activity.clock_out_date,
+                activity.clock_out,
+                activity.id,
+            ),
+        )[-1]
+        if closed_work_activities
+        else None
     )
     if first_work_activity and not clock_out_activity:
         clock_out_activity = first_work_activity
@@ -4648,81 +4665,180 @@ def attendance_activity_update(request, employee_id, attendance_date):
     if request.method == "POST":
         form = AttendanceActivityUpdateForm(
             request.POST,
+            request.FILES,
             instance=attendance_instance,
             initial=initial,
+            activities=day_activities,
         )
-        if form.is_valid() and first_work_activity:
-            clock_in_date = form.cleaned_data["attendance_clock_in_date"]
-            clock_in = form.cleaned_data["attendance_clock_in"]
-            clock_out_date = form.cleaned_data.get("attendance_clock_out_date")
-            clock_out = form.cleaned_data.get("attendance_clock_out")
+        if form.is_valid():
+            if not first_work_activity:
+                messages.error(request, _("Attendance activity Does not exists.."))
+            else:
+                new_attendance_date = form.cleaned_data["attendance_date"]
+                date_changed = new_attendance_date != parsed_attendance_date
+                date_conflict = False
 
-            with transaction.atomic():
-                # Save activities first so Attendance.save() reads updated rows
-                # when it calls schedule_end_overtime_calculation internally.
-                first_work_activity.clock_in_date = clock_in_date
-                first_work_activity.clock_in = clock_in
-                first_work_activity.in_datetime = datetime.combine(clock_in_date, clock_in)
+                with transaction.atomic():
+                    if attendance and attendance.pk:
+                        # Lock the source row before checking/moving its unique date.
+                        Attendance.objects.select_for_update().get(pk=attendance.pk)
 
-                out_target = clock_out_activity or first_work_activity
-                # When clock_out_activity and first_work_activity are the same
-                # DB row (two separate QuerySet hits with equal ids), collapse
-                # to one Python object so all changes land on first_work_activity
-                # and are persisted by the single first_work_activity.save() below.
-                if out_target is not first_work_activity and out_target.id == first_work_activity.id:
-                    out_target = first_work_activity
-                if clock_out_date and clock_out:
-                    out_target.clock_out_date = clock_out_date
-                    out_target.clock_out = clock_out
-                    out_target.out_datetime = datetime.combine(clock_out_date, clock_out)
-                else:
-                    out_target.clock_out_date = None
-                    out_target.clock_out = None
-                    out_target.out_datetime = None
-
-                first_work_activity.save()
-                if out_target.id != first_work_activity.id:
-                    out_target.save()
-
-                updated_attendance = form.save(commit=False)
-                updated_attendance.employee_id = employee
-                updated_attendance.attendance_date = parsed_attendance_date
-                updated_attendance.attendance_clock_in_date = clock_in_date
-                updated_attendance.attendance_clock_in = clock_in
-                updated_attendance.attendance_clock_out_date = clock_out_date
-                updated_attendance.attendance_clock_out = clock_out
-                updated_attendance.save()
-
-                daily_shift_start = form.cleaned_data.get("daily_shift_start")
-                daily_shift_end = form.cleaned_data.get("daily_shift_end")
-                if daily_shift_start and daily_shift_end:
-                    # The company-filtered manager adds nullable joins to the
-                    # update_or_create SELECT FOR UPDATE query on PostgreSQL.
-                    # Lock only the override row; the attendance has already
-                    # been scoped to this employee/date and permission check.
-                    AttendanceScheduleOverride._base_manager.update_or_create(
-                        attendance_id=updated_attendance,
-                        defaults={
-                            "start_time": daily_shift_start,
-                            "end_time": daily_shift_end,
-                            "minimum_working_hour": form.cleaned_data[
-                                "daily_shift_minimum_hour"
-                            ],
-                        },
+                    locked_activities = list(
+                        AttendanceActivity.objects.select_for_update()
+                        .filter(
+                            employee_id_id=employee_id,
+                            attendance_date=parsed_attendance_date,
+                        )
+                        .order_by("clock_in_date", "clock_in", "id")
                     )
+                    if date_changed:
+                        date_conflict = (
+                            Attendance.objects.select_for_update()
+                            .filter(
+                                employee_id_id=employee_id,
+                                attendance_date=new_attendance_date,
+                            )
+                            .exists()
+                            or AttendanceActivity.objects.select_for_update()
+                            .filter(
+                                employee_id_id=employee_id,
+                                attendance_date=new_attendance_date,
+                            )
+                            .exists()
+                        )
 
-                recalculate_attendance_for_day(updated_attendance)
-            messages.success(request, _("Attendance activity updated."))
-            saved = True
-        elif form.is_valid():
-            messages.error(request, _("Attendance activity Does not exists.."))
+                    if not date_conflict:
+                        locked_work_activities = [
+                            activity
+                            for activity in locked_activities
+                            if activity.activity_type == "work"
+                        ]
+                        first_work_activity = (
+                            locked_work_activities[0]
+                            if locked_work_activities
+                            else None
+                        )
+                        closed_work_activities = [
+                            activity
+                            for activity in locked_work_activities
+                            if activity.clock_out_date and activity.clock_out
+                        ]
+                        clock_out_activity = (
+                            sorted(
+                                closed_work_activities,
+                                key=lambda activity: (
+                                    activity.clock_out_date,
+                                    activity.clock_out,
+                                    activity.id,
+                                ),
+                            )[-1]
+                            if closed_work_activities
+                            else None
+                        )
+                        if first_work_activity and not clock_out_activity:
+                            clock_out_activity = first_work_activity
+
+                        target_shift_day = EmployeeShiftDay.objects.filter(
+                            day=new_attendance_date.strftime("%A").lower()
+                        ).first()
+                        for activity in locked_activities:
+                            if date_changed:
+                                activity.attendance_date = new_attendance_date
+                                activity.shift_day = target_shift_day
+
+                        clock_in_date = form.cleaned_data["attendance_clock_in_date"]
+                        clock_in = form.cleaned_data["attendance_clock_in"]
+                        clock_out_date = form.cleaned_data.get(
+                            "attendance_clock_out_date"
+                        )
+                        clock_out = form.cleaned_data.get("attendance_clock_out")
+
+                        first_work_activity.clock_in_date = clock_in_date
+                        first_work_activity.clock_in = clock_in
+                        first_work_activity.in_datetime = datetime.combine(
+                            clock_in_date, clock_in
+                        )
+
+                        out_target = clock_out_activity or first_work_activity
+                        if out_target.id == first_work_activity.id:
+                            out_target = first_work_activity
+                        if clock_out_date and clock_out:
+                            out_target.clock_out_date = clock_out_date
+                            out_target.clock_out = clock_out
+                            out_target.out_datetime = datetime.combine(
+                                clock_out_date, clock_out
+                            )
+                        else:
+                            out_target.clock_out_date = None
+                            out_target.clock_out = None
+                            out_target.out_datetime = None
+
+                        activity_by_id = {
+                            activity.pk: activity for activity in locked_activities
+                        }
+                        for activity_id, model_field, uploaded_image in (
+                            form.uploaded_activity_images()
+                        ):
+                            activity = activity_by_id.get(activity_id)
+                            if activity is not None:
+                                setattr(activity, model_field, uploaded_image)
+
+                        # Save activities first so Attendance.save() reads their
+                        # updated date/time values when recalculating overtime.
+                        for activity in locked_activities:
+                            activity.save()
+
+                        updated_attendance = form.save(commit=False)
+                        updated_attendance.employee_id = employee
+                        updated_attendance.attendance_date = new_attendance_date
+                        updated_attendance.attendance_clock_in_date = clock_in_date
+                        updated_attendance.attendance_clock_in = clock_in
+                        updated_attendance.attendance_clock_out_date = clock_out_date
+                        updated_attendance.attendance_clock_out = clock_out
+                        updated_attendance.save()
+
+                        daily_shift_start = form.cleaned_data.get("daily_shift_start")
+                        daily_shift_end = form.cleaned_data.get("daily_shift_end")
+                        if daily_shift_start and daily_shift_end:
+                            # The company-filtered manager adds nullable joins to
+                            # the update_or_create SELECT FOR UPDATE query on
+                            # PostgreSQL. Lock only the override row; the
+                            # attendance has already been scoped to this
+                            # employee/date and permission check.
+                            AttendanceScheduleOverride._base_manager.update_or_create(
+                                attendance_id=updated_attendance,
+                                defaults={
+                                    "start_time": daily_shift_start,
+                                    "end_time": daily_shift_end,
+                                    "minimum_working_hour": form.cleaned_data[
+                                        "daily_shift_minimum_hour"
+                                    ],
+                                },
+                            )
+
+                        recalculate_attendance_for_day(updated_attendance)
+                        if date_changed:
+                            _recalculate_overtime_account(employee, parsed_attendance_date)
+
+                if date_conflict:
+                    form.add_error(
+                        "attendance_date",
+                        _(
+                            "Attendance already exists for this employee on the selected date."
+                        ),
+                    )
+                else:
+                    messages.success(request, _("Attendance activity updated."))
+                    saved = True
+
     else:
         form = AttendanceActivityUpdateForm(
             instance=attendance_instance,
             initial=initial,
+            activities=day_activities,
         )
 
-    if not first_work_activity:
+    if not first_work_activity and request.method != "POST":
         messages.error(request, _("Attendance activity Does not exists.."))
 
     return render(

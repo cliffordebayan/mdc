@@ -9,6 +9,7 @@
     <div class="row">
       <div class="col-12">{{form.non_field_errors}}</div>
       {% for field in form.visible_fields %}
+      {% if field.name|slice:":9" != "activity_" %}
       {% if field.field.widget|is_select_multiple or field.field.widget|is_text_area %}
       <label
       class="oh-label {% if field.field.required %} required-star{% endif %}"
@@ -40,9 +41,14 @@
           {{field.errors}}
       </div>
       {% endif %}
+      {% endif %}
       {% endfor %}
 
     </div>
+
+    {% if form.activity_image_groups %}
+      {% include "attendance/attendance_activity/activity_image_fields.html" %}
+    {% endif %}
 
     <div class="oh-modal__dialog-footer p-0 mt-3">
       <button

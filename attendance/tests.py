@@ -12,6 +12,7 @@ from unittest.mock import ANY, MagicMock, patch
 
 from django.core.signing import SignatureExpired
 from django.core.management import call_command
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth.models import AnonymousUser, Permission, User
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.db import connection
@@ -23,6 +24,7 @@ from django.urls import resolve, reverse
 from django.urls.exceptions import Resolver404
 from openpyxl import load_workbook
 import pandas as pd
+from PIL import Image
 
 from attendance.filters import AttendanceActivityFilter
 from attendance.forms import (
@@ -5561,6 +5563,16 @@ class AttendanceActivityUpdateViewTests(TestCase):
             "minimum_hour": "08:00",
         }
 
+    @staticmethod
+    def _uploaded_image(name):
+        image_bytes = io.BytesIO()
+        Image.new("RGB", (2, 2), color="red").save(image_bytes, format="PNG")
+        return SimpleUploadedFile(
+            name,
+            image_bytes.getvalue(),
+            content_type="image/png",
+        )
+
     def test_get_requires_permission_and_renders_attendance_style_modal_form(self):
         self.client.force_login(self.user)
 
@@ -5572,10 +5584,164 @@ class AttendanceActivityUpdateViewTests(TestCase):
         self.assertContains(response, "attendance_worked_hour")
         self.assertContains(response, "Office")
         self.assertContains(response, 'value="2026-06-01"')
-        self.assertContains(response, 'background-color: #fff')
+        self.assertContains(response, "attendance-activity-edit__images")
+        self.assertContains(response, "oh-card--border")
+        self.assertContains(response, "oh-dropdown__import-label")
+        self.assertContains(response, "No image uploaded")
+        self.assertNotContains(response, "<style>")
+        self.assertContains(response, 'hx-encoding="multipart/form-data"')
+        self.assertContains(
+            response,
+            f'name="activity_{self.work_activity.id}_clock_in_image"',
+        )
+        self.assertContains(
+            response,
+            f'name="activity_{self.break_activity.id}_clock_out_image"',
+        )
+        self.assertNotContains(response, 'name="attendance_date" disabled')
         self.assertNotContains(response, "batch_attendance_id")
         self.assertNotContains(response, "attendance_overtime_approve")
         self.assertNotContains(response, "attendance_validated")
+
+    def test_get_renders_existing_activity_image_preview(self):
+        self.work_activity.clock_in_selfie = self._uploaded_image("existing-clock-in.png")
+        self.work_activity.save(update_fields=["clock_in_selfie"])
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Current image")
+        self.assertContains(response, "attendance-activity-edit__preview")
+        self.assertContains(response, "<img")
+
+    @patch("attendance.views.views.recalculate_attendance_for_day")
+    def test_post_uploads_images_for_each_activity_segment_and_preserves_others(
+        self, recalculate_mock
+    ):
+        lunch_activity = AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.attendance_date,
+            shift_day=self.shift_day,
+            clock_in_date=self.attendance_date,
+            clock_in=time(13, 0),
+            clock_out_date=self.attendance_date,
+            clock_out=time(14, 0),
+            activity_type="lunch",
+            clock_out_selfie=self._uploaded_image("existing-lunch-out.png"),
+        )
+        self.break_activity.clock_in_selfie = self._uploaded_image("existing-break-in.png")
+        self.break_activity.save()
+        existing_break_in_name = self.break_activity.clock_in_selfie.name
+        existing_lunch_out_name = lunch_activity.clock_out_selfie.name
+        self.client.force_login(self.user)
+
+        data = self._post_data()
+        data.update(
+            {
+                f"activity_{self.work_activity.id}_clock_in_image": self._uploaded_image(
+                    "clock-in.png"
+                ),
+                f"activity_{self.work_activity.id}_clock_out_image": self._uploaded_image(
+                    "clock-out.png"
+                ),
+                f"activity_{self.break_activity.id}_clock_out_image": self._uploaded_image(
+                    "break-out.png"
+                ),
+                f"activity_{lunch_activity.id}_clock_in_image": self._uploaded_image(
+                    "lunch-in.png"
+                ),
+            }
+        )
+
+        response = self.client.post(
+            self.url,
+            data=data,
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attendance activity updated.")
+        self.work_activity.refresh_from_db()
+        self.break_activity.refresh_from_db()
+        lunch_activity.refresh_from_db()
+        self.assertTrue(self.work_activity.clock_in_selfie.name.endswith(".png"))
+        self.assertTrue(self.work_activity.clock_out_selfie.name.endswith(".png"))
+        self.assertNotEqual(self.work_activity.clock_in_selfie.name, "")
+        self.assertNotEqual(self.work_activity.clock_out_selfie.name, "")
+        self.assertEqual(self.break_activity.clock_in_selfie.name, existing_break_in_name)
+        self.assertTrue(self.break_activity.clock_out_selfie.name.endswith(".png"))
+        self.assertTrue(lunch_activity.clock_in_selfie.name.endswith(".png"))
+        self.assertEqual(lunch_activity.clock_out_selfie.name, existing_lunch_out_name)
+        recalculate_mock.assert_called_once()
+
+    @patch("attendance.views.views._recalculate_overtime_account")
+    @patch("attendance.views.views.recalculate_attendance_for_day")
+    def test_post_moves_the_whole_day_and_preserves_event_dates(
+        self, recalculate_day_mock, recalculate_overtime_mock
+    ):
+        target_date = self.attendance_date + timedelta(days=1)
+        tuesday, _created = EmployeeShiftDay.objects.get_or_create(day="tuesday")
+        self.client.force_login(self.user)
+        data = self._post_data()
+        data["attendance_date"] = target_date.isoformat()
+
+        response = self.client.post(
+            self.url,
+            data=data,
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attendance activity updated.")
+        self.attendance.refresh_from_db()
+        self.work_activity.refresh_from_db()
+        self.break_activity.refresh_from_db()
+        self.assertEqual(self.attendance.attendance_date, target_date)
+        self.assertEqual(self.work_activity.attendance_date, target_date)
+        self.assertEqual(self.break_activity.attendance_date, target_date)
+        self.assertEqual(self.work_activity.shift_day_id, tuesday.id)
+        self.assertEqual(self.break_activity.shift_day_id, tuesday.id)
+        self.assertEqual(self.work_activity.clock_in_date, self.attendance_date)
+        self.assertEqual(self.work_activity.clock_out_date, self.attendance_date)
+        recalculate_day_mock.assert_called_once()
+        recalculate_overtime_mock.assert_called_once_with(
+            self.employee, self.attendance_date
+        )
+
+    def test_post_rejects_an_occupied_target_date_without_mutating_source(self):
+        target_date = self.attendance_date + timedelta(days=1)
+        tuesday, _created = EmployeeShiftDay.objects.get_or_create(day="tuesday")
+        Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=target_date,
+            shift_id=self.shift,
+            work_type_id=self.work_type,
+            attendance_day=tuesday,
+            attendance_clock_in_date=target_date,
+            attendance_clock_in=time(8, 0),
+            attendance_worked_hour="00:00",
+            minimum_hour="08:00",
+        )
+        self.client.force_login(self.user)
+        data = self._post_data()
+        data["attendance_date"] = target_date.isoformat()
+
+        response = self.client.post(
+            self.url,
+            data=data,
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Attendance already exists for this employee on the selected date.",
+        )
+        self.attendance.refresh_from_db()
+        self.work_activity.refresh_from_db()
+        self.assertEqual(self.attendance.attendance_date, self.attendance_date)
+        self.assertEqual(self.work_activity.attendance_date, self.attendance_date)
 
     @patch("attendance.views.views.recalculate_attendance_for_shift")
     def test_post_updates_existing_activity_segments(self, recalculate_mock):

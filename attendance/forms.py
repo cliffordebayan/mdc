@@ -22,6 +22,7 @@ class YourForm(forms.Form):
         pass
 """
 
+import contextlib
 import datetime
 import json
 import logging
@@ -506,6 +507,9 @@ class AttendanceActivityUpdateForm(BaseModelForm):
 
     def __init__(self, *args, **kwargs):
         instance = kwargs.get("instance")
+        activities = list(kwargs.pop("activities", []) or [])
+        self.activity_image_fields = []
+        self.activity_image_groups = []
         supplied_initial = kwargs.pop("initial", {})
         if instance:
             initial = {
@@ -587,13 +591,70 @@ class AttendanceActivityUpdateForm(BaseModelForm):
 
         # The activity modal edits the day represented by the selected row.
         self.fields["employee_id"].disabled = True
-        self.fields["attendance_date"].disabled = True
         locked_field_style = (
             "background-color: #fff; color: #495057; opacity: 1; "
             "cursor: not-allowed;"
         )
-        for field_name in ["employee_id", "attendance_date"]:
-            self.fields[field_name].widget.attrs.update({"style": locked_field_style})
+        self.fields["employee_id"].widget.attrs.update({"style": locked_field_style})
+
+        image_labels = {
+            "work": _("Clock"),
+            "break": _("Break"),
+            "lunch": _("Lunch"),
+        }
+        image_icons = {
+            "work": "time-outline",
+            "break": "pause-outline",
+            "lunch": "restaurant-outline",
+        }
+        for activity in activities:
+            activity_label = image_labels.get(
+                activity.activity_type, _(activity.activity_type.title())
+            )
+            activity_group = {
+                "activity": activity,
+                "activity_label": activity_label,
+                "icon": image_icons.get(activity.activity_type, "image-outline"),
+                "fields": [],
+            }
+            for side, model_field in (
+                ("clock_in", "clock_in_selfie"),
+                ("clock_out", "clock_out_selfie"),
+            ):
+                field_name = f"activity_{activity.pk}_{side}_image"
+                side_label = _("In") if side == "clock_in" else _("Out")
+                field = forms.ImageField(
+                    label=_("{category} {side} Image").format(
+                        category=activity_label,
+                        side=side_label,
+                    ),
+                    required=False,
+                    widget=forms.FileInput(
+                        attrs={
+                            "accept": "image/*",
+                            "class": "attendance-activity-edit__file-input",
+                            "hidden": True,
+                        }
+                    ),
+                )
+                self.fields[field_name] = field
+                existing_image = getattr(activity, model_field, None)
+                existing_image_url = ""
+                if existing_image:
+                    with contextlib.suppress(ValueError):
+                        existing_image_url = existing_image.url
+                image_field = {
+                    "name": field_name,
+                    "field": self[field_name],
+                    "activity": activity,
+                    "model_field": model_field,
+                    "existing_image": existing_image,
+                    "existing_image_url": existing_image_url,
+                    "side": side,
+                }
+                self.activity_image_fields.append(image_field)
+                activity_group["fields"].append(image_field)
+            self.activity_image_groups.append(activity_group)
 
         for field in [
             "attendance_clock_in_date",
@@ -602,6 +663,17 @@ class AttendanceActivityUpdateForm(BaseModelForm):
             "attendance_clock_out",
         ]:
             self.update_worked_hour_hx_fields(field)
+
+    def uploaded_activity_images(self):
+        """Yield uploaded image replacements keyed by activity and model field."""
+        for image_field in self.activity_image_fields:
+            uploaded_image = self.cleaned_data.get(image_field["name"])
+            if uploaded_image:
+                yield (
+                    image_field["activity"].pk,
+                    image_field["model_field"],
+                    uploaded_image,
+                )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -677,7 +749,6 @@ class AttendanceActivityUpdateForm(BaseModelForm):
         for field_name in self._meta.fields:
             if field_name in self.cleaned_data:
                 setattr(self.instance, field_name, self.cleaned_data[field_name])
-        self.validate_unique()
 
     def as_p(self, *args, **kwargs):
         """
