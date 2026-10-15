@@ -644,7 +644,13 @@
 
         .attendance-history-swal {
             width: min(98vw, 760px) !important;
+            height: 94vh;
+            height: min(94vh, 760px);
+            max-height: 94vh;
             max-height: min(94vh, 760px);
+            display: flex !important;
+            flex-direction: column;
+            overflow: hidden !important;
         }
 
         .attendance-history-swal .swal2-close {
@@ -680,8 +686,11 @@
         .attendance-history-swal-html {
             display: flex !important;
             flex-direction: column;
+            flex: 1 1 auto;
             width: 100% !important;
-            max-height: min(78vh, 620px);
+            min-height: 0;
+            height: 100%;
+            max-height: none;
             overflow: hidden !important;
             margin: 0 0 1em !important;
         }
@@ -694,11 +703,15 @@
         }
 
         .attendance-history-modal {
+            flex: 1 1 auto;
+            height: 60vh;
             height: min(60vh, 500px);
             min-height: 0;
+            max-height: 60vh;
             max-height: min(60vh, 500px);
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
             overscroll-behavior: contain;
             padding: 2px 4px 8px;
         }
@@ -2162,6 +2175,29 @@
         @media (max-width: 600px) {
             #step-clock .clock-camera-panel .face-guide {
                 top: 43%;
+            }
+
+            .attendance-history-swal {
+                height: calc(100vh - 32px);
+                height: calc(100dvh - 32px);
+                max-height: calc(100vh - 32px);
+                max-height: calc(100dvh - 32px);
+                margin: 16px !important;
+            }
+
+            .attendance-history-swal-html {
+                min-height: 0;
+                height: 100%;
+            }
+
+            .attendance-history-modal {
+                height: 50vh;
+                height: min(50vh, 360px);
+                max-height: calc(100vh - 170px);
+                max-height: calc(100dvh - 170px);
+                overflow-y: scroll;
+                -webkit-overflow-scrolling: touch;
+                touch-action: pan-y;
             }
 
             /* Keep the attendance action picker compact and scrollable on phones. */

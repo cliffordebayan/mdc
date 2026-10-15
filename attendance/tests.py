@@ -2175,6 +2175,23 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn("PORTAL_SHIFT_REQUEST_TIMEOUT_MS", self.portal_template)
         self.assertNotIn("Loading today's shift...", self.portal_template)
 
+    def test_attendance_history_modal_has_safari_safe_scrolling(self):
+        self.assertIn(".attendance-history-swal {", self.portal_template)
+        self.assertIn("height: 94vh;", self.portal_template)
+        self.assertIn("height: min(94vh, 760px);", self.portal_template)
+        self.assertIn("display: flex !important;\n            flex-direction: column;\n            overflow: hidden !important;", self.portal_template)
+        self.assertIn(".attendance-history-swal-html {", self.portal_template)
+        self.assertIn("flex: 1 1 auto;\n            width: 100% !important;\n            min-height: 0;", self.portal_template)
+        self.assertIn(".attendance-history-modal {", self.portal_template)
+        self.assertIn("height: 60vh;", self.portal_template)
+        self.assertIn("max-height: 60vh;", self.portal_template)
+        self.assertIn("overflow-y: auto;", self.portal_template)
+        self.assertIn("overflow-y: scroll;", self.portal_template)
+        self.assertIn("-webkit-overflow-scrolling: touch;", self.portal_template)
+        self.assertIn("touch-action: pan-y;", self.portal_template)
+        self.assertIn("height: calc(100vh - 32px);", self.portal_template)
+        self.assertIn("height: calc(100dvh - 32px);", self.portal_template)
+
     def test_attendance_request_shows_email_delivery_warning(self):
         self.assertIn("method: 'POST'", self.portal_template)
         self.assertIn("data.message || '{% trans \"Attendance request email sent successfully.\" %}'", self.portal_template)
