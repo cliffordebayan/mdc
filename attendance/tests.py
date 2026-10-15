@@ -2154,6 +2154,13 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertNotIn("window.open(gmailComposeUrl", self.portal_template)
         self.assertIn('portal-shift-swal', self.portal_template)
         self.assertIn('{% trans "Click to Change Shift" %}', self.portal_template)
+        self.assertIn('async function parsePortalShiftResponse(response, fallbackMessage)', self.portal_template)
+        self.assertIn("const responseText = await response.text();", self.portal_template)
+        self.assertIn("JSON.parse(responseText)", self.portal_template)
+        self.assertIn("headers: { 'Accept': 'application/json' }", self.portal_template)
+        self.assertNotIn("const data = await response.json();", self.portal_template[
+            self.portal_template.index('async function editTodayShift()'):self.portal_template.index('function updateAttendanceActionSelection()')
+        ])
         request_start = self.portal_template.index('async function editTodayShift()')
         request_end = self.portal_template.index('async function refreshTodayShift()', request_start)
         request_function = self.portal_template[request_start:request_end]
@@ -3340,6 +3347,25 @@ class PortalEmployeeShiftScheduleTests(TestCase):
 
         self.assertFalse(payload["success"])
         self.assertEqual(payload["message"], "Employee shift not configured")
+
+    @patch(
+        "attendance.views.portal._ip_is_allowed",
+        side_effect=RuntimeError("temporary IP restriction failure"),
+    )
+    def test_portal_shift_schedule_returns_json_for_unexpected_preflight_failure(
+        self,
+        _ip_allowed_mock,
+    ):
+        response = self._post_shift_schedule()
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response["Content-Type"].split(";", 1)[0], "application/json")
+        payload = json.loads(response.content)
+        self.assertFalse(payload["success"])
+        self.assertEqual(
+            payload["message"],
+            "Unable to process the shift schedule request. Please try again.",
+        )
 
     @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)

@@ -2651,8 +2651,31 @@ def employee_lookup(request):
 
 
 @csrf_exempt
-@require_http_methods(["GET", "POST"])
 def portal_shift_schedule(request):
+    """Read or save the selected employee's recurring shift for today's weekday."""
+    if request.method not in {"GET", "POST"}:
+        return JsonResponse(
+            {"success": False, "message": "Only GET and POST requests are supported."},
+            status=405,
+        )
+
+    try:
+        return _portal_shift_schedule(request)
+    except Exception:
+        logger.exception(
+            "Unexpected portal shift schedule failure for employee %s",
+            request.POST.get("employee_id") or request.GET.get("employee_id") or "unknown",
+        )
+        return JsonResponse(
+            {
+                "success": False,
+                "message": "Unable to process the shift schedule request. Please try again.",
+            },
+            status=500,
+        )
+
+
+def _portal_shift_schedule(request):
     """Read or save the selected employee's recurring shift for today's weekday."""
     if not _ip_is_allowed(request):
         return JsonResponse(

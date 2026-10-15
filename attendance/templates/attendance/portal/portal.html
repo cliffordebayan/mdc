@@ -4373,6 +4373,40 @@
             );
         }
 
+        async function parsePortalShiftResponse(response, fallbackMessage) {
+            const responseText = await response.text();
+            let data;
+
+            try {
+                data = JSON.parse(responseText);
+            } catch (error) {
+                const contentType = (response.headers.get('content-type') || '').toLowerCase();
+                const isHtmlResponse = contentType.includes('text/html') || /^\s*</.test(responseText);
+                console.error('Portal shift endpoint returned a non-JSON response:', {
+                    status: response.status,
+                    contentType: contentType,
+                    bodyPreview: responseText.slice(0, 200)
+                });
+                throw new Error(
+                    isHtmlResponse
+                        ? fallbackMessage
+                        : '{% trans "The shift service returned an invalid response. Please try again." %}'
+                );
+            }
+
+            if (!response.ok) {
+                throw new Error(
+                    (data && data.message) || `${fallbackMessage} (HTTP ${response.status})`
+                );
+            }
+
+            if (!data || typeof data !== 'object') {
+                throw new Error(fallbackMessage);
+            }
+
+            return data;
+        }
+
         async function editTodayShift() {
             if (!selectedEmployee) {
                 return;
@@ -4443,9 +4477,13 @@
             try {
                 const response = await fetch('{% url "portal-shift-schedule" %}', {
                     method: 'POST',
+                    headers: { 'Accept': 'application/json' },
                     body: formData
                 });
-                const data = await response.json();
+                const data = await parsePortalShiftResponse(
+                    response,
+                    '{% trans "Unable to save the shift. Please try again." %}'
+                );
                 if (!data.success) {
                     throw new Error(data.message || '{% trans "Unable to save the shift." %}');
                 }
@@ -4493,10 +4531,10 @@
                     headers: { 'Accept': 'application/json' },
                     signal: controller.signal
                 });
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json();
+                const data = await parsePortalShiftResponse(
+                    response,
+                    '{% trans "Unable to load the shift schedule. Please try again." %}'
+                );
                 if (!selectedEmployee || String(selectedEmployee.id) !== employeeId) {
                     return;
                 }
