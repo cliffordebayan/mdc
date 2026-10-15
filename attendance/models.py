@@ -1496,6 +1496,38 @@ class AttendancePortalShiftOverride(HorillaModel):
         return f"{self.employee_id} - {self.day}"
 
 
+class AttendancePortalShiftReason(HorillaModel):
+    """A date-specific reason waiting to be copied to Attendance.notes."""
+
+    employee_id = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name="portal_shift_reasons",
+        verbose_name=_("Employee"),
+    )
+    attendance_date = models.DateField(
+        validators=[attendance_date_validate],
+        verbose_name=_("Attendance Date"),
+    )
+    reason = models.TextField(verbose_name=_("Reason"))
+    objects = HorillaCompanyManager(
+        related_company_field="employee_id__employee_work_info__company_id"
+    )
+
+    class Meta:
+        verbose_name = _("Attendance Portal Shift Reason")
+        verbose_name_plural = _("Attendance Portal Shift Reasons")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee_id", "attendance_date"],
+                name="uniq_portal_shift_reason_employee_date",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.employee_id} - {self.attendance_date}"
+
+
 class WorkRecords(models.Model):
     """
     WorkRecord Model

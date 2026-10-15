@@ -117,6 +117,7 @@ def gdrive_setup(request):
     show = False
     active = False
     needs_auth = False
+    authorized = False
 
     if connection.vendor != "postgresql":
         return render(request, "backup/404.html")
@@ -126,6 +127,7 @@ def gdrive_setup(request):
         form = GdriveBackupSetupForm(instance=instance)
         show = True
         active = GoogleDriveBackup.objects.first().active
+        authorized = bool(instance.access_token)
 
         # Check if OAuth tokens exist - need both credentials file and access token
         if instance.oauth_credentials_file:
@@ -134,6 +136,14 @@ def gdrive_setup(request):
         else:
             # No credentials file uploaded yet
             needs_auth = False  # Don't show auth button if no credentials file
+
+        if request.method == "POST" and request.POST.get("backup_now") == "1":
+            result = google_drive_backup(force=True)
+            if result["success"]:
+                messages.success(request, _(result["message"]))
+            else:
+                messages.error(request, _(result["message"]))
+            return redirect("gdrive")
 
         if request.method == "POST":
             form = GdriveBackupSetupForm(request.POST, request.FILES, instance=instance)
@@ -168,7 +178,13 @@ def gdrive_setup(request):
         return render(
             request,
             "backup/gdrive_setup_form.html",
-            {"form": form, "show": show, "active": active, "needs_auth": needs_auth},
+            {
+                "form": form,
+                "show": show,
+                "active": active,
+                "needs_auth": needs_auth,
+                "authorized": authorized,
+            },
         )
 
     if request.method == "POST":
@@ -184,7 +200,13 @@ def gdrive_setup(request):
     return render(
         request,
         "backup/gdrive_setup_form.html",
-        {"form": form, "show": show, "active": active, "needs_auth": needs_auth},
+        {
+            "form": form,
+            "show": show,
+            "active": active,
+            "needs_auth": needs_auth,
+            "authorized": authorized,
+        },
     )
 
 

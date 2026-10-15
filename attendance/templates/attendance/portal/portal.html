@@ -4369,11 +4369,11 @@
                 `${shift.day} ${shift.start_display} – ${shift.end_display}`
             );
             $('#attendance-shift-note').text(
-                '{% trans "Request Shift" %}'
+                '{% trans "Click to Change Shift" %}'
             );
         }
 
-        async function requestTodayShift() {
+        async function editTodayShift() {
             if (!selectedEmployee) {
                 return;
             }
@@ -4387,7 +4387,7 @@
             }
 
             const result = await Swal.fire({
-                title: '{% trans "Request Shift" %}',
+                title: '{% trans "Change Shift" %}',
                 customClass: {
                     container: 'portal-shift-swal'
                 },
@@ -4403,12 +4403,12 @@
                         </label>
                         <label style="grid-column:1 / -1; font-size:12px; font-weight:700; color:#374151;">
                             {% trans "Reason" %}
-                            <textarea id="portal-shift-reason" class="swal2-textarea" maxlength="1000" rows="3" placeholder="{% trans 'Explain why you are requesting this shift change.' %}" style="width:100%; margin:6px 0 0; resize:vertical;"></textarea>
+                            <textarea id="portal-shift-reason" class="swal2-textarea" maxlength="1000" rows="3" placeholder="{% trans 'Explain why you are changing this shift.' %}" style="width:100%; margin:6px 0 0; resize:vertical;"></textarea>
                         </label>
                     </div>
                 `,
                 showCancelButton: true,
-                confirmButtonText: '{% trans "Submit Request" %}',
+                confirmButtonText: '{% trans "Save Shift" %}',
                 cancelButtonText: '{% trans "Cancel" %}',
                 focusConfirm: false,
                 preConfirm: function () {
@@ -4441,28 +4441,26 @@
             formData.append('end_time', result.value.end);
             formData.append('reason', result.value.reason);
             try {
-                const response = await fetch('{% url "portal-shift-request" %}', {
+                const response = await fetch('{% url "portal-shift-schedule" %}', {
                     method: 'POST',
                     body: formData
                 });
                 const data = await response.json();
                 if (!data.success) {
-                    Toast.fire({
-                        icon: 'error',
-                        title: data.message || '{% trans "Unable to send the shift request." %}'
-                    });
-                    return;
+                    throw new Error(data.message || '{% trans "Unable to save the shift." %}');
                 }
 
+                selectedEmployee.today_shift = data.today_shift;
+                updateTodayShiftCard();
                 Toast.fire({
                     icon: 'success',
-                    title: data.message || '{% trans "Shift request sent to IT Helpdesk." %}'
+                    title: data.message || '{% trans "Shift saved." %}'
                 });
             } catch (error) {
-                console.error('Shift request error:', error);
+                console.error('Portal shift save error:', error);
                 Toast.fire({
                     icon: 'error',
-                    title: error.message || '{% trans "Unable to send the shift request." %}'
+                    title: error.message || '{% trans "Unable to save the shift." %}'
                 });
             }
         }
@@ -6437,7 +6435,7 @@
                 if ($(this).prop('disabled')) {
                     return;
                 }
-                requestTodayShift();
+                editTodayShift();
             });
 
             $('[data-attendance-action]').on('click', function () {

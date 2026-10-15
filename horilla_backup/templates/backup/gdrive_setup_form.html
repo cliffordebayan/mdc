@@ -35,6 +35,16 @@
             {% if needs_auth %}
             <a class="oh-btn oh-btn--info mr-2" href="{% url 'gdrive_authorize' %}" title="Authorize">{% trans "Authorize Google Drive" %}</a>
             {% else %}
+            {% if authorized %}
+            <form method="post" action="{% url 'gdrive' %}" class="d-inline mr-2">
+                {% csrf_token %}
+                <input type="hidden" name="backup_now" value="1">
+                <button type="submit" class="oh-btn oh-btn--primary" title="{% trans 'Backup Now' %}">
+                    <ion-icon name="cloud-upload-outline" role="img" class="md hydrated" aria-label="cloud upload outline"></ion-icon>
+                    {% trans "Backup Now" %}
+                </button>
+            </form>
+            {% endif %}
             {% if active %}
             <a class="oh-btn oh-btn--danger mr-2" href="{% url 'gdrive_start_stop' %}" title="Stop">Stop</a>
             {% else %}

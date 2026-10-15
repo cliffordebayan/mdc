@@ -29,6 +29,7 @@ from attendance.models import (
     AttendanceActivity,
     AttendanceGeneralSetting,
     AttendanceLateComeEarlyOut,
+    AttendancePortalShiftReason,
     GraceTime,
 )
 from attendance.views.views import attendance_validate
@@ -187,6 +188,11 @@ def clock_in_attendance_and_activity(
     attendance = Attendance.objects.filter(
         employee_id=employee, attendance_date=attendance_date
     )
+    pending_shift_reason = AttendancePortalShiftReason._base_manager.filter(
+        employee_id=employee,
+        attendance_date=attendance_date,
+        is_active=True,
+    ).first()
     if not attendance.exists():
         attendance = Attendance()
         attendance.employee_id = employee
@@ -197,7 +203,11 @@ def clock_in_attendance_and_activity(
         attendance.attendance_clock_in = now
         attendance.attendance_clock_in_date = date_today
         attendance.minimum_hour = minimum_hour
+        if pending_shift_reason:
+            attendance.notes = pending_shift_reason.reason
         attendance.save()
+        if pending_shift_reason:
+            pending_shift_reason.delete()
         # check here late come or not
 
         attendance = Attendance.find(attendance.id)
@@ -212,12 +222,16 @@ def clock_in_attendance_and_activity(
             # employee shift.
             attendance.shift_id = shift
             attendance.minimum_hour = minimum_hour
+        if pending_shift_reason:
+            attendance.notes = pending_shift_reason.reason
         # Track this clock-in as the current last event. If the employee forgets to
         # clock out, this time will remain as attendance_clock_out. If they do clock
         # out, clock_out_attendance_and_activity will overwrite it with the actual time.
         attendance.attendance_clock_out = in_datetime.time()
         attendance.attendance_clock_out_date = date_today
         attendance.save()
+        if pending_shift_reason:
+            pending_shift_reason.delete()
         # delete if the attendance marked the early out
         early_out_instance = attendance.late_come_early_out.filter(type="early_out")
         if early_out_instance.exists():

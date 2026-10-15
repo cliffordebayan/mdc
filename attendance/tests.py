@@ -38,12 +38,16 @@ from attendance.models import (
     AttendanceActivity,
     AttendanceLateComeEarlyOut,
     AttendanceOverTime,
+    AttendancePortalShiftReason,
     AttendancePortalShiftContext,
     AttendancePortalShiftOverride,
     AttendanceScheduleOverride,
 )
 from attendance.views import clock_in_out as clock_in_out_views
-from attendance.views.clock_in_out import clock_out_attendance_and_activity
+from attendance.views.clock_in_out import (
+    clock_in_attendance_and_activity,
+    clock_out_attendance_and_activity,
+)
 from attendance.views.portal import (
     _activity_duration_seconds,
     _geofence_check,
@@ -62,7 +66,6 @@ from attendance.views.portal import (
     _get_real_now_uncached,
     _send_portal_pin_reset_email,
     _send_portal_attendance_request_email,
-    _send_portal_shift_request_email,
     attendance_request_create,
     attendance_history,
     employee_lookup,
@@ -70,7 +73,6 @@ from attendance.views.portal import (
     public_activity_transition,
     public_clock_in,
     public_clock_out,
-    portal_shift_request,
     portal_shift_schedule,
     reset_pin,
     synchronize_portal_attendance_shift,
@@ -2128,17 +2130,17 @@ class PortalTemplateRegressionTests(SimpleTestCase):
     def test_today_shift_control_is_above_attendance_actions(self):
         self.assertIn('id="attendance-shift-card"', self.portal_template)
         self.assertIn('id="attendance-shift-value"', self.portal_template)
-        self.assertIn('function requestTodayShift()', self.portal_template)
+        self.assertIn('function editTodayShift()', self.portal_template)
         self.assertIn('function refreshTodayShift()', self.portal_template)
-        self.assertIn('{% trans "Request Shift" %}', self.portal_template)
+        self.assertIn('{% trans "Change Shift" %}', self.portal_template)
         self.assertIn('id="portal-shift-start"', self.portal_template)
         self.assertIn('id="portal-shift-end"', self.portal_template)
         self.assertIn('id="portal-shift-reason"', self.portal_template)
-        self.assertIn('{% trans "Submit Request" %}', self.portal_template)
+        self.assertIn('{% trans "Save Shift" %}', self.portal_template)
         self.assertIn('Start and end times are required.', self.portal_template)
         self.assertIn('Start and end times must be different.', self.portal_template)
         self.assertIn('Reason is required.', self.portal_template)
-        self.assertIn("{% url \"portal-shift-request\" %}", self.portal_template)
+        self.assertIn("{% url \"portal-shift-schedule\" %}", self.portal_template)
         self.assertIn("formData.append('employee_id', selectedEmployee.id);", self.portal_template)
         self.assertIn("formData.append('start_time', result.value.start);", self.portal_template)
         self.assertIn("formData.append('end_time', result.value.end);", self.portal_template)
@@ -2146,18 +2148,16 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn("employee_no: empBadge || cached.employee_no || ''", self.portal_template)
         self.assertNotIn("https://mail.google.com/mail/?view=cm=fs=1", self.portal_template)
         self.assertNotIn("https://mail.google.com/mail/?view=cm&fs=1", self.portal_template)
-        self.assertNotIn("careers@martindevcorp.com", self.portal_template)
         self.assertNotIn("window.location.href = gmailComposeUrl;", self.portal_template)
         self.assertNotIn("window.open(gmailComposeUrl", self.portal_template)
-        self.assertNotIn("mailto:ithelpdesk@martindevcorp.com", self.portal_template)
         self.assertIn('portal-shift-swal', self.portal_template)
-        self.assertNotIn('{% trans "Click to Change Shift" %}', self.portal_template)
-        request_start = self.portal_template.index('async function requestTodayShift()')
+        self.assertIn('{% trans "Click to Change Shift" %}', self.portal_template)
+        request_start = self.portal_template.index('async function editTodayShift()')
         request_end = self.portal_template.index('async function refreshTodayShift()', request_start)
         request_function = self.portal_template[request_start:request_end]
         self.assertIn("method: 'POST'", request_function)
         self.assertIn("Toast.fire", request_function)
-        self.assertIn('{% url "portal-shift-schedule" %}', self.portal_template)
+        self.assertNotIn('{% url "portal-shift-request" %}', self.portal_template)
 
     def test_today_shift_refresh_has_a_default_fallback_and_timeout(self):
         self.assertIn("default_today_shift", self.portal_template)
@@ -3185,39 +3185,22 @@ class PortalEmployeeShiftScheduleTests(TestCase):
             AttendancePortalShiftOverride._meta.db_table,
             table_names,
         )
-
-    def _post_shift_schedule(self, start_time="07:30", end_time="16:30"):
-        request = RequestFactory().post(
-            "/attendance/portal/shift-schedule/",
-            {
-                "employee_id": str(self.employee.id),
-                "start_time": start_time,
-                "end_time": end_time,
-            },
+        self.assertIn(
+            AttendancePortalShiftReason._meta.db_table,
+            table_names,
         )
-        attach_session(request)
-        request.session["portal_pin_verification"] = {
-            "employee_id": str(self.employee.id),
-            "verified_at": datetime.now().timestamp(),
-        }
-        previous_request = getattr(_thread_locals, "request", None)
-        _thread_locals.request = request
-        try:
-            return portal_shift_schedule(request)
-        finally:
-            _thread_locals.request = previous_request
 
-    def _post_shift_request(
+    def _post_shift_schedule(
         self,
-        employee_id=None,
         start_time="07:30",
         end_time="16:30",
         reason="Schedule adjustment",
+        employee_id=None,
         verified=True,
     ):
         employee_id = employee_id or str(self.employee.id)
         request = RequestFactory().post(
-            "/attendance/portal/shift-request/",
+            "/attendance/portal/shift-schedule/",
             {
                 "employee_id": employee_id,
                 "start_time": start_time,
@@ -3234,7 +3217,7 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         previous_request = getattr(_thread_locals, "request", None)
         _thread_locals.request = request
         try:
-            return portal_shift_request(request)
+            return portal_shift_schedule(request)
         finally:
             _thread_locals.request = previous_request
 
@@ -3280,77 +3263,37 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         self.assertEqual(payload["today_shift"]["start_time"], "08:00")
         self.assertEqual(payload["today_shift"]["end_time"], "17:00")
 
-    def test_portal_shift_endpoint_rejects_post_without_changing_overrides(self):
-        response = self._post_shift_schedule()
-
-        self.assertEqual(response.status_code, 405)
-        self.assertFalse(
-            AttendancePortalShiftOverride.objects.filter(
-                employee_id=self.employee,
-                day=self.monday,
-            ).exists()
-        )
-
-    @patch("attendance.views.portal.ConfiguredEmailBackend")
-    @patch("attendance.views.portal.EmailMessage")
-    def test_shift_request_email_uses_smtp_helpdesk_without_cc(
-        self,
-        email_message_class,
-        backend_class,
-    ):
-        backend = MagicMock()
-        backend.dynamic_from_email_with_display_name = "MDC <no-reply@example.com>"
-        backend_class.return_value = backend
-        email_message = MagicMock()
-        email_message.send.return_value = 1
-        email_message_class.return_value = email_message
-
-        sent = _send_portal_shift_request_email(
-            self.employee,
-            "Mon 8:00 AM to 5:00 PM",
-            time(7, 30),
-            time(16, 30),
-            "Schedule adjustment",
-        )
-
-        self.assertTrue(sent)
-        kwargs = email_message_class.call_args.kwargs
-        self.assertEqual(kwargs["to"], ["ithelpdesk@martindevcorp.com"])
-        self.assertNotIn("cc", kwargs)
-        self.assertIs(kwargs["connection"], backend)
-        self.assertEqual(
-            kwargs["subject"],
-            "Attendance Shift Request - Portal Employee (2022785)",
-        )
-        self.assertIn("Requested Shift: 7:30 AM", kwargs["body"])
-        self.assertIn("Reason: Schedule adjustment", kwargs["body"])
-        email_message.send.assert_called_once_with()
-
-    @patch("attendance.views.portal._send_portal_shift_request_email", return_value=True)
     @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    def test_portal_shift_request_sends_selected_times(
+    def test_portal_shift_schedule_saves_override_and_pending_reason(
         self,
         _ip_allowed_mock,
         _now_mock,
-        send_mock,
     ):
-        response = self._post_shift_request()
+        response = self._post_shift_schedule()
         payload = json.loads(response.content)
 
         self.assertTrue(payload["success"])
-        send_mock.assert_called_once()
-        self.assertEqual(send_mock.call_args.args[0], self.employee)
-        self.assertIn("Mon 8:00 AM", send_mock.call_args.args[1])
-        self.assertEqual(send_mock.call_args.args[2], time(7, 30))
-        self.assertEqual(send_mock.call_args.args[3], time(16, 30))
-        self.assertEqual(send_mock.call_args.args[4], "Schedule adjustment")
+        override = AttendancePortalShiftOverride._base_manager.get(
+            employee_id=self.employee,
+            day=self.monday,
+        )
+        self.assertEqual(override.start_time, time(7, 30))
+        self.assertEqual(override.end_time, time(16, 30))
+        pending = AttendancePortalShiftReason._base_manager.get(
+            employee_id=self.employee,
+            attendance_date=date(2026, 9, 28),
+        )
+        self.assertEqual(pending.reason, "Schedule adjustment")
+        self.assertEqual(payload["today_shift"]["start_time"], "07:30")
+        self.assertEqual(payload["today_shift"]["end_time"], "16:30")
 
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    def test_portal_shift_request_rejects_invalid_times(self, _ip_allowed_mock):
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    def test_portal_shift_schedule_rejects_invalid_times(self, _now_mock, _ip_allowed_mock):
         for start_time, end_time in (("", "16:30"), ("07:30", "bad"), ("07:30", "07:30")):
             with self.subTest(start_time=start_time, end_time=end_time):
-                response = self._post_shift_request(
+                response = self._post_shift_schedule(
                     start_time=start_time,
                     end_time=end_time,
                 )
@@ -3358,43 +3301,103 @@ class PortalEmployeeShiftScheduleTests(TestCase):
                 self.assertFalse(payload["success"])
 
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    def test_portal_shift_request_rejects_missing_reason(self, _ip_allowed_mock):
-        response = self._post_shift_request(reason="")
+    def test_portal_shift_schedule_rejects_missing_reason(self, _ip_allowed_mock):
+        response = self._post_shift_schedule(reason="")
         payload = json.loads(response.content)
 
         self.assertFalse(payload["success"])
         self.assertEqual(payload["message"], "Reason is required.")
 
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    def test_portal_shift_request_rejects_missing_pin_verification(self, _ip_allowed_mock):
-        response = self._post_shift_request(verified=False)
+    def test_portal_shift_schedule_rejects_missing_pin_verification(self, _ip_allowed_mock):
+        response = self._post_shift_schedule(verified=False)
         payload = json.loads(response.content)
 
         self.assertFalse(payload["success"])
         self.assertIn("PIN verification required", payload["message"])
 
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    def test_portal_shift_request_rejects_unknown_employee(self, _ip_allowed_mock):
-        response = self._post_shift_request(employee_id="999999")
+    def test_portal_shift_schedule_rejects_unknown_employee(self, _ip_allowed_mock):
+        response = self._post_shift_schedule(employee_id="999999")
         payload = json.loads(response.content)
 
         self.assertFalse(payload["success"])
         self.assertEqual(payload["message"], "Employee not found")
 
-    @patch("attendance.views.portal._send_portal_shift_request_email", return_value=False)
-    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    def test_portal_shift_request_reports_smtp_failure(
+    def test_portal_shift_schedule_rejects_missing_shift_configuration(
         self,
         _ip_allowed_mock,
-        _now_mock,
-        _send_mock,
     ):
-        response = self._post_shift_request()
+        EmployeeWorkInformation.objects.filter(employee_id=self.employee).update(
+            shift_id=None
+        )
+
+        response = self._post_shift_schedule()
         payload = json.loads(response.content)
 
         self.assertFalse(payload["success"])
-        self.assertIn("Unable to send", payload["message"])
+        self.assertEqual(payload["message"], "Employee shift not configured")
+
+    @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
+    @patch("attendance.views.portal._ip_is_allowed", return_value=True)
+    def test_portal_shift_schedule_replaces_existing_attendance_notes(
+        self,
+        _ip_allowed_mock,
+        _now_mock,
+    ):
+        attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=date(2026, 9, 28),
+            shift_id=self.base_shift,
+            attendance_day=self.monday,
+            attendance_clock_in_date=date(2026, 9, 28),
+            attendance_clock_in=time(8, 0),
+            minimum_hour="09:00",
+            notes="Previous note",
+        )
+
+        response = self._post_shift_schedule(reason="New shift reason")
+        payload = json.loads(response.content)
+
+        self.assertTrue(payload["success"])
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.notes, "New shift reason")
+        self.assertFalse(
+            AttendancePortalShiftReason._base_manager.filter(
+                employee_id=self.employee,
+                attendance_date=date(2026, 9, 28),
+            ).exists()
+        )
+
+    def test_pending_shift_reason_is_copied_when_first_activity_creates_attendance(self):
+        AttendancePortalShiftReason._base_manager.create(
+            employee_id=self.employee,
+            attendance_date=date(2026, 9, 28),
+            reason="Working an adjusted schedule",
+        )
+
+        attendance = clock_in_attendance_and_activity(
+            employee=self.employee,
+            date_today=date(2026, 9, 28),
+            attendance_date=date(2026, 9, 28),
+            day=self.monday,
+            now="07:30",
+            shift=self.base_shift,
+            minimum_hour="09:00",
+            start_time=8 * 60 * 60,
+            end_time=17 * 60 * 60,
+            in_datetime=datetime(2026, 9, 28, 7, 30),
+        )
+
+        attendance.refresh_from_db()
+        self.assertEqual(attendance.notes, "Working an adjusted schedule")
+        self.assertFalse(
+            AttendancePortalShiftReason._base_manager.filter(
+                employee_id=self.employee,
+                attendance_date=date(2026, 9, 28),
+            ).exists()
+        )
 
 
 
