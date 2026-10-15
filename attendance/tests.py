@@ -2259,6 +2259,18 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn("display: none;", self.portal_template)
         self.assertIn("@media (max-height: 720px)", self.portal_template)
 
+    def test_mobile_clock_camera_uses_dynamic_full_viewport_height(self):
+        self.assertIn("--portal-viewport-height: 100dvh;", self.portal_template)
+        self.assertIn("height: var(--portal-viewport-height, 100dvh);", self.portal_template)
+        self.assertIn("min-height: var(--portal-viewport-height, 100dvh);", self.portal_template)
+        self.assertIn("function syncPortalViewportHeight()", self.portal_template)
+        self.assertIn("window.visualViewport.height", self.portal_template)
+        self.assertIn("window.addEventListener('orientationchange', syncPortalViewportHeight", self.portal_template)
+        self.assertIn("window.visualViewport.addEventListener('resize', syncPortalViewportHeight", self.portal_template)
+        self.assertIn("position: absolute;", self.portal_template)
+        self.assertIn("min-width: 100%;", self.portal_template)
+        self.assertIn("min-height: 100%;", self.portal_template)
+
     def test_attendance_history_metrics_have_scoped_colors(self):
         metric_classes = (
             "attendance-history-metric--clock-in",
