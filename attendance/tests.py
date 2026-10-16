@@ -6037,6 +6037,7 @@ class AttendanceActivityUpdateViewTests(TestCase):
 
     def test_repair_command_moves_regular_activity_to_matching_attendance_date(self):
         actual_date = self.attendance_date + timedelta(days=1)
+        Employee.objects.filter(pk=self.employee.pk).update(employee_no="2027209")
         target_attendance = Attendance.objects.create(
             employee_id=self.employee,
             attendance_date=actual_date,
@@ -6062,6 +6063,7 @@ class AttendanceActivityUpdateViewTests(TestCase):
         mismatched_activity.refresh_from_db()
         self.assertEqual(mismatched_activity.attendance_date, self.attendance_date)
         self.assertIn("Dry run: 1 eligible", dry_run_output.getvalue())
+        self.assertIn("Employee 2027209", dry_run_output.getvalue())
 
         call_command("repair_attendance_activity_dates", "--apply", stdout=io.StringIO())
         mismatched_activity.refresh_from_db()
@@ -6083,6 +6085,201 @@ class AttendanceActivityUpdateViewTests(TestCase):
             stdout=second_apply_output,
         )
         self.assertIn("0 eligible", second_apply_output.getvalue())
+
+    @override_settings(TIME_ZONE="Asia/Manila")
+    def test_reconcile_from_activities_creates_missing_day_and_merges_duplicate(self):
+        target_date = date(2026, 10, 12)
+        old_date = date(2026, 10, 11)
+        monday, _created = EmployeeShiftDay.objects.get_or_create(day="monday")
+        Employee.objects.filter(pk=self.employee.pk).update(employee_no="2027209")
+
+        target_attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=target_date,
+            shift_id=self.shift,
+            work_type_id=self.work_type,
+            attendance_day=monday,
+            attendance_clock_in_date=target_date,
+            attendance_clock_in=time(8, 0),
+            attendance_worked_hour="00:00",
+            minimum_hour="08:00",
+        )
+        duplicate_attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=old_date,
+            shift_id=self.shift,
+            work_type_id=self.work_type,
+            attendance_day=self.shift_day,
+            attendance_clock_in_date=target_date,
+            attendance_clock_in=time(8, 20),
+            attendance_worked_hour="00:00",
+            minimum_hour="08:00",
+        )
+        penalty = AttendanceLateComeEarlyOut.objects.create(
+            attendance_id=duplicate_attendance,
+            employee_id=self.employee,
+            type="late_come",
+        )
+        AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=target_date,
+            shift_day=monday,
+            clock_in_date=target_date,
+            clock_in=time(8, 0),
+            clock_out_date=target_date,
+            clock_out=time(17, 0),
+            activity_type="work",
+            in_datetime=timezone.make_aware(
+                datetime.combine(target_date, time(8, 0)),
+                timezone.get_default_timezone(),
+            ),
+        )
+        duplicate_activity = AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=target_date,
+            shift_day=monday,
+            clock_in_date=target_date,
+            clock_in=time(8, 20),
+            clock_out_date=target_date,
+            clock_out=time(17, 10),
+            activity_type="work",
+            in_datetime=timezone.make_aware(
+                datetime.combine(target_date, time(8, 20)),
+                timezone.get_default_timezone(),
+            ),
+        )
+
+        call_command(
+            "repair_attendance_activity_dates",
+            "--employee-no",
+            "2027209",
+            "--from-date",
+            target_date.isoformat(),
+            "--to-date",
+            target_date.isoformat(),
+            "--reconcile-from-activities",
+            "--apply",
+            stdout=io.StringIO(),
+        )
+
+        target_attendance.refresh_from_db()
+        duplicate_activity.refresh_from_db()
+        self.assertFalse(Attendance.objects.filter(pk=duplicate_attendance.pk).exists())
+        self.assertEqual(target_attendance.attendance_clock_in, time(8, 0))
+        self.assertEqual(target_attendance.attendance_clock_out, time(17, 10))
+        self.assertEqual(target_attendance.attendance_worked_hour, "17:50")
+        self.assertEqual(
+            AttendanceLateComeEarlyOut.objects.get(pk=penalty.pk).attendance_id_id,
+            target_attendance.pk,
+        )
+
+    @override_settings(TIME_ZONE="Asia/Manila")
+    def test_reconcile_from_activities_creates_missing_attendance_day(self):
+        target_date = date(2026, 10, 13)
+        tuesday, _created = EmployeeShiftDay.objects.get_or_create(day="tuesday")
+        Employee.objects.filter(pk=self.employee.pk).update(employee_no="2027209")
+        activity = AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=target_date,
+            shift_day=tuesday,
+            clock_in_date=target_date,
+            clock_in=time(8, 0),
+            clock_out_date=target_date,
+            clock_out=time(17, 0),
+            activity_type="work",
+            in_datetime=timezone.make_aware(
+                datetime.combine(target_date, time(8, 0)),
+                timezone.get_default_timezone(),
+            ),
+        )
+
+        call_command(
+            "repair_attendance_activity_dates",
+            "--employee-no",
+            "2027209",
+            "--from-date",
+            target_date.isoformat(),
+            "--to-date",
+            target_date.isoformat(),
+            "--reconcile-from-activities",
+            "--apply",
+            stdout=io.StringIO(),
+        )
+
+        attendance = Attendance.objects.get(
+            employee_id=self.employee,
+            attendance_date=target_date,
+        )
+        self.assertEqual(attendance.attendance_clock_in, time(8, 0))
+        self.assertEqual(attendance.attendance_clock_out, time(17, 0))
+        self.assertEqual(attendance.attendance_worked_hour, "09:00")
+        activity.refresh_from_db()
+        self.assertEqual(activity.attendance_date, target_date)
+
+    def test_move_activity_images_is_dry_run_safe_and_apply_is_idempotent(self):
+        source = AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.attendance_date,
+            shift_day=self.shift_day,
+            clock_in_date=self.attendance_date,
+            clock_in=time(8, 0),
+            activity_type="work",
+            clock_in_selfie=SimpleUploadedFile(
+                "source-in.jpg", b"source-in", content_type="image/jpeg"
+            ),
+            clock_out_selfie=SimpleUploadedFile(
+                "source-out.jpg", b"source-out", content_type="image/jpeg"
+            ),
+        )
+        target = AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.attendance_date,
+            shift_day=self.shift_day,
+            clock_in_date=self.attendance_date,
+            clock_in=time(9, 0),
+            activity_type="work",
+        )
+        source_in_name = source.clock_in_selfie.name
+        source_out_name = source.clock_out_selfie.name
+
+        dry_run_output = io.StringIO()
+        call_command(
+            "repair_attendance_activity_dates",
+            "--move-activity-images",
+            f"{source.pk}:{target.pk}",
+            stdout=dry_run_output,
+        )
+        source.refresh_from_db()
+        target.refresh_from_db()
+        self.assertIn(f"Images {source.pk} -> {target.pk}", dry_run_output.getvalue())
+        self.assertEqual(source.clock_in_selfie.name, source_in_name)
+        self.assertEqual(target.clock_in_selfie.name, "")
+
+        call_command(
+            "repair_attendance_activity_dates",
+            "--move-activity-images",
+            f"{source.pk}:{target.pk}",
+            "--apply",
+            stdout=io.StringIO(),
+        )
+        source.refresh_from_db()
+        target.refresh_from_db()
+        self.assertFalse(source.clock_in_selfie)
+        self.assertFalse(source.clock_out_selfie)
+        self.assertEqual(target.clock_in_selfie.name, source_in_name)
+        self.assertEqual(target.clock_out_selfie.name, source_out_name)
+
+        call_command(
+            "repair_attendance_activity_dates",
+            "--move-activity-images",
+            f"{source.pk}:{target.pk}",
+            "--apply",
+            stdout=io.StringIO(),
+        )
+        source.refresh_from_db()
+        target.refresh_from_db()
+        self.assertFalse(source.clock_in_selfie)
+        self.assertEqual(target.clock_in_selfie.name, source_in_name)
 
     @override_settings(TIME_ZONE="Asia/Manila")
     def test_repair_command_moves_consistently_shifted_attendance_to_local_date(self):
