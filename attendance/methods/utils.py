@@ -77,6 +77,21 @@ def strtime_seconds(time):
     return sum(a * b for a, b in zip(ftr, map(int, time.split(":"))))
 
 
+def should_clock_in_use_previous_attendance_day(
+    clock_time_seconds, start_time_seconds, end_time_seconds
+):
+    """Return whether an overnight clock-in still belongs to yesterday.
+
+    Overnight shifts run past midnight only until their configured end time.
+    A punch after that time belongs to the current calendar day, even if the
+    clock-in happens before noon.
+    """
+    return (
+        start_time_seconds > end_time_seconds
+        and clock_time_seconds < end_time_seconds
+    )
+
+
 def clock_time_seconds(value):
     """
     Convert a stored clock time value to seconds from midnight.
@@ -436,8 +451,10 @@ def _mark_late_come(attendance, schedule):
         )
 
 
-def _mark_early_out(attendance, schedule):
-    now_sec = clock_time_seconds(attendance.attendance_clock_out)
+def _mark_early_out(attendance, schedule, clock_out=None):
+    now_sec = clock_time_seconds(
+        attendance.attendance_clock_out if clock_out is None else clock_out
+    )
     if (
         now_sec is None
         or not schedule
@@ -605,17 +622,18 @@ def recalculate_attendance_for_shift(shift, attendance=None):
         has_work_activities = work_activities.exists()
         has_any_clock_out = work_activities.filter(clock_out__isnull=False).exists()
 
-        # Collect all event timestamps (both clock_in and clock_out) to find the
-        # true first and last recorded times for the day. This ensures that if an
-        # employee clocks in after their last clock-out and forgets to clock out,
-        # that later clock-in is still captured as the effective clock-out time.
-        all_event_times = []
-        for activity in work_activities:
-            if activity.clock_in and activity.clock_in_date:
-                all_event_times.append((activity.clock_in_date, activity.clock_in))
-            if activity.clock_out and activity.clock_out_date:
-                all_event_times.append((activity.clock_out_date, activity.clock_out))
-        all_event_times.sort()
+        # Compare the complete date/time for every work event. This ensures
+        # that a later open clock-in is persisted as the effective clock-out
+        # after an earlier completed activity, including overnight shifts.
+        all_event_times = _attendance_activity_event_times(work_activities)
+        closed_event_times = [
+            (activity.clock_out_date, activity.clock_out)
+            for activity in work_activities
+            if activity.clock_out and activity.clock_out_date
+        ]
+        last_real_clock_out = (
+            max(closed_event_times)[1] if closed_event_times else None
+        )
 
         if all_event_times:
             first_date, first_time = all_event_times[0]
@@ -659,7 +677,7 @@ def recalculate_attendance_for_shift(shift, attendance=None):
         AttendanceLateComeEarlyOut.objects.filter(attendance_id=attendance).delete()
         if tracking_enabled:
             _mark_late_come(attendance, schedule)
-            _mark_early_out(attendance, schedule)
+            _mark_early_out(attendance, schedule, clock_out=last_real_clock_out)
 
         _persist_recalculated_attendance(attendance)
         if getattr(attendance, "pk", None):
@@ -672,6 +690,17 @@ def recalculate_attendance_for_shift(shift, attendance=None):
         _recalculate_overtime_account(employee, attendance_date)
 
     return recalculated_count
+
+
+def _attendance_activity_event_times(work_activities):
+    """Return all persisted work event timestamps in chronological order."""
+    event_times = []
+    for activity in work_activities:
+        if activity.clock_in and activity.clock_in_date:
+            event_times.append((activity.clock_in_date, activity.clock_in))
+        if activity.clock_out and activity.clock_out_date:
+            event_times.append((activity.clock_out_date, activity.clock_out))
+    return sorted(event_times)
 
 
 def recalculate_attendance_for_day(attendance):
@@ -1005,6 +1034,7 @@ class Request:
         date,
         time,
         datetime,
+        is_auto_punch_out=False,
     ) -> None:
         self.user = user
         self.path = "/"
@@ -1012,6 +1042,7 @@ class Request:
         self.date = date
         self.time = time
         self.datetime = datetime
+        self.is_auto_punch_out = is_auto_punch_out
         self.META = META()
 
 

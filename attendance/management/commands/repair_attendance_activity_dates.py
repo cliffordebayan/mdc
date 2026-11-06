@@ -11,6 +11,7 @@ from django.utils import timezone
 from attendance.methods.utils import (
     calculate_worked_hours,
     get_effective_attendance_schedule,
+    recalculate_attendance_for_day,
     shift_schedule_with_weekday_fallback,
 )
 from attendance.models import (
@@ -467,23 +468,35 @@ class Command(BaseCommand):
                     "activities": grouped_activities,
                     "canonical": canonical,
                     "duplicates": duplicates,
+                    "blocked_reason": self._reconciliation_block_reason(
+                        candidates
+                    ),
                 }
             )
 
+        eligible_plans = [
+            plan for plan in reconciliation_plans if not plan["blocked_reason"]
+        ]
+        eligible_activity_ids = {
+            activity.pk
+            for plan in eligible_plans
+            for activity in plan["activities"]
+        }
         changed_activity_count = sum(
             1
-            for activity in activities_by_id.values()
+            for activity_id, activity in activities_by_id.items()
+            if activity_id in eligible_activity_ids
             if activity.attendance_date != activity_targets[activity.pk]
         )
         # Reconciliation also refreshes clock-in/out fields and worked hours for
         # rows whose date already matches, so every activity-backed day is an
         # eligible attendance recalculation.
-        changed_attendance_count = len(reconciliation_plans)
+        changed_attendance_count = len(eligible_plans)
         image_field_count = sum(len(plan["fields"]) for plan in image_transfers)
         operation_count = (
             changed_activity_count
             + changed_attendance_count
-            + sum(len(plan["duplicates"]) for plan in reconciliation_plans)
+            + sum(len(plan["duplicates"]) for plan in eligible_plans)
             + image_field_count
         )
 
@@ -492,6 +505,15 @@ class Command(BaseCommand):
             f"{mode}: {operation_count} eligible activity reconciliation operation(s)."
         )
         for plan in reconciliation_plans:
+            if plan["blocked_reason"]:
+                self.stdout.write(
+                    "  Employee {employee_no} | Skipped {date}: {reason}".format(
+                        employee_no=self._employee_no(plan["employee"]),
+                        date=plan["target_date"],
+                        reason=plan["blocked_reason"],
+                    )
+                )
+                continue
             employee = plan["employee"]
             target_date = plan["target_date"]
             canonical = plan["canonical"]
@@ -585,7 +607,8 @@ class Command(BaseCommand):
 
         if apply and operation_count:
             with transaction.atomic():
-                for activity_id, target_date in activity_targets.items():
+                for activity_id in eligible_activity_ids:
+                    target_date = activity_targets[activity_id]
                     activity = AttendanceActivity._base_manager.get(pk=activity_id)
                     target_day = EmployeeShiftDay.objects.filter(
                         day=target_date.strftime("%A").lower()
@@ -600,7 +623,7 @@ class Command(BaseCommand):
                     if update_fields:
                         activity.save(update_fields=update_fields)
 
-                for plan in reconciliation_plans:
+                for plan in eligible_plans:
                     attendance = plan["canonical"]
                     target_date = plan["target_date"]
                     target_day = plan["target_day"]
@@ -621,6 +644,9 @@ class Command(BaseCommand):
                     for duplicate in plan["duplicates"]:
                         self._merge_attendance_dependencies(duplicate, attendance)
                         Attendance._base_manager.filter(pk=duplicate.pk).delete()
+                    recalculate_attendance_for_day(
+                        Attendance._base_manager.get(pk=attendance.pk)
+                    )
 
                 self._apply_image_transfers(image_transfers)
 
@@ -711,6 +737,28 @@ class Command(BaseCommand):
             if activity_targets.get(activity.pk) == target_date
         )
         return exact_date + exact_clock + activity_count, -attendance.pk
+
+    @staticmethod
+    def _reconciliation_block_reason(attendances):
+        """Keep groups with approvals or manual attendance fields for review."""
+        manual_fields = (
+            "attendance_validated",
+            "attendance_overtime_approve",
+            "is_validate_request",
+            "is_validate_request_approved",
+            "is_bulk_request",
+            "request_description",
+            "requested_data",
+            "approved_by_id",
+            "batch_attendance_id",
+            "notes",
+        )
+        for attendance in attendances:
+            for field_name in manual_fields:
+                value = getattr(attendance, field_name, None)
+                if value not in (None, False, "", {}):
+                    return f"attendance {attendance.pk} has manual/approval data ({field_name})"
+        return ""
 
     def _attendance_fields_from_activities(
         self,

@@ -175,7 +175,7 @@ def authenticate(oauth_credentials_file):
         raise ValueError(f"Invalid OAuth credentials file: {str(e)}")
 
 
-def upload_file(file_path, google_drive_backup, parent_folder_id):
+def upload_file(file_path, google_drive_backup, parent_folder_id, file_name=None):
     """
     Upload file to Google Drive using OAuth credentials.
     """
@@ -194,7 +194,10 @@ def upload_file(file_path, google_drive_backup, parent_folder_id):
 
     service = build("drive", "v3", credentials=creds)
 
-    file_metadata = {"name": os.path.basename(file_path), "parents": [parent_folder_id]}
+    file_metadata = {
+        "name": file_name or os.path.basename(file_path),
+        "parents": [parent_folder_id],
+    }
 
     # Use resumable upload for large files (>5MB)
     # For smaller files, regular upload is fine

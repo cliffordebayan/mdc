@@ -138,7 +138,7 @@ def gdrive_setup(request):
             needs_auth = False  # Don't show auth button if no credentials file
 
         if request.method == "POST" and request.POST.get("backup_now") == "1":
-            result = google_drive_backup(force=True)
+            result = queue_gdrive_backup(force=True)
             if result["success"]:
                 messages.success(request, _(result["message"]))
             else:

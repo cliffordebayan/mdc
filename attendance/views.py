@@ -21,6 +21,7 @@ from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
@@ -47,6 +48,7 @@ from attendance.methods.utils import (
     format_time,
     is_reportingmanger,
     overtime_calculation,
+    should_clock_in_use_previous_attendance_day,
     shift_schedule_today,
     strtime_seconds,
 )
@@ -736,33 +738,31 @@ def clock_in(request):
     employee, work_info = employee_exists(request)
     if employee and work_info is not None:
         shift = work_info.shift_id
-        date_today = date.today()
+        datetime_now = timezone.localtime(
+            timezone.now(), timezone.get_default_timezone()
+        ).replace(tzinfo=None)
+        date_today = datetime_now.date()
         attendance_date = date_today
         day = date_today.strftime("%A").lower()
         day = EmployeeShiftDay.objects.filter(day=day).first()
-        now = datetime.now().strftime("%H:%M")
+        now = datetime_now.strftime("%H:%M")
         now_sec = strtime_seconds(now)
-        mid_day_sec = strtime_seconds("12:00")
         minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
             day=day, shift=shift
         )
-        if start_time_sec > end_time_sec:
+        if should_clock_in_use_previous_attendance_day(
+            now_sec, start_time_sec, end_time_sec
+        ):
             # night shift
             # ------------------
-            # Night shift in Horilla consider a 24 hours from noon to next day noon,
-            # the shift day taken today if the attendance clocked in after 12 O clock.
-
-            if mid_day_sec > now_sec:
-                # Here you need to create attendance for yesterday
-
-                date_yesterday = date_today - timedelta(days=1)
-                day_yesterday = date_yesterday.strftime("%A").lower()
-                day_yesterday = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
-                minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
-                    day=day_yesterday, shift=shift
-                )
-                attendance_date = date_yesterday
-                day = day_yesterday
+            date_yesterday = date_today - timedelta(days=1)
+            day_yesterday = date_yesterday.strftime("%A").lower()
+            day_yesterday = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
+            minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
+                day=day_yesterday, shift=shift
+            )
+            attendance_date = date_yesterday
+            day = day_yesterday
         clock_in_attendance_and_activity(
             employee=employee,
             date_today=date_today,

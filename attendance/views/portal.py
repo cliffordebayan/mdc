@@ -9,6 +9,7 @@ Employees identify themselves by badge ID or name.
 import os
 import ipaddress
 import logging
+import math
 import re
 import socket
 import struct
@@ -44,6 +45,7 @@ from attendance.methods.utils import (
     WEEKDAY_SHIFT_FALLBACK_DAYS,
     calculate_worked_hours,
     format_time,
+    should_clock_in_use_previous_attendance_day,
     shift_schedule_today,
     strtime_seconds,
 )
@@ -662,6 +664,34 @@ def _enforced_assigned_geofences(employee):
     return enforced_geofences
 
 
+def _parse_portal_location(latitude, longitude):
+    """Return validated portal coordinates, or None when GPS is not ready."""
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except (TypeError, ValueError):
+        return None
+
+    if not math.isfinite(latitude) or not math.isfinite(longitude):
+        return None
+    if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+        return None
+    if latitude == 0 and longitude == 0:
+        return None
+
+    return latitude, longitude
+
+
+def _portal_location_pending_error(latitude, longitude):
+    """Return the neutral response used while the browser is still resolving GPS."""
+    if _parse_portal_location(latitude, longitude) is None:
+        return {
+            "message": "Waiting for location...",
+            "location_pending": True,
+        }
+    return None
+
+
 def _geofence_check(employee, work_info, latitude, longitude):
     """
     Return a dict with error details if the employee is outside every active
@@ -676,14 +706,13 @@ def _geofence_check(employee, work_info, latitude, longitude):
     if not enforced_geos:
         return None
 
-    try:
-        latitude = float(latitude)
-        longitude = float(longitude)
-    except (TypeError, ValueError):
+    location = _parse_portal_location(latitude, longitude)
+    if location is None:
         return {
             "message": "Waiting for location...",
             "location_pending": True,
         }
+    latitude, longitude = location
 
     try:
         inside = False
@@ -1240,11 +1269,13 @@ def _portal_current_attendance_context(
             return context
 
         now_sec = strtime_seconds(now_str)
-        mid_day_sec = strtime_seconds("12:00")
         attendance_date = date_today
         if (
-            schedule_context["start_time_sec"] > schedule_context["end_time_sec"]
-            and mid_day_sec > now_sec
+            should_clock_in_use_previous_attendance_day(
+                now_sec,
+                schedule_context["start_time_sec"],
+                schedule_context["end_time_sec"],
+            )
         ):
             attendance_date = date_today - timedelta(days=1)
             schedule_context = _portal_schedule_context(
@@ -1290,13 +1321,14 @@ def _portal_current_attendance_context(
         return context
 
     now_sec = strtime_seconds(now_str)
-    mid_day_sec = strtime_seconds("12:00")
     minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
         day=day,
         shift=shift,
     )
     attendance_date = date_today
-    if start_time_sec > end_time_sec and mid_day_sec > now_sec:
+    if should_clock_in_use_previous_attendance_day(
+        now_sec, start_time_sec, end_time_sec
+    ):
         attendance_date = date_today - timedelta(days=1)
         day_name = attendance_date.strftime("%A").lower()
         day = EmployeeShiftDay.objects.filter(day=day_name).first()
@@ -1647,6 +1679,7 @@ def _maybe_auto_checkout_employee(employee, current_time=None):
         out_datetime=checkout_at,
         auto_validate=True,
         auto_approve_overtime=False,
+        is_auto_punch_out=True,
     )
 
 
@@ -1882,12 +1915,11 @@ def _save_activity_location(activity, request, latitude, longitude, clock_event)
         if "selfie" in request.FILES:
             activity.clock_out_selfie = request.FILES["selfie"]
 
-    try:
-        lat_f = float(latitude)
-        lng_f = float(longitude)
-    except (TypeError, ValueError):
+    location = _parse_portal_location(latitude, longitude)
+    if location is None:
         activity.location_verified = False
         return
+    lat_f, lng_f = location
 
     gps_address = _reverse_geocode(lat_f, lng_f)
     if clock_event == "in":
@@ -4073,6 +4105,11 @@ def public_clock_in(request):
                 {"success": False, "message": "Employee not found"}, status=200
             )
 
+        location_error = _portal_location_pending_error(latitude, longitude)
+        if location_error:
+            return _portal_geo_error_response(location_error)
+        latitude, longitude = _parse_portal_location(latitude, longitude)
+
         _maybe_auto_checkout_employee(employee)
 
         # Check if employee has work info
@@ -4207,24 +4244,14 @@ def public_clock_in(request):
         if "selfie" in request.FILES:
             activity.clock_in_selfie = request.FILES["selfie"]
 
-        # Save GPS location
-        try:
-            latitude = request.POST.get("latitude")
-            longitude = request.POST.get("longitude")
-            if latitude and longitude:
-                lat_f = float(latitude)
-                lng_f = float(longitude)
-                activity.clock_in_latitude = lat_f
-                activity.clock_in_longitude = lng_f
-                activity.clock_in_gps_address = _reverse_geocode(lat_f, lng_f)
-                activity.latitude = lat_f
-                activity.longitude = lng_f
-                activity.gps_address = activity.clock_in_gps_address
-                activity.location_verified = True
-            else:
-                activity.location_verified = False
-        except (ValueError, TypeError):
-            activity.location_verified = False
+        # Save the already-validated GPS location.
+        activity.clock_in_latitude = latitude
+        activity.clock_in_longitude = longitude
+        activity.clock_in_gps_address = _reverse_geocode(latitude, longitude)
+        activity.latitude = latitude
+        activity.longitude = longitude
+        activity.gps_address = activity.clock_in_gps_address
+        activity.location_verified = True
 
         activity.save()
         _clear_pin_verification(request)
@@ -4291,6 +4318,11 @@ def public_activity_transition(request):
             return JsonResponse(
                 {"success": False, "message": "Employee not found"}, status=200
             )
+
+        location_error = _portal_location_pending_error(latitude, longitude)
+        if location_error:
+            return _portal_geo_error_response(location_error)
+        latitude, longitude = _parse_portal_location(latitude, longitude)
 
         _maybe_auto_checkout_employee(employee)
 
@@ -4553,6 +4585,11 @@ def public_clock_out(request):
                 {"success": False, "message": "Employee not found"}, status=200
             )
 
+        location_error = _portal_location_pending_error(latitude, longitude)
+        if location_error:
+            return _portal_geo_error_response(location_error)
+        latitude, longitude = _parse_portal_location(latitude, longitude)
+
         _maybe_auto_checkout_employee(employee)
 
         # Geofence check
@@ -4736,22 +4773,14 @@ def public_clock_out(request):
             if "selfie" in request.FILES:
                 closed_activity.clock_out_selfie = request.FILES["selfie"]
 
-            # Save GPS location
-            try:
-                latitude = request.POST.get("latitude")
-                longitude = request.POST.get("longitude")
-                if latitude and longitude:
-                    lat_f = float(latitude)
-                    lng_f = float(longitude)
-                    closed_activity.clock_out_latitude = lat_f
-                    closed_activity.clock_out_longitude = lng_f
-                    closed_activity.clock_out_gps_address = _reverse_geocode(lat_f, lng_f)
-                    closed_activity.latitude = lat_f
-                    closed_activity.longitude = lng_f
-                    closed_activity.gps_address = closed_activity.clock_out_gps_address
-                    closed_activity.location_verified = True
-            except (ValueError, TypeError):
-                pass
+            # Save the already-validated GPS location.
+            closed_activity.clock_out_latitude = latitude
+            closed_activity.clock_out_longitude = longitude
+            closed_activity.clock_out_gps_address = _reverse_geocode(latitude, longitude)
+            closed_activity.latitude = latitude
+            closed_activity.longitude = longitude
+            closed_activity.gps_address = closed_activity.clock_out_gps_address
+            closed_activity.location_verified = True
 
             closed_activity.save()
 

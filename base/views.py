@@ -3032,6 +3032,36 @@ def employee_shift_view(request):
     )
 
 
+def _sync_attendance_portal_shift_change(request, employee_shift, schedules=None):
+    """Best-effort synchronization for administrator-managed shift changes."""
+    if not apps.is_installed("attendance"):
+        return
+
+    try:
+        from attendance.methods.shift_sync import synchronize_portal_shift_change
+
+        result = synchronize_portal_shift_change(employee_shift, schedules=schedules)
+        if result.get("failed"):
+            messages.warning(
+                request,
+                _(
+                    "Shift updated, but %(count)s attendance portal record(s) could not be synchronized."
+                )
+                % {"count": result["failed"]},
+            )
+    except Exception:
+        logger.exception(
+            "Attendance portal synchronization failed after updating shift %s",
+            getattr(employee_shift, "pk", None),
+        )
+        messages.warning(
+            request,
+            _(
+                "Shift updated, but attendance portal synchronization could not be completed automatically."
+            ),
+        )
+
+
 @login_required
 @hx_request_required
 @permission_required("base.add_employeeshift")
@@ -3090,6 +3120,7 @@ def employee_shift_update(request, id, **kwargs):
                             "Shift updated, but attendance recalculation could not be completed automatically."
                         ),
                     )
+            _sync_attendance_portal_shift_change(request, employee_shift)
             messages.success(request, _("Shift updated"))
             return HorillaRedirect(request)
     return render(
@@ -3506,6 +3537,11 @@ def employee_shift_schedule_update(request, id, **kwargs):
                             "Shift schedule updated, but attendance recalculation could not be completed automatically."
                         ),
                     )
+            _sync_attendance_portal_shift_change(
+                request,
+                employee_shift_schedule.shift_id,
+                schedules=[employee_shift_schedule],
+            )
             messages.success(request, _("Shift schedule updated."))
             if request.headers.get("HX-Request"):
                 return HttpResponse(status=204, headers={"HX-Refresh": "true"})

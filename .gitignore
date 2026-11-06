@@ -144,6 +144,9 @@ node_modules/
 #whoosh folder
 whoosh_index/
 
+# Graphify generated knowledge graph artifacts
+graphify-out/
+
 #VSCode
 .vscode/
 

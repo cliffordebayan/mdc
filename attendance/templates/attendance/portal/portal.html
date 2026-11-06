@@ -3438,6 +3438,8 @@
         let geocodingPromise = null;
         let locationAccuracy = null;
         let locationCaptureInFlight = false;
+        let locationRetryTimer = null;
+        let locationRetryAttempt = 0;
         let pinInput = '';
         const PIN_LENGTH = 6;
         const REVERSE_GEOCODE_TIMEOUT_MS = 7000;
@@ -3458,14 +3460,16 @@
         const PORTAL_MAP_TILE_TEMPLATE = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
         const PORTAL_MAP_TILE_ATTRIBUTION = '';
         const SAVED_MAP_TILE_TIMEOUT_MS = 10000;
-        const FACE_DETECTION_BUNDLE_URL = '{% static "attendance/face_detection/face_detection.bundle.js" %}?v=2';
-        const FACE_DETECTION_MODEL_URL = '{% static "attendance/face_detection/model/model.json" %}?v=2';
+        const FACE_DETECTION_BUNDLE_URL = '{% static "attendance/face_detection/face_detection.bundle.js" %}?v=3';
+        const FACE_DETECTION_MODEL_URL = '{% static "attendance/face_detection/model/model.json" %}?v=3';
         const FACE_DETECTION_INTERVAL_MS = 220;
         const FACE_DETECTION_SCORE_THRESHOLD = 0.5;
         const FACE_DETECTION_MIN_FACE_AREA = 0.03;
         const FACE_DETECTION_CENTER_WIDTH = 0.76;
         const FACE_DETECTION_CENTER_HEIGHT = 0.82;
         const FACE_DETECTION_REQUIRED_LANDMARKS = 6;
+        const LOCATION_RETRY_BASE_DELAY_MS = 1500;
+        const LOCATION_RETRY_MAX_DELAY_MS = 10000;
         const PORTAL_SHIFT_REQUEST_TIMEOUT_MS = 8000;
 
         // iOS Safari's visual viewport changes as the browser chrome expands,
@@ -3708,13 +3712,29 @@
             $('#mobile-location-text').text(text);
         }
 
-        function portalCoordinateText(lat, lng) {
+        function portalCoordinates(lat, lng) {
             const latNum = Number(lat);
             const lngNum = Number(lng);
-            if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) {
+            if (
+                !Number.isFinite(latNum) ||
+                !Number.isFinite(lngNum) ||
+                latNum < -90 ||
+                latNum > 90 ||
+                lngNum < -180 ||
+                lngNum > 180 ||
+                (latNum === 0 && lngNum === 0)
+            ) {
                 return null;
             }
-            return `Lat: ${latNum.toFixed(6)}, Long: ${lngNum.toFixed(6)}`;
+            return { latitude: latNum, longitude: lngNum };
+        }
+
+        function portalCoordinateText(lat, lng) {
+            const coordinates = portalCoordinates(lat, lng);
+            if (!coordinates) {
+                return null;
+            }
+            return `Lat: ${coordinates.latitude.toFixed(6)}, Long: ${coordinates.longitude.toFixed(6)}`;
         }
 
         function setPortalCoordinatesText(lat, lng) {
@@ -3734,7 +3754,35 @@
         }
 
         function hasCapturedPortalLocation() {
-            return !!portalCoordinateText(latitude, longitude);
+            return !!portalCoordinates(latitude, longitude);
+        }
+
+        function cancelLocationRetry() {
+            if (locationRetryTimer) {
+                clearTimeout(locationRetryTimer);
+                locationRetryTimer = null;
+            }
+        }
+
+        function scheduleLocationRetry() {
+            if (
+                locationRetryTimer ||
+                locationCaptureInFlight ||
+                hasCapturedPortalLocation() ||
+                !$('#step-clock').hasClass('active')
+            ) {
+                return;
+            }
+
+            const delay = Math.min(
+                LOCATION_RETRY_BASE_DELAY_MS * (2 ** locationRetryAttempt),
+                LOCATION_RETRY_MAX_DELAY_MS
+            );
+            locationRetryAttempt = Math.min(locationRetryAttempt + 1, 3);
+            locationRetryTimer = setTimeout(function () {
+                locationRetryTimer = null;
+                initializeLocationCapture({ automaticRetry: true });
+            }, delay);
         }
 
         function showLocationPendingState(message) {
@@ -3742,11 +3790,11 @@
             longitude = null;
             capturedAddress = null;
             disableClockButtons();
-            setPortalLocationText(message || '{% trans "Waiting for location..." %}');
+            setPortalLocationText('{% trans "Waiting for location..." %}');
             setPortalCoordinatesText(null, null);
             $('#location-coordinates').text('');
             $('#retry-location-btn').show();
-            $('#reload-location-btn').show();
+            $('#reload-location-btn').hide();
             $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
             $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
             $('#location-status').removeClass('success').addClass('warning');
@@ -3755,16 +3803,9 @@
         }
 
         function ensureLocationReadyForClockAction() {
-            // GPS is mandatory only when the employee is restricted by an active
-            // geofence. Unrestricted employees can still clock in/out when the
-            // browser denies or does not support geolocation.
-            if (!selectedEmployeeRequiresLocation()) {
-                return true;
-            }
-
             if (!hasCapturedPortalLocation()) {
                 showLocationPendingState('{% trans "Waiting for location..." %}');
-                if (!locationCaptureInFlight && navigator.geolocation) {
+                if (!locationCaptureInFlight) {
                     initializeLocationCapture();
                 }
                 return false;
@@ -3774,17 +3815,19 @@
 
         function handleLocationPendingResponse(data) {
             showLocationPendingState(data.message || '{% trans "Waiting for location..." %}');
-            if (!locationCaptureInFlight && navigator.geolocation) {
+            if (!locationCaptureInFlight) {
                 initializeLocationCapture();
             }
         }
 
         // Get device location
-        function initializeLocationCapture() {
-            locationCaptureInFlight = true;
-            if (selectedEmployeeRequiresLocation()) {
-                disableClockButtons();
+        function initializeLocationCapture(options = {}) {
+            cancelLocationRetry();
+            if (!options.automaticRetry) {
+                locationRetryAttempt = 0;
             }
+            locationCaptureInFlight = true;
+            disableClockButtons();
             if (navigator.geolocation) {
                 setPortalLocationText('{% trans "Getting location..." %}');
                 setPortalCoordinatesText(null, null);
@@ -3795,9 +3838,20 @@
                 $('#refresh-location-fab').addClass('fab-visible');
 
                 function onSuccess(position) {
+                    const coordinates = portalCoordinates(
+                        position && position.coords && position.coords.latitude,
+                        position && position.coords && position.coords.longitude
+                    );
+                    if (!coordinates) {
+                        onFinalError({ code: 'INVALID_COORDINATES' });
+                        return;
+                    }
+
                     locationCaptureInFlight = false;
-                    latitude = position.coords.latitude;
-                    longitude = position.coords.longitude;
+                    cancelLocationRetry();
+                    locationRetryAttempt = 0;
+                    latitude = coordinates.latitude;
+                    longitude = coordinates.longitude;
                     locationAccuracy = Math.round(position.coords.accuracy);
                     setPortalCoordinatesText(latitude, longitude);
 
@@ -3825,41 +3879,19 @@
 
                 function onFinalError(error) {
                     locationCaptureInFlight = false;
-                    let errorMsg = selectedEmployeeRequiresLocation()
-                        ? '{% trans "Location unavailable. Please retry before continuing." %}'
-                        : '{% trans "Location unavailable. You can continue without GPS." %}';
-
-                    switch (error.code) {
-                        case error.PERMISSION_DENIED:
-                            errorMsg = selectedEmployeeRequiresLocation()
-                                ? '{% trans "Location permission denied. Enable location for this site in Settings, then retry." %}'
-                                : '{% trans "Location permission denied. You can continue without GPS, or enable location and retry." %}';
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            errorMsg = selectedEmployeeRequiresLocation()
-                                ? '{% trans "Location position unavailable. Please retry before continuing." %}'
-                                : '{% trans "Location position unavailable. You can continue without GPS, or retry." %}';
-                            break;
-                        case error.TIMEOUT:
-                            errorMsg = selectedEmployeeRequiresLocation()
-                                ? '{% trans "Location request timed out. Please retry before continuing." %}'
-                                : '{% trans "Location request timed out. You can continue without GPS, or retry." %}';
-                            break;
-                    }
-
                     latitude = null;
                     longitude = null;
-                    setPortalLocationText(errorMsg);
+                    capturedAddress = null;
+                    setPortalLocationText('{% trans "Waiting for location..." %}');
                     setPortalCoordinatesText(null, null);
                     $('#location-coordinates').text('');
                     $('#retry-location-btn').show();
-                    $('#reload-location-btn').show();
-                    // Keep the FAB visible so the user can retry from it — only clear
-                    // the spinning "loading" state, don't hide the button itself.
+                    $('#reload-location-btn').hide();
                     $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
                     $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
                     $('#location-status').removeClass('success').addClass('warning');
                     updateFaceGatedButtons();
+                    scheduleLocationRetry();
 
                     console.warn('Geolocation error:', error);
                 }
@@ -3873,19 +3905,16 @@
                 locationCaptureInFlight = false;
                 latitude = null;
                 longitude = null;
-                setPortalLocationText(
-                    selectedEmployeeRequiresLocation()
-                        ? '{% trans "Geolocation is not supported by this browser. Attendance actions require location." %}'
-                        : '{% trans "Geolocation is not supported by this browser. You can continue without GPS." %}'
-                );
+                setPortalLocationText('{% trans "Waiting for location..." %}');
                 setPortalCoordinatesText(null, null);
                 $('#location-coordinates').text('');
                 $('#retry-location-btn').show();
-                $('#reload-location-btn').show();
+                $('#reload-location-btn').hide();
                 $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
                 $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
                 $('#location-status').removeClass('success').addClass('warning');
                 updateFaceGatedButtons();
+                scheduleLocationRetry();
             }
         }
 
@@ -3905,7 +3934,7 @@
                         if (
                             status.state === 'granted' &&
                             !locationCaptureInFlight &&
-                            (!latitude || !longitude) &&
+                            !hasCapturedPortalLocation() &&
                             $('#step-clock').hasClass('active')
                         ) {
                             initializeLocationCapture();
@@ -4219,7 +4248,7 @@
         function enableClockButtons() {
             if (!cameraReady) return;
             if (faceDetectionRequired && (!faceDetectionReady || !faceDetected)) return;
-            if (selectedEmployeeRequiresLocation() && !hasCapturedPortalLocation()) return;
+            if (!hasCapturedPortalLocation()) return;
             const $button = getSelectedClockButton();
             if ($button.length) {
                 $button.prop('disabled', false).removeAttr('title');
@@ -6354,6 +6383,8 @@
         }
 
         function stopClockCapturePreview() {
+            cancelLocationRetry();
+            locationRetryAttempt = 0;
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
             $('#clock-preview-map').removeClass('is-placeholder').hide();
             stopFaceDetection();
@@ -8128,6 +8159,8 @@
         // Reset form
         function resetForm() {
             stopAttendanceSummaryTimer();
+            cancelLocationRetry();
+            locationRetryAttempt = 0;
             faceDetectionRequired = false;
             stopFaceDetection();
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
@@ -8178,6 +8211,7 @@
         // Handle visibility change to stop/start camera when page visibility changes
         document.addEventListener('visibilitychange', function () {
             if (document.hidden) {
+                cancelLocationRetry();
                 stopFaceDetection();
                 if (videoStream) {
                     videoStream.getTracks().forEach(track => track.stop());
@@ -8197,7 +8231,7 @@
                     // the OS location permission in Android Settings) and location
                     // had not already been captured, auto-retry instead of leaving
                     // them stuck on a stale timeout/error with only a manual Retry.
-                    if (!locationCaptureInFlight && (!latitude || !longitude)) {
+                    if (!locationCaptureInFlight && !hasCapturedPortalLocation()) {
                         initializeLocationCapture();
                     }
                 }

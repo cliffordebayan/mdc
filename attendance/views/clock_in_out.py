@@ -21,6 +21,7 @@ from attendance.methods.utils import (
     clock_time_seconds,
     employee_exists,
     overtime_calculation,
+    should_clock_in_use_previous_attendance_day,
     shift_schedule_today,
     strtime_seconds,
 )
@@ -304,27 +305,22 @@ def clock_in(request):
             if request.__dict__.get("time"):
                 now = request.time.strftime("%H:%M")
             now_sec = strtime_seconds(now)
-            mid_day_sec = strtime_seconds("12:00")
             minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
                 day=day, shift=shift
             )
-            if start_time_sec > end_time_sec:
+            if should_clock_in_use_previous_attendance_day(
+                now_sec, start_time_sec, end_time_sec
+            ):
                 # night shift
                 # ------------------
-                # Night shift in Horilla consider a 24 hours from noon to next day noon,
-                # the shift day taken today if the attendance clocked in after 12 O clock.
-
-                if mid_day_sec > now_sec:
-                    # Here you need to create attendance for yesterday
-
-                    date_yesterday = date_today - timedelta(days=1)
-                    day_yesterday = date_yesterday.strftime("%A").lower()
-                    day_yesterday = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
-                    minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
-                        day=day_yesterday, shift=shift
-                    )
-                    attendance_date = date_yesterday
-                    day = day_yesterday
+                date_yesterday = date_today - timedelta(days=1)
+                day_yesterday = date_yesterday.strftime("%A").lower()
+                day_yesterday = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
+                minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
+                    day=day_yesterday, shift=shift
+                )
+                attendance_date = date_yesterday
+                day = day_yesterday
             attendance = clock_in_attendance_and_activity(
                 employee=employee,
                 date_today=date_today,
@@ -399,6 +395,7 @@ def clock_out_attendance_and_activity(
     out_datetime=None,
     auto_validate=True,
     auto_approve_overtime=True,
+    is_auto_punch_out=False,
 ):
     """
     Clock out the attendance and activity
@@ -422,6 +419,7 @@ def clock_out_attendance_and_activity(
         attendance_activity.clock_out = out_datetime
         attendance_activity.clock_out_date = date_today
         attendance_activity.out_datetime = out_datetime
+        attendance_activity.is_auto_punch_out = bool(is_auto_punch_out)
         attendance_activity.save()
 
         # update clock out of attendance
@@ -566,7 +564,11 @@ def clock_out(request):
             day=day, shift=shift
         )
         attendance = clock_out_attendance_and_activity(
-            employee=employee, date_today=date_today, now=now, out_datetime=datetime_now
+            employee=employee,
+            date_today=date_today,
+            now=now,
+            out_datetime=datetime_now,
+            is_auto_punch_out=getattr(request, "is_auto_punch_out", False),
         )
         if attendance:
             early_out_instance = attendance.late_come_early_out.filter(type="early_out")

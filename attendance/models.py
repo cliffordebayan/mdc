@@ -110,6 +110,11 @@ class AttendanceActivity(HorillaModel):
     clock_out_date = models.DateField(null=True, verbose_name=_("Out Date"))
     out_datetime = models.DateTimeField(null=True)
     clock_out = models.TimeField(null=True, verbose_name=_("Check Out"))
+    is_auto_punch_out = models.BooleanField(
+        default=False,
+        editable=False,
+        verbose_name=_("Automatic Punch Out"),
+    )
     activity_type = models.CharField(
         max_length=20,
         default="work",

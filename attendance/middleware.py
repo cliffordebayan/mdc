@@ -73,6 +73,7 @@ class AttendanceMiddleware(MiddlewareMixin):
                                     date=date,
                                     time=shift_schedule.auto_punch_out_time,
                                     datetime=combined_datetime,
+                                    is_auto_punch_out=True,
                                 )
                             )
                         except Exception as e:

@@ -29,14 +29,14 @@
         {% else %}
         <div class="oh-daily-activity-pair">
             <strong>{% trans "In" %}</strong>
-            {% if row.work_in %}
-                <span class="timeformat_changer">{{row.work_in.clock_in}}</span>
+            {% if row.table_clock_in %}
+                <span class="timeformat_changer">{{row.table_clock_in.clock_in}}</span>
             {% else %}
                 <span class="oh-text--light">&mdash;</span>
             {% endif %}
             <strong>{% trans "Out" %}</strong>
-            {% if row.work_out and row.work_out.clock_out %}
-                <span class="timeformat_changer">{{row.work_out.clock_out}}</span>
+            {% if row.table_clock_out and row.table_clock_out.clock_out %}
+                <span class="timeformat_changer">{{row.table_clock_out.clock_out}}</span>
             {% else %}
                 <span class="oh-text--light">&mdash;</span>
             {% endif %}

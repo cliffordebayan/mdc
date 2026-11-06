@@ -99,6 +99,7 @@ def auto_checkout_attendance():
                             date=checkout_date,
                             time=shift_schedule.auto_punch_out_time,
                             datetime=checkout_at,
+                            is_auto_punch_out=True,
                         )
                     )
             except Exception as error:

@@ -512,6 +512,60 @@ def _effective_work_out_segment(work_out, latest_unclosed):
     return seg
 
 
+def _effective_table_clock_out_segment(closed_activity, latest_unclosed):
+    """Return the aggregate clock-out used by the daily activity table.
+
+    The raw activity rows remain unchanged. When an employee has a real
+    clock-out followed by a later open clock-in, the later event is the last
+    attendance event and is therefore shown as the effective aggregate
+    clock-out. Automatic punch-outs are filtered before this helper is
+    called, so they retain their existing display behavior.
+    """
+    if closed_activity is None:
+        return None
+
+    if latest_unclosed:
+        latest_in_datetime = _activity_in_datetime(latest_unclosed)
+        closed_out_datetime = _activity_out_datetime(closed_activity)
+        if latest_in_datetime > closed_out_datetime:
+            segment = _daily_activity_segment(latest_unclosed)
+            segment.clock_out = latest_unclosed.clock_in
+            segment.clock_out_date = latest_unclosed.clock_in_date
+            segment.out_datetime = latest_in_datetime
+            return segment
+
+    return _daily_activity_segment(closed_activity)
+
+
+def _scheduled_auto_checkout_datetime(attendance_date, schedule):
+    auto_time = getattr(schedule, "auto_punch_out_time", None)
+    if not isinstance(attendance_date, date) or not isinstance(auto_time, time):
+        return None
+
+    checkout_date = attendance_date
+    start_time = getattr(schedule, "start_time", None)
+    end_time = getattr(schedule, "end_time", None)
+    is_overnight = bool(getattr(schedule, "is_night_shift", False)) or (
+        isinstance(start_time, time)
+        and isinstance(end_time, time)
+        and start_time > end_time
+    )
+    if is_overnight and isinstance(start_time, time) and auto_time < start_time:
+        checkout_date += timedelta(days=1)
+
+    return datetime.combine(checkout_date, auto_time)
+
+
+def _is_auto_punch_out_activity(activity, attendance_date, schedule):
+    if getattr(activity, "is_auto_punch_out", False):
+        return True
+    if not getattr(schedule, "is_auto_punch_out_enabled", False):
+        return False
+
+    scheduled_out = _scheduled_auto_checkout_datetime(attendance_date, schedule)
+    return bool(scheduled_out and _activity_out_datetime(activity) == scheduled_out)
+
+
 def _activity_duration_seconds(activity):
     if not activity or not activity.clock_out:
         return 0
@@ -1340,7 +1394,7 @@ def build_daily_activity_rows(
         )
         unclosed_work = [a for a in work_activities if not a.clock_out]
         latest_unclosed = None
-        if not work_out and work_in and unclosed_work:
+        if work_in and unclosed_work:
             candidate = max(unclosed_work, key=_activity_in_datetime)
             first_in_dt = _activity_in_datetime(work_in)
             candidate_in_dt = _activity_in_datetime(candidate)
@@ -1418,6 +1472,7 @@ def build_daily_activity_rows(
             if _schedule_is_blank_rest_day(exact_schedule) and fallback_schedule
             else exact_schedule or fallback_schedule
         )
+        auto_punch_schedule = schedule
         shift_schedule_days = schedule_days_by_shift_id.get(schedule_key[0], [])
         shift_schedule = _shift_schedule_days_label(shift_schedule_days)
         is_rest_day = (
@@ -1430,6 +1485,25 @@ def build_daily_activity_rows(
         ) and getattr(daily_schedule_override, "end_time", None):
             schedule = get_effective_attendance_schedule(attendance) or schedule
             is_rest_day = False
+        table_clock_out_activity = None
+        for activity in sorted(
+            (
+                activity
+                for activity in work_activities
+                if activity.clock_out
+                and not _is_auto_punch_out_activity(
+                    activity,
+                    attendance_date,
+                    auto_punch_schedule,
+                )
+            ),
+            key=_activity_out_datetime,
+        ):
+            table_clock_out_activity = activity
+        table_clock_out = _effective_table_clock_out_segment(
+            table_clock_out_activity,
+            latest_unclosed,
+        )
         late_early_durations = {
             report_type: _activity_late_early_duration(
                 first_work_clock_in,
@@ -1463,6 +1537,10 @@ def build_daily_activity_rows(
                 work_segments=work_segments,
                 break_segments=break_segments,
                 lunch_segments=lunch_segments,
+                table_clock_in=(
+                    _daily_activity_segment(work_in) if work_in else None
+                ),
+                table_clock_out=table_clock_out,
                 work_in=_daily_activity_segment(work_in) if work_in else None,
                 work_out=_effective_work_out_segment(work_out, row_context.get("latest_unclosed_work_activity")),
                 has_work_images=any(
@@ -2191,14 +2269,20 @@ def _attendance_activity_daily_export_value(row, field_name, employee, formatter
         return ""
 
     if field_name == "daily_clock_in":
+        table_clock_in = getattr(row, "table_clock_in", None)
         return _strip_time_seconds_str(_format_attendance_activity_export_value(
-            _drop_time_seconds(row.work_in.clock_in if row.work_in else None),
+            _drop_time_seconds(
+                table_clock_in.clock_in if table_clock_in else None
+            ),
             employee,
             formatter,
         ))
     if field_name == "daily_clock_out":
+        table_clock_out = getattr(row, "table_clock_out", None)
         return _strip_time_seconds_str(_format_attendance_activity_export_value(
-            _drop_time_seconds(row.work_out.clock_out if row.work_out else None),
+            _drop_time_seconds(
+                table_clock_out.clock_out if table_clock_out else None
+            ),
             employee,
             formatter,
         ))

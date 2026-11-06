@@ -1,10 +1,19 @@
 import * as tf from "@tensorflow/tfjs-core";
+import * as tfconv from "@tensorflow/tfjs-converter";
 import "@tensorflow/tfjs-backend-cpu";
 import "@tensorflow/tfjs-backend-webgl";
 import * as blazeface from "@tensorflow-models/blazeface";
 
 let model = null;
 let modelPromise = null;
+const MODEL_CACHE_URL = "indexeddb://hris-attendance-blazeface-v3";
+const MODEL_CONFIG = {
+    maxFaces: 2,
+    inputWidth: 128,
+    inputHeight: 128,
+    iouThreshold: 0.3,
+    scoreThreshold: 0.5,
+};
 
 async function selectBackend() {
     for (const backend of ["webgl", "cpu"]) {
@@ -26,13 +35,7 @@ async function selectBackend() {
 async function loadModel(modelUrl) {
     const backend = await selectBackend();
     try {
-        return await blazeface.load({
-            modelUrl,
-            maxFaces: 2,
-            inputWidth: 128,
-            inputHeight: 128,
-            scoreThreshold: 0.5,
-        });
+        return await loadCachedModel(modelUrl);
     } catch (error) {
         if (backend !== "webgl") {
             throw error;
@@ -41,14 +44,46 @@ async function loadModel(modelUrl) {
         // Some browsers expose WebGL but cannot compile this model. Retry locally on CPU.
         await tf.setBackend("cpu");
         await tf.ready();
-        return blazeface.load({
-            modelUrl,
-            maxFaces: 2,
-            inputWidth: 128,
-            inputHeight: 128,
-            scoreThreshold: 0.5,
-        });
+        return loadCachedModel(modelUrl);
     }
+}
+
+async function removeCachedModel() {
+    if (tf.io && typeof tf.io.removeModel === "function") {
+        try {
+            await tf.io.removeModel(MODEL_CACHE_URL);
+        } catch (error) {
+            // A missing or unsupported IndexedDB cache is safe to ignore.
+        }
+    }
+}
+
+async function loadCachedModel(modelUrl) {
+    let graphModel;
+
+    try {
+        graphModel = await tfconv.loadGraphModel(MODEL_CACHE_URL);
+    } catch (cacheError) {
+        await removeCachedModel();
+        graphModel = await tfconv.loadGraphModel(modelUrl);
+
+        // Persist the graph and weights for the next portal visit. IndexedDB is
+        // an optimization only; private browsing and older browsers may reject it.
+        try {
+            await graphModel.save(MODEL_CACHE_URL);
+        } catch (saveError) {
+            // Continue with the in-memory model when persistent storage is unavailable.
+        }
+    }
+
+    return new blazeface.BlazeFaceModel(
+        graphModel,
+        MODEL_CONFIG.inputWidth,
+        MODEL_CONFIG.inputHeight,
+        MODEL_CONFIG.maxFaces,
+        MODEL_CONFIG.iouThreshold,
+        MODEL_CONFIG.scoreThreshold,
+    );
 }
 
 async function load(modelUrl) {
