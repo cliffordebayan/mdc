@@ -2767,7 +2767,7 @@
                 position: fixed;
                 top: max(12px, env(safe-area-inset-top));
                 right: 12px;
-                z-index: 7;
+                z-index: 400;
                 align-items: center;
                 gap: 5px;
                 padding: 0 14px 0 10px;
@@ -2806,7 +2806,7 @@
 
             #refresh-location-fab.fab-loading {
                 opacity: 0.6;
-                pointer-events: none;
+                cursor: wait;
             }
 
             #refresh-location-fab.fab-loading ion-icon {
@@ -3438,6 +3438,9 @@
         let geocodingPromise = null;
         let locationAccuracy = null;
         let locationCaptureInFlight = false;
+        let locationCaptureGeneration = 0;
+        let locationWatchId = null;
+        let locationCaptureTimeout = null;
         let locationRetryTimer = null;
         let locationRetryAttempt = 0;
         let pinInput = '';
@@ -3470,6 +3473,7 @@
         const FACE_DETECTION_REQUIRED_LANDMARKS = 6;
         const LOCATION_RETRY_BASE_DELAY_MS = 1500;
         const LOCATION_RETRY_MAX_DELAY_MS = 10000;
+        const LOCATION_CAPTURE_TIMEOUT_MS = 30000;
         const PORTAL_SHIFT_REQUEST_TIMEOUT_MS = 8000;
 
         // iOS Safari's visual viewport changes as the browser chrome expands,
@@ -3764,6 +3768,32 @@
             }
         }
 
+        function setLocationRefreshLoading(isLoading) {
+            const $button = $('#refresh-location-fab');
+            $button
+                .toggleClass('fab-loading', !!isLoading)
+                .attr('aria-busy', isLoading ? 'true' : 'false');
+            $button.find('ion-icon').attr('name', 'refresh-outline');
+        }
+
+        function cancelLocationCapture() {
+            locationCaptureGeneration += 1;
+            if (
+                locationWatchId !== null &&
+                navigator.geolocation &&
+                navigator.geolocation.clearWatch
+            ) {
+                navigator.geolocation.clearWatch(locationWatchId);
+            }
+            locationWatchId = null;
+            if (locationCaptureTimeout) {
+                clearTimeout(locationCaptureTimeout);
+                locationCaptureTimeout = null;
+            }
+            locationCaptureInFlight = false;
+            setLocationRefreshLoading(false);
+        }
+
         function scheduleLocationRetry() {
             if (
                 locationRetryTimer ||
@@ -3790,13 +3820,13 @@
             longitude = null;
             capturedAddress = null;
             disableClockButtons();
-            setPortalLocationText('{% trans "Waiting for location..." %}');
+            setPortalLocationText(message || '{% trans "Waiting for location..." %}');
             setPortalCoordinatesText(null, null);
             $('#location-coordinates').text('');
             $('#retry-location-btn').show();
             $('#reload-location-btn').hide();
-            $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
-            $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
+            $('#refresh-location-fab').addClass('fab-visible');
+            setLocationRefreshLoading(false);
             $('#location-status').removeClass('success').addClass('warning');
             $('#geofence-error-overlay').hide();
             updateFaceGatedButtons();
@@ -3826,8 +3856,28 @@
             if (!options.automaticRetry) {
                 locationRetryAttempt = 0;
             }
+            cancelLocationCapture();
+            const captureGeneration = locationCaptureGeneration;
             locationCaptureInFlight = true;
             disableClockButtons();
+            latitude = null;
+            longitude = null;
+            capturedAddress = null;
+            geocodingPromise = null;
+            const isLocalLocationHost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+            if (window.isSecureContext === false && !isLocalLocationHost) {
+                locationCaptureInFlight = false;
+                setPortalLocationText('{% trans "Location access requires HTTPS. Open the attendance portal using its secure HTTPS address." %}');
+                setPortalCoordinatesText(null, null);
+                $('#location-coordinates').text('');
+                $('#retry-location-btn').show();
+                $('#reload-location-btn').hide();
+                $('#refresh-location-fab').addClass('fab-visible');
+                setLocationRefreshLoading(false);
+                $('#location-status').removeClass('success').addClass('warning');
+                updateFaceGatedButtons();
+                return;
+            }
             if (navigator.geolocation) {
                 setPortalLocationText('{% trans "Getting location..." %}');
                 setPortalCoordinatesText(null, null);
@@ -3836,8 +3886,36 @@
                 // retry controls while the browser resolves coordinates.
                 $('#retry-location-btn').show();
                 $('#refresh-location-fab').addClass('fab-visible');
+                setLocationRefreshLoading(true);
+
+                function isCurrentCapture() {
+                    return (
+                        captureGeneration === locationCaptureGeneration &&
+                        $('#step-clock').hasClass('active')
+                    );
+                }
+
+                function finishLocationCapture() {
+                    if (
+                        locationWatchId !== null &&
+                        navigator.geolocation &&
+                        navigator.geolocation.clearWatch
+                    ) {
+                        navigator.geolocation.clearWatch(locationWatchId);
+                    }
+                    locationWatchId = null;
+                    if (locationCaptureTimeout) {
+                        clearTimeout(locationCaptureTimeout);
+                        locationCaptureTimeout = null;
+                    }
+                    locationCaptureInFlight = false;
+                    setLocationRefreshLoading(false);
+                }
 
                 function onSuccess(position) {
+                    if (!isCurrentCapture() || !locationCaptureInFlight) {
+                        return;
+                    }
                     const coordinates = portalCoordinates(
                         position && position.coords && position.coords.latitude,
                         position && position.coords && position.coords.longitude
@@ -3847,7 +3925,7 @@
                         return;
                     }
 
-                    locationCaptureInFlight = false;
+                    finishLocationCapture();
                     cancelLocationRetry();
                     locationRetryAttempt = 0;
                     latitude = coordinates.latitude;
@@ -3860,14 +3938,17 @@
                     $('#location-coordinates').text('');
                     $('#retry-location-btn').hide();
                     $('#reload-location-btn').hide();
-                    $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
-                    $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
+                    $('#refresh-location-fab').addClass('fab-visible');
+                    setLocationRefreshLoading(false);
                     $('#location-status').removeClass('warning').addClass('success');
                     updateFaceGatedButtons();
                     initClockPreviewMap();
 
                     // Get address immediately and display it
                     geocodingPromise = reverseGeocode(latitude, longitude).then(function (address) {
+                        if (!isCurrentCapture()) {
+                            return address;
+                        }
                         capturedAddress = address;
                         setPortalLocationText(address);
                         console.info(`Location address: ${address}`);
@@ -3878,17 +3959,28 @@
                 }
 
                 function onFinalError(error) {
-                    locationCaptureInFlight = false;
+                    if (!isCurrentCapture() || !locationCaptureInFlight) {
+                        return;
+                    }
+                    finishLocationCapture();
                     latitude = null;
                     longitude = null;
                     capturedAddress = null;
-                    setPortalLocationText('{% trans "Waiting for location..." %}');
+                    let errorMessage = '{% trans "Location is unavailable. Tap Refresh Location to try again." %}';
+                    if (error && error.code === 1) {
+                        errorMessage = '{% trans "Location permission is blocked. Allow location for this site in iPhone Settings or Safari, then tap Refresh Location." %}';
+                    } else if (error && error.code === 2) {
+                        errorMessage = '{% trans "Location Services could not determine your position. Turn them on and try again." %}';
+                    } else if (error && error.code === 3) {
+                        errorMessage = '{% trans "Location timed out. Enable Precise Location or move to an open area, then tap Refresh Location." %}';
+                    }
+                    setPortalLocationText(errorMessage);
                     setPortalCoordinatesText(null, null);
                     $('#location-coordinates').text('');
                     $('#retry-location-btn').show();
                     $('#reload-location-btn').hide();
-                    $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
-                    $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
+                    $('#refresh-location-fab').addClass('fab-visible');
+                    setLocationRefreshLoading(false);
                     $('#location-status').removeClass('success').addClass('warning');
                     updateFaceGatedButtons();
                     scheduleLocationRetry();
@@ -3896,22 +3988,25 @@
                     console.warn('Geolocation error:', error);
                 }
 
-                navigator.geolocation.getCurrentPosition(onSuccess, onFinalError, {
+                locationWatchId = navigator.geolocation.watchPosition(onSuccess, onFinalError, {
                     enableHighAccuracy: true,
-                    timeout: 30000,
+                    timeout: LOCATION_CAPTURE_TIMEOUT_MS,
                     maximumAge: 0
                 });
+                locationCaptureTimeout = setTimeout(function () {
+                    onFinalError({ code: 3, message: 'Location capture timed out.' });
+                }, LOCATION_CAPTURE_TIMEOUT_MS);
             } else {
                 locationCaptureInFlight = false;
                 latitude = null;
                 longitude = null;
-                setPortalLocationText('{% trans "Waiting for location..." %}');
+                setPortalLocationText('{% trans "This browser does not support location. Use a supported browser with Location Services enabled." %}');
                 setPortalCoordinatesText(null, null);
                 $('#location-coordinates').text('');
                 $('#retry-location-btn').show();
                 $('#reload-location-btn').hide();
-                $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
-                $('#refresh-location-fab ion-icon').attr('name', 'refresh-outline');
+                $('#refresh-location-fab').addClass('fab-visible');
+                setLocationRefreshLoading(false);
                 $('#location-status').removeClass('success').addClass('warning');
                 updateFaceGatedButtons();
                 scheduleLocationRetry();
@@ -4542,7 +4637,11 @@
             try {
                 const response = await fetch('{% url "portal-shift-schedule" %}', {
                     method: 'POST',
-                    headers: { 'Accept': 'application/json' },
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRFToken': CSRF_TOKEN
+                    },
+                    credentials: 'same-origin',
                     body: formData
                 });
                 const data = await parsePortalShiftResponse(
@@ -4553,11 +4652,16 @@
                     throw new Error(data.message || '{% trans "Unable to save the shift." %}');
                 }
 
+                // The submitted shift remains pending until manager approval. Keep
+                // displaying the current approved schedule while exposing the
+                // delivery warning when SMTP is unavailable.
                 selectedEmployee.today_shift = data.today_shift;
                 updateTodayShiftCard();
                 Toast.fire({
-                    icon: 'success',
-                    title: data.message || '{% trans "Shift saved." %}'
+                    icon: data.email_sent === false ? 'warning' : 'success',
+                    title: data.email_sent === false
+                        ? `${data.message || '{% trans "Shift change submitted for approval." %}'} ${data.warning || ''}`
+                        : (data.message || '{% trans "Shift change submitted for approval." %}')
                 });
             } catch (error) {
                 console.error('Portal shift save error:', error);
@@ -5929,8 +6033,10 @@
 
                 Swal.close();
                 Toast.fire({
-                    icon: 'success',
-                    title: data.message || '{% trans "Attendance request email sent successfully." %}'
+                    icon: data.email_sent === false ? 'warning' : 'success',
+                    title: data.email_sent === false
+                        ? `${data.message || '{% trans "Attendance request submitted for approval." %}'} ${data.warning || ''}`
+                        : (data.message || '{% trans "Attendance request submitted for approval." %}')
                 });
             } catch (error) {
                 console.error('Attendance request error:', error);
@@ -6385,6 +6491,7 @@
         function stopClockCapturePreview() {
             cancelLocationRetry();
             locationRetryAttempt = 0;
+            cancelLocationCapture();
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
             $('#clock-preview-map').removeClass('is-placeholder').hide();
             stopFaceDetection();
@@ -6585,7 +6692,6 @@
 
             // Retry location button
             $('#retry-location-btn').on('click', function () {
-                if (locationCaptureInFlight) { return; }
                 setPortalLocationText('{% trans "Getting location..." %}');
                 setPortalCoordinatesText(null, null);
                 $('#location-coordinates').text('');
@@ -6595,7 +6701,10 @@
 
             // Refresh Location FAB (mobile top-right)
             $('#refresh-location-fab').on('click', function () {
-                if (locationCaptureInFlight) { return; }
+                if ($('#geofence-error-overlay').is(':visible')) {
+                    $('#geofence-error-overlay').css('display', 'none');
+                    if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
+                }
                 $(this).addClass('fab-loading');
                 $(this).find('ion-icon').attr('name', 'refresh-outline');
                 setPortalLocationText('{% trans "Getting location..." %}');
@@ -6615,6 +6724,7 @@
                 $('#geofence-error-overlay').css('display', 'none');
                 if (geofenceMap) { geofenceMap.remove(); geofenceMap = null; }
                 initClockPreviewMap();
+                initializeLocationCapture();
             });
 
             $('#geofence-reset-btn').on('click', function () {
@@ -6945,6 +7055,7 @@
             if (isMobilePortalView()) {
                 initClockPreviewMap({ allowPlaceholder: true });
             }
+            cancelLocationCapture();
             capturedAddress = null;
             geocodingPromise = null;
             cameraReady = false;
@@ -6968,14 +7079,12 @@
                 video.srcObject = null;
             }
 
-            // On Safari, getUserMedia (Promise-based) is processed before
-            // getCurrentPosition (callback-based) when both are called synchronously,
-            // so the geolocation prompt is silently dropped. Fix: request camera first,
-            // then initiate location inside .then() — WebKit propagates user-gesture
-            // activation through the first Promise microtask, so the prompt still appears.
-            startCamera().catch(function () {}).then(function () {
-                initializeLocationCapture();
-            });
+            // Start geolocation directly from the attendance button gesture. iOS Safari
+            // may suppress the permission prompt if location waits for the camera's
+            // asynchronous "playing" event. Camera startup can continue independently.
+            $('#refresh-location-fab').addClass('fab-visible').removeClass('fab-loading');
+            initializeLocationCapture({ userGesture: true });
+            startCamera().catch(function () {});
         }
 
         function updateFaceGatedButtons() {
@@ -8161,6 +8270,7 @@
             stopAttendanceSummaryTimer();
             cancelLocationRetry();
             locationRetryAttempt = 0;
+            cancelLocationCapture();
             faceDetectionRequired = false;
             stopFaceDetection();
             if (clockPreviewMap) { clockPreviewMap.remove(); clockPreviewMap = null; }
@@ -8212,6 +8322,7 @@
         document.addEventListener('visibilitychange', function () {
             if (document.hidden) {
                 cancelLocationRetry();
+                cancelLocationCapture();
                 stopFaceDetection();
                 if (videoStream) {
                     videoStream.getTracks().forEach(track => track.stop());

@@ -108,6 +108,21 @@ urlpatterns = [
         name="portal-attendance-request-create",
     ),
     path(
+        "portal/shift-change/<int:request_id>/review/",
+        attendance.views.portal.portal_shift_change_review,
+        name="portal-shift-change-review",
+    ),
+    path(
+        "portal/shift-change/<int:request_id>/approve/",
+        attendance.views.portal.portal_shift_change_approve,
+        name="portal-shift-change-approve",
+    ),
+    path(
+        "portal/shift-change/<int:request_id>/reject/",
+        attendance.views.portal.portal_shift_change_reject,
+        name="portal-shift-change-reject",
+    ),
+    path(
         "portal/helpdesk-data/",
         attendance.views.portal.helpdesk_data,
         name="portal-helpdesk-data",

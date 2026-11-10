@@ -13,6 +13,7 @@ from employee.filters import (
     DocumentRequestFilter,
     EmployeeFilter,
 )
+from base.models import EmployeeShift
 from employee.models import (
     Actiontype,
     DisciplinaryAction,
@@ -447,8 +448,9 @@ class EmployeeBulkUpdateView(APIView):
         employee_work_info = EmployeeWorkInformation.objects.filter(
             employee_id__in=employees
         )
-        employee_data = request.data.get("employee_data", {})
-        work_info_data = request.data.get("employee_work_info", {})
+        employee_data = dict(request.data.get("employee_data", {}) or {})
+        work_info_data = dict(request.data.get("employee_work_info", {}) or {})
+        requested_shift_id = work_info_data.pop("shift_id", None)
         fields_to_remove = [
             "employee_no",
             "employee_first_name",
@@ -465,6 +467,17 @@ class EmployeeBulkUpdateView(APIView):
         try:
             employees.update(**employee_data)
             employee_work_info.update(**work_info_data)
+            shift = None
+            if requested_shift_id is not None:
+                shift = EmployeeShift._base_manager.filter(
+                    pk=requested_shift_id
+                ).first()
+                if shift is None:
+                    return Response({"error": "Shift not found"}, status=400)
+            from employee.methods.shift_ownership import assign_employee_shift
+
+            for employee in employees:
+                assign_employee_shift(employee, shift)
         except Exception as e:
             return Response({"error": str(e)}, status=400)
         return Response({"status": "success"}, status=200)

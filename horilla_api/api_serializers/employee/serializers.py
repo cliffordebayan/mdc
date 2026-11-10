@@ -127,6 +127,26 @@ class EmployeeWorkInformationSerializer(serializers.ModelSerializer):
         model = EmployeeWorkInformation
         fields = "__all__"
 
+    def create(self, validated_data):
+        source_shift = validated_data.get("shift_id")
+        employee = validated_data.get("employee_id")
+        instance = super().create(validated_data)
+        if employee:
+            from employee.methods.shift_ownership import assign_employee_shift
+
+            assign_employee_shift(employee, source_shift)
+            instance.refresh_from_db()
+        return instance
+
+    def update(self, instance, validated_data):
+        source_shift = validated_data.get("shift_id", instance.shift_id)
+        instance = super().update(instance, validated_data)
+        from employee.methods.shift_ownership import assign_employee_shift
+
+        assign_employee_shift(instance.employee_id, source_shift)
+        instance.refresh_from_db()
+        return instance
+
 
 class EmployeeBankDetailsSerializer(serializers.ModelSerializer):
     class Meta:

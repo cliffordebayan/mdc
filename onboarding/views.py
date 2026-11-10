@@ -1211,6 +1211,9 @@ def employee_creation(request, token):
                     "email": candidate.email,
                 },
             )
+            from employee.methods.shift_ownership import ensure_employee_owned_shift
+
+            ensure_employee_owned_shift(employee_personal_info)
 
             Document.objects.bulk_create(
                 [

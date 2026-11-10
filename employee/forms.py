@@ -41,6 +41,7 @@ from base.methods import (
     get_ph_field_placeholder,
     reload_queryset,
 )
+from base.models import EmployeeShift
 from employee.models import (
     Actiontype,
     Bank,
@@ -402,6 +403,17 @@ class EmployeeWorkInformationForm(ModelForm):
 
     def __init__(self, *args, disable=False, **kwargs):
         super().__init__(*args, **kwargs)
+        instance_employee = getattr(self.instance, "employee_id", None)
+        if "shift_id" in self.fields:
+            shift_queryset = EmployeeShift._base_manager.filter(
+                owner_employee__isnull=True
+            )
+            if instance_employee:
+                shift_queryset = EmployeeShift._base_manager.filter(
+                    Q(owner_employee__isnull=True)
+                    | Q(owner_employee=instance_employee)
+                )
+            self.fields["shift_id"].queryset = shift_queryset
         if not self.instance.pk and not self.data.get("pin"):
             self.initial["pin"] = f"{random.randint(0, 999999):06d}"
         self.fields["email"].widget.attrs["autocomplete"] = "email"
@@ -514,6 +526,17 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        instance_employee = getattr(self.instance, "employee_id", None)
+        if "shift_id" in self.fields:
+            shift_queryset = EmployeeShift._base_manager.filter(
+                owner_employee__isnull=True
+            )
+            if instance_employee:
+                shift_queryset = EmployeeShift._base_manager.filter(
+                    Q(owner_employee__isnull=True)
+                    | Q(owner_employee=instance_employee)
+                )
+            self.fields["shift_id"].queryset = shift_queryset
         if not self.instance.pk and not self.data.get("pin"):
             self.initial["pin"] = f"{random.randint(0, 999999):06d}"
         self.order_fields([

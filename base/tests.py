@@ -543,10 +543,14 @@ class EmployeeShiftDeleteTests(TestCase):
         self.assertFalse(EmployeeShift.objects.filter(pk=self.shift.pk).exists())
         default_shift = EmployeeShift.objects.get(employee_shift="Default Shift")
         self.work_info.refresh_from_db()
-        self.assertEqual(self.work_info.shift_id, default_shift)
+        self.assertNotEqual(self.work_info.shift_id, default_shift)
+        self.assertEqual(
+            self.work_info.shift_id.owner_employee_id,
+            self.work_info.employee_id_id,
+        )
         self.assertTrue(
             EmployeeShiftSchedule.objects.filter(
-                shift_id=default_shift,
+                shift_id=self.work_info.shift_id,
                 day=self.shift_day,
             ).exists()
         )

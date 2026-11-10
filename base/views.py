@@ -1372,6 +1372,11 @@ def group_remove_user(request, uid, gid):
 
 def _default_shift_for_deleted_shift(employee_shift):
     """Return a safe fallback shift while another shift is being deleted."""
+    assigned_employee_ids = list(
+        EmployeeWorkInformation._base_manager.filter(
+            shift_id=employee_shift
+        ).values_list("employee_id_id", flat=True)
+    )
     default_shift = (
         EmployeeShift._base_manager.exclude(pk=employee_shift.pk)
         .filter(employee_shift="Default Shift")
@@ -1438,6 +1443,13 @@ def _default_shift_for_deleted_shift(employee_shift):
                 RotatingShift._base_manager.filter(pk=rotating_shift.pk).update(
                     additional_data=additional_data
                 )
+
+    from employee.methods.shift_ownership import assign_employee_shift
+
+    for employee_id in assigned_employee_ids:
+        employee = Employee.objects.entire().filter(pk=employee_id).first()
+        if employee:
+            assign_employee_shift(employee, default_shift)
 
     return default_shift
 
@@ -3062,6 +3074,13 @@ def _sync_attendance_portal_shift_change(request, employee_shift, schedules=None
         )
 
 
+def _assign_employee_shift(employee, shift):
+    """Assign a template/workflow shift through the employee-owned service."""
+    from employee.methods.shift_ownership import assign_employee_shift
+
+    return assign_employee_shift(employee, shift)
+
+
 @login_required
 @hx_request_required
 @permission_required("base.add_employeeshift")
@@ -3120,7 +3139,6 @@ def employee_shift_update(request, id, **kwargs):
                             "Shift updated, but attendance recalculation could not be completed automatically."
                         ),
                     )
-            _sync_attendance_portal_shift_change(request, employee_shift)
             messages.success(request, _("Shift updated"))
             return HorillaRedirect(request)
     return render(
@@ -3304,28 +3322,34 @@ def _shift_import_apply_row(row):
             )
         )
 
-    work_info, work_info_created = EmployeeWorkInformation.objects.get_or_create(
-        employee_id=employee
-    )
-    shift, shift_created = EmployeeShift._base_manager.get_or_create(
-        employee_shift=shift_name,
-        defaults={"weekly_full_time": "40:00", "full_time": "200:00"},
-    )
-    if work_info.company_id_id:
-        shift.company_id.add(work_info.company_id_id)
+    from employee.methods.shift_ownership import ensure_employee_owned_shift
 
-    work_info.shift_id = shift
-    work_info.save(update_fields=["shift_id"])
+    shift = ensure_employee_owned_shift(employee)
 
     for day_name, is_rest_day, start_time, end_time in day_values:
         day, day_created = EmployeeShiftDay.objects.get_or_create(day=day_name)
+        if start_time and end_time:
+            duration_seconds = int(
+                (
+                    datetime.combine(datetime.today().date(), end_time)
+                    - datetime.combine(datetime.today().date(), start_time)
+                ).total_seconds()
+            )
+            if duration_seconds <= 0:
+                duration_seconds += 24 * 60 * 60
+            minimum_working_hour = f"{duration_seconds // 3600:02d}:{(duration_seconds % 3600) // 60:02d}"
+        else:
+            minimum_working_hour = "00:00"
         EmployeeShiftSchedule._base_manager.update_or_create(
             shift_id=shift,
             day=day,
             defaults={
-                "minimum_working_hour": "08:00",
+                "minimum_working_hour": minimum_working_hour,
                 "start_time": start_time,
                 "end_time": end_time,
+                "is_night_shift": bool(
+                    start_time and end_time and start_time > end_time
+                ),
                 "is_rest_day": is_rest_day,
             },
         )
@@ -3537,11 +3561,6 @@ def employee_shift_schedule_update(request, id, **kwargs):
                             "Shift schedule updated, but attendance recalculation could not be completed automatically."
                         ),
                     )
-            _sync_attendance_portal_shift_change(
-                request,
-                employee_shift_schedule.shift_id,
-                schedules=[employee_shift_schedule],
-            )
             messages.success(request, _("Shift schedule updated."))
             if request.headers.get("HX-Request"):
                 return HttpResponse(status=204, headers={"HX-Refresh": "true"})
@@ -5104,6 +5123,8 @@ def shift_request_view(request):
     """
     This method renders all shift request instances to a template
     """
+    from attendance.models import AttendancePortalShiftChangeRequest
+
     previous_data = request.GET.urlencode()
     employee = Employee.objects.filter(employee_user_id=request.user).first()
     shift_requests = filtersubordinates(
@@ -5125,6 +5146,33 @@ def shift_request_view(request):
             Q(reallocate_to=employee) | Q(employee_id=employee)
         )
     allocated_shift_requests = allocated_shift_requests | allocated_requests
+
+    portal_shift_request_id = request.GET.get("portal_shift_request_id")
+    try:
+        portal_shift_request_id = int(portal_shift_request_id)
+    except (TypeError, ValueError):
+        portal_shift_request_id = None
+
+    portal_shift_requests = AttendancePortalShiftChangeRequest._base_manager.select_related(
+        "employee_id", "reporting_manager_id", "day"
+    ).filter(employee_id__is_active=True)
+    can_approve_portal_shift_requests = bool(
+        request.user.is_superuser
+        or request.user.has_perm("attendance.change_attendance")
+    )
+    if not can_approve_portal_shift_requests:
+        access_filter = Q(employee_id=employee)
+        if employee:
+            access_filter |= Q(reporting_manager_id=employee)
+        portal_shift_requests = portal_shift_requests.filter(access_filter)
+        can_approve_portal_shift_requests = bool(
+            employee
+            and portal_shift_requests.filter(reporting_manager_id=employee).exists()
+        )
+    if portal_shift_request_id is not None:
+        portal_shift_requests = portal_shift_requests.filter(
+            pk=portal_shift_request_id
+        )
 
     requests_ids = json.dumps(
         [
@@ -5161,6 +5209,9 @@ def shift_request_view(request):
                 allocated_shift_requests, request.GET.get("page")
             ),
             "data": paginator_qry(f.qs, request.GET.get("page")),
+            "portal_shift_requests": portal_shift_requests,
+            "can_approve_portal_shift_requests": can_approve_portal_shift_requests,
+            "portal_shift_approval_employee_id": getattr(employee, "pk", None),
             "f": f,
             "form": form,
             "filter_dict": data_dict,
@@ -5480,24 +5531,20 @@ def shift_request_cancel(request, id):
         and shift_request.requested_date <= today_date <= shift_request.requested_till
         and not shift_request.is_permanent_shift
     ):
-        shift_request.employee_id.employee_work_info.shift_id = (
-            shift_request.previous_shift_id
+        _assign_employee_shift(
+            shift_request.employee_id, shift_request.previous_shift_id
         )
-        shift_request.employee_id.employee_work_info.save()
     shift_request.canceled = True
     shift_request.approved = False
     work_info = EmployeeWorkInformation.objects.filter(
         employee_id=shift_request.employee_id
     )
     if work_info.exists():
-        shift_request.employee_id.employee_work_info.shift_id = (
-            shift_request.previous_shift_id
+        _assign_employee_shift(
+            shift_request.employee_id, shift_request.previous_shift_id
         )
     if shift_request.reallocate_to and work_info.exists():
-        shift_request.reallocate_to.employee_work_info.shift_id = shift_request.shift_id
-        shift_request.reallocate_to.employee_work_info.save()
-    if work_info.exists():
-        shift_request.employee_id.employee_work_info.save()
+        _assign_employee_shift(shift_request.reallocate_to, shift_request.shift_id)
     shift_request.save()
     messages.success(request, _("Shift request rejected"))
     notify.send(
@@ -5543,10 +5590,9 @@ def shift_allocation_request_cancel(request, id):
         employee_id=shift_request.employee_id
     )
     if work_info.exists():
-        shift_request.employee_id.employee_work_info.shift_id = (
-            shift_request.previous_shift_id
+        _assign_employee_shift(
+            shift_request.employee_id, shift_request.previous_shift_id
         )
-        shift_request.employee_id.employee_work_info.save()
     shift_request.save()
     messages.success(request, _("Shift request canceled"))
     notify.send(
@@ -5584,17 +5630,15 @@ def shift_request_bulk_cancel(request):
         ):
             shift_request.canceled = True
             shift_request.approved = False
-            shift_request.employee_id.employee_work_info.shift_id = (
-                shift_request.previous_shift_id
+            _assign_employee_shift(
+                shift_request.employee_id, shift_request.previous_shift_id
             )
 
             if shift_request.reallocate_to:
-                shift_request.reallocate_to.employee_work_info.shift_id = (
-                    shift_request.shift_id
+                _assign_employee_shift(
+                    shift_request.reallocate_to, shift_request.shift_id
                 )
-                shift_request.reallocate_to.employee_work_info.save()
 
-            shift_request.employee_id.employee_work_info.save()
             shift_request.save()
             messages.success(request, _("Shift request canceled"))
             notify.send(
@@ -5658,18 +5702,14 @@ def shift_request_approve(request, id):
     today_date = datetime.today().date()
     if not shift_request.is_permanent_shift:
         if shift_request.requested_date <= today_date <= shift_request.requested_till:
-            shift_request.employee_id.employee_work_info.shift_id = (
-                shift_request.shift_id
-            )
-            shift_request.employee_id.employee_work_info.save()
+            _assign_employee_shift(shift_request.employee_id, shift_request.shift_id)
     shift_request.approved = True
     shift_request.canceled = False
 
     if shift_request.reallocate_to:
-        shift_request.reallocate_to.employee_work_info.shift_id = (
-            shift_request.previous_shift_id
+        _assign_employee_shift(
+            shift_request.reallocate_to, shift_request.previous_shift_id
         )
-        shift_request.reallocate_to.employee_work_info.save()
 
     shift_request.save()
     messages.success(request, _("Shift has been approved."))
@@ -5754,14 +5794,11 @@ def shift_request_bulk_approve(request):
             shift_request.canceled = False
 
             if shift_request.reallocate_to:
-                shift_request.reallocate_to.employee_work_info.shift_id = (
-                    shift_request.previous_shift_id
+                _assign_employee_shift(
+                    shift_request.reallocate_to, shift_request.previous_shift_id
                 )
-                shift_request.reallocate_to.employee_work_info.save()
 
-            employee_work_info = shift_request.employee_id.employee_work_info
-            employee_work_info.shift_id = shift_request.shift_id
-            employee_work_info.save()
+            _assign_employee_shift(shift_request.employee_id, shift_request.shift_id)
             shift_request.save()
             messages.success(request, _("Shifts have been approved."))
             notify.send(

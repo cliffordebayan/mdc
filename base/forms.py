@@ -1210,7 +1210,7 @@ class EmployeeShiftForm(ModelForm):
 
         model = EmployeeShift
         fields = "__all__"
-        exclude = ["days", "is_active"]
+        exclude = ["days", "is_active", "owner_employee"]
 
     def clean(self):
         full_time = self.data["full_time"]

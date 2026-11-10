@@ -1292,6 +1292,10 @@ def bulk_create_work_info_import(success_lists):
             ],
             batch_size=None if is_postgres else 999,
         )
+    from employee.methods.shift_ownership import assign_employee_shift
+
+    for work_info in [*new_work_info_list, *update_work_info_list]:
+        assign_employee_shift(work_info.employee_id, work_info.shift_id)
     if apps.is_installed("payroll"):
 
         contract_creation_thread = threading.Thread(
@@ -1762,6 +1766,9 @@ def update_employee_from_import_row(employee, row):
             setattr(work_info, field, value)
         if work_values:
             EmployeeWorkInformation.objects.filter(pk=work_info.pk).update(**work_values)
+        from employee.methods.shift_ownership import assign_employee_shift
+
+        assign_employee_shift(employee, work_info.shift_id)
 
     if _import_cell_present(row, "Tags"):
         tags = []

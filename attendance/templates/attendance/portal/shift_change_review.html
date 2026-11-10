@@ -1,0 +1,41 @@
+{% extends "index.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="oh-wrapper mt-4">
+    <div class="oh-card p-4" style="max-width: 720px; margin: 0 auto;">
+        <h2 class="oh-main__titlebar-title mb-4">{% trans "Review Shift Change Request" %}</h2>
+        <dl class="row">
+            <dt class="col-sm-4">{% trans "Employee" %}</dt>
+            <dd class="col-sm-8">{{ shift_request.employee_id.get_full_name }}</dd>
+            <dt class="col-sm-4">{% trans "Day" %}</dt>
+            <dd class="col-sm-8">{{ shift_request.day.day|title }}</dd>
+            <dt class="col-sm-4">{% trans "Requested Shift" %}</dt>
+            <dd class="col-sm-8">
+                {{ shift_request.start_time|time:"h:i A" }} - {{ shift_request.end_time|time:"h:i A" }}
+            </dd>
+            <dt class="col-sm-4">{% trans "Reason" %}</dt>
+            <dd class="col-sm-8">{{ shift_request.reason }}</dd>
+            <dt class="col-sm-4">{% trans "Status" %}</dt>
+            <dd class="col-sm-8">{{ shift_request.get_status_display }}</dd>
+        </dl>
+
+        {% if shift_request.status == "pending" %}
+        <div class="d-flex gap-2">
+            <form method="post" action="{% url 'portal-shift-change-approve' shift_request.id %}">
+                {% csrf_token %}
+                <button type="submit" class="oh-btn oh-btn--success">
+                    {% trans "Approve and Apply Shift" %}
+                </button>
+            </form>
+            <form method="post" action="{% url 'portal-shift-change-reject' shift_request.id %}">
+                {% csrf_token %}
+                <button type="submit" class="oh-btn oh-btn--secondary">
+                    {% trans "Reject" %}
+                </button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

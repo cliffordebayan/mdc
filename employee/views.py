@@ -171,9 +171,18 @@ def return_none(a, b):
 def _synchronize_portal_attendance_after_shift_change(
     employee, previous_shift_id, current_shift_id
 ):
-    """Keep the current portal attendance row aligned after a shift change."""
+    """Assign a private shift and keep current portal attendance aligned."""
     if previous_shift_id == current_shift_id:
         return
+
+    from employee.methods.shift_ownership import assign_employee_shift
+
+    source_shift = None
+    if current_shift_id:
+        source_shift = EmployeeShift._base_manager.filter(
+            pk=current_shift_id
+        ).first()
+    assign_employee_shift(employee, source_shift)
 
     # Import lazily so the employee app does not load portal view dependencies
     # during Django app initialization.
@@ -1785,11 +1794,24 @@ def save_employee_bulk_update(request):
             parts = str(field).split("__")
             if parts[-1]:
                 if parts[0] == "employee_work_info":
-                    employee_queryset = EmployeeWorkInformation.objects.filter(
-                        employee_id__in=employee_list
-                    )
                     value = dict_value.get(parts[-1])
-                    employee_queryset.update(**{parts[-1]: value})
+                    if parts[-1] == "shift_id":
+                        selected_shift = EmployeeShift._base_manager.filter(
+                            pk=value
+                        ).first() if value else None
+                        from employee.methods.shift_ownership import (
+                            assign_employee_shift,
+                        )
+
+                        for employee_instance in Employee.objects.entire().filter(
+                            id__in=employee_list
+                        ):
+                            assign_employee_shift(employee_instance, selected_shift)
+                    else:
+                        employee_queryset = EmployeeWorkInformation.objects.filter(
+                            employee_id__in=employee_list
+                        )
+                        employee_queryset.update(**{parts[-1]: value})
                 elif parts[0] == "employee_bank_details":
                     for id in employee_list:
 
@@ -1802,6 +1824,12 @@ def save_employee_bulk_update(request):
                     employee_queryset = Employee.objects.filter(id__in=employee_list)
                     value = dict_value.get(field)
                     employee_queryset.update(**{field: value})
+        from employee.methods.shift_ownership import assign_employee_shift
+
+        for employee_instance in Employee.objects.entire().filter(
+            id__in=employee_list
+        ):
+            assign_employee_shift(employee_instance)
         if len(employee_list) > 0:
             messages.success(
                 request,
@@ -1903,6 +1931,10 @@ def employee_view_update(request, obj_id, **kwargs):
             work.save()
 
         employee.save()
+
+    from employee.methods.shift_ownership import ensure_employee_owned_shift
+
+    ensure_employee_owned_shift(employee)
 
     if (
         user
@@ -2795,6 +2827,9 @@ def employee_work_info_view_update(request, obj_id):
     """
 
     work_information = EmployeeWorkInformation.objects.get(id=obj_id)
+    from employee.methods.shift_ownership import ensure_employee_owned_shift
+
+    ensure_employee_owned_shift(work_information.employee_id)
     form = EmployeeForm(instance=work_information.employee_id)
     bank_form = EmployeeBankDetailsUpdateForm(
         instance=work_information.employee_id.get_primary_bank()
@@ -5579,6 +5614,10 @@ def employee_portal_personal(request, token):
 
     employee = portal.employee_id
     work_info, _created = EmployeeWorkInformation.objects.get_or_create(employee_id=employee)
+    from employee.methods.shift_ownership import ensure_employee_owned_shift
+
+    ensure_employee_owned_shift(employee)
+    work_info.refresh_from_db()
     form = EmployeePortalPersonalForm(instance=employee)
 
     if request.method == "POST":

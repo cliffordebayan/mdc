@@ -25,7 +25,14 @@
 												<ion-icon class="oh-permission-table__collapse-up"
 													title="{% trans 'Collapse' %}" name="chevron-up-outline"></ion-icon>
 											</button>
-											<span class="oh-permission-table__user">{{shift}}</span>
+											<span class="oh-permission-table__user">
+												{{shift}}
+												{% if shift.owner_employee %}
+													<small class="d-block text-muted">{% trans "Employee" %}: {{shift.owner_employee}}</small>
+												{% else %}
+													<small class="d-block text-muted">{% trans "Template" %}</small>
+												{% endif %}
+											</span>
 										</div>
 									</div>
 									<div class="oh-sticky-table__td">

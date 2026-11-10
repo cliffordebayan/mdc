@@ -12,6 +12,75 @@
   {% trans "Selected Shifts" %}
 </div>
 <div class="oh-wrapper">
+  {% if portal_shift_requests %}
+    <div class="oh-card p-3 mb-4" id="portal-shift-requests">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="oh-main__titlebar-title m-0">{% trans "Portal Shift Requests" %}</h4>
+        {% if can_approve_portal_shift_requests %}
+          <span class="oh-badge oh-badge--warning">{% trans "Manager approval" %}</span>
+        {% endif %}
+      </div>
+      <div class="oh-sticky-table">
+        <div class="oh-sticky-table__table">
+          <div class="oh-sticky-table__thead">
+            <div class="oh-sticky-table__tr">
+              <div class="oh-sticky-table__th">{% trans "Employee" %}</div>
+              <div class="oh-sticky-table__th">{% trans "Day" %}</div>
+              <div class="oh-sticky-table__th">{% trans "Requested Shift" %}</div>
+              <div class="oh-sticky-table__th">{% trans "Reason" %}</div>
+              <div class="oh-sticky-table__th">{% trans "Status" %}</div>
+              <div class="oh-sticky-table__th">{% trans "Actions" %}</div>
+            </div>
+          </div>
+          <div class="oh-sticky-table__tbody">
+            {% for portal_request in portal_shift_requests %}
+              <div class="oh-sticky-table__tr">
+                <div class="oh-sticky-table__td">{{ portal_request.employee_id.get_full_name }}</div>
+                <div class="oh-sticky-table__td">{{ portal_request.day.day|title }}</div>
+                <div class="oh-sticky-table__td">
+                  {{ portal_request.start_time|time:"h:i A" }} - {{ portal_request.end_time|time:"h:i A" }}
+                </div>
+                <div class="oh-sticky-table__td">{{ portal_request.reason|truncatechars:60 }}</div>
+                <div class="oh-sticky-table__td">
+                  {% if portal_request.status == "approved" %}
+                    {% trans "Approved" %}
+                  {% elif portal_request.status == "rejected" %}
+                    {% trans "Rejected" %}
+                  {% else %}
+                    {% trans "Pending approval" %}
+                  {% endif %}
+                </div>
+                <div class="oh-sticky-table__td">
+                  {% if portal_request.status == "pending" %}
+                    {% if request.user.is_superuser or perms.attendance.change_attendance or portal_request.reporting_manager_id_id == portal_shift_approval_employee_id %}
+                      <div class="oh-btn-group">
+                        <form method="post" action="{% url 'portal-shift-change-approve' portal_request.id %}">
+                          {% csrf_token %}
+                          <button type="submit" class="oh-btn oh-btn--success" title="{% trans 'Approve' %}">
+                            <ion-icon name="checkmark-outline"></ion-icon>
+                          </button>
+                        </form>
+                        <form method="post" action="{% url 'portal-shift-change-reject' portal_request.id %}">
+                          {% csrf_token %}
+                          <button type="submit" class="oh-btn oh-btn--danger" title="{% trans 'Reject' %}">
+                            <ion-icon name="close-circle-outline"></ion-icon>
+                          </button>
+                        </form>
+                      </div>
+                    {% else %}
+                      <span class="text-muted">{% trans "No actions" %}</span>
+                    {% endif %}
+                  {% else %}
+                    <span class="text-muted">{% trans "No actions" %}</span>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
   {% if data %}
     <!-- start of Quick filters  -->
     <div class="d-flex flex-row-reverse" style="height: 3px">

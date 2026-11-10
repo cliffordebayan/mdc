@@ -227,7 +227,12 @@ class ConfiguredEmailBackend(BACKEND_CLASS):
         for message in email_messages:
             email_log = EmailLog(
                 subject=message.subject,
-                from_email=self.dynamic_from_email_with_display_name,
+                from_email=(
+                    self.dynamic_from_email_with_display_name
+                    or message.from_email
+                    or getattr(settings, "DEFAULT_FROM_EMAIL", None)
+                    or "no-reply@example.com"
+                ),
                 to=message.to,
                 body=message.body,
                 status="sent" if response else "failed",

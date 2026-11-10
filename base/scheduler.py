@@ -132,11 +132,10 @@ def _apply_rotating_shift_change(rotating_shift, new_date, next_shift):
     Shared by both the sequential and date-range rotation paths.
     """
     from django.contrib.auth.models import User
+    from employee.methods.shift_ownership import assign_employee_shift
 
     employee = rotating_shift.employee_id
-    employee_work_info = employee.employee_work_info
-    employee_work_info.shift_id = rotating_shift.next_shift
-    employee_work_info.save()
+    assign_employee_shift(employee, rotating_shift.next_shift)
     rotating_shift.next_change_date = new_date
     rotating_shift.current_shift = rotating_shift.next_shift
     rotating_shift.next_shift = next_shift
@@ -282,6 +281,7 @@ def switch_shift():
     This method change employees shift information regards to the shift request
     """
     from django.contrib.auth.models import User
+    from employee.methods.shift_ownership import assign_employee_shift
 
     from base.models import ShiftRequest
 
@@ -292,10 +292,8 @@ def switch_shift():
     )
     if shift_requests:
         for request in shift_requests:
-            work_info = request.employee_id.employee_work_info
-            # updating requested shift to the employee work information.
-            work_info.shift_id = request.shift_id
-            work_info.save()
+            # Update the employee work information through a private copy.
+            assign_employee_shift(request.employee_id, request.shift_id)
             request.approved = True
             request.shift_changed = True
             request.save()
@@ -321,6 +319,7 @@ def undo_shift():
     This method undo previous employees shift information regards to the shift request
     """
     from django.contrib.auth.models import User
+    from employee.methods.shift_ownership import assign_employee_shift
 
     from base.models import ShiftRequest
 
@@ -335,9 +334,7 @@ def undo_shift():
     )
     if shift_requests:
         for request in shift_requests:
-            work_info = request.employee_id.employee_work_info
-            work_info.shift_id = request.previous_shift_id
-            work_info.save()
+            assign_employee_shift(request.employee_id, request.previous_shift_id)
             # making the instance in-active
             request.is_active = False
             request.save()

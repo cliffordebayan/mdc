@@ -1107,9 +1107,9 @@ class ShiftRequestBulkApproveView(APIView):
                 """
                 shift_request.approved = True
                 shift_request.canceled = False
-                employee_work_info = shift_request.employee_id.employee_work_info
-                employee_work_info.shift_id = shift_request.shift_id
-                employee_work_info.save()
+                from employee.methods.shift_ownership import assign_employee_shift
+
+                assign_employee_shift(shift_request.employee_id, shift_request.shift_id)
                 shift_request.save()
                 count += 1
         if length == count:
@@ -1131,10 +1131,11 @@ class ShiftRequestCancelView(APIView):
         ):
             shift_request.canceled = True
             shift_request.approved = False
-            shift_request.employee_id.employee_work_info.shift_id = (
-                shift_request.previous_shift_id
+            from employee.methods.shift_ownership import assign_employee_shift
+
+            assign_employee_shift(
+                shift_request.employee_id, shift_request.previous_shift_id
             )
-            shift_request.employee_id.employee_work_info.save()
             shift_request.save()
             return Response({"status": "success"}, status=200)
         return Response({"status": "failed"}, status=400)
@@ -1157,10 +1158,11 @@ class ShiftRequestBulkCancelView(APIView):
             ):
                 shift_request.canceled = True
                 shift_request.approved = False
-                shift_request.employee_id.employee_work_info.shift_id = (
-                    shift_request.previous_shift_id
+                from employee.methods.shift_ownership import assign_employee_shift
+
+                assign_employee_shift(
+                    shift_request.employee_id, shift_request.previous_shift_id
                 )
-                shift_request.employee_id.employee_work_info.save()
                 shift_request.save()
                 count += 1
         if length == count:

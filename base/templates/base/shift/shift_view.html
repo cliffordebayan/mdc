@@ -17,7 +17,14 @@
 			<div class="oh-sticky-table__tbody">
 				{% for shift in shifts %}
 					<div class="oh-sticky-table__tr" draggable="true" id="shiftTr{{shift.id}}">
-						<div class="oh-sticky-table__td">{{shift}}</div>
+						<div class="oh-sticky-table__td">
+							{{shift}}
+							{% if shift.owner_employee %}
+								<small class="d-block text-muted">{% trans "Employee" %}: {{shift.owner_employee}}</small>
+							{% else %}
+								<small class="d-block text-muted">{% trans "Template" %}</small>
+							{% endif %}
+						</div>
 						<div class="oh-sticky-table__td">{{shift.weekly_full_time}}</div>
 						<div class="oh-sticky-table__td">{{shift.full_time}}</div>
 						{% if shift.grace_time_id %}

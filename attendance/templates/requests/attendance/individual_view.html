@@ -89,16 +89,21 @@
 </table>
 <div class="oh-modal__button-container text-center">
     <div class="oh-btn-group d-flex flex-row-reverse">
-        <a href="{% url 'cancel-validate-attendance-request' attendance.id %}" data-toggle="oh-modal-toggle"
-            class="oh-btn oh-btn--secondary w-100">
-            <ion-icon name="close-circle-outline"></ion-icon>
-            {% trans "Reject" %}
-        </a>
+        <form method="post" action="{% url 'cancel-validate-attendance-request' attendance.id %}" class="w-100">
+            {% csrf_token %}
+            <button type="submit" class="oh-btn oh-btn--secondary w-100">
+                <ion-icon name="close-circle-outline"></ion-icon>
+                {% trans "Reject" %}
+            </button>
+        </form>
         {% if request.user|is_reportingmanager or perms.attendance.change_attendance %}
-        <a href="{% url 'approve-validate-attendance-request' attendance.id %}" class="oh-btn oh-btn--success w-100">
-            <ion-icon name="checkmark-outline"></ion-icon>
-            {% trans "Approve" %}
-        </a>
+        <form method="post" action="{% url 'approve-validate-attendance-request' attendance.id %}" class="w-100">
+            {% csrf_token %}
+            <button type="submit" class="oh-btn oh-btn--success w-100">
+                <ion-icon name="checkmark-outline"></ion-icon>
+                {% trans "Approve" %}
+            </button>
+        </form>
         {% endif %}
         {% if request.user|is_reportingmanager or perms.attendance.change_attendance %}
         <a hx-get="{% url 'edit-validate-attendance' attendance.id %}"

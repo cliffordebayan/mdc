@@ -14,6 +14,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from attendance.methods.utils import should_clock_in_use_previous_attendance_day
+from attendance.methods.approval import (
+    approve_attendance_request,
+    reject_attendance_request,
+)
 from attendance.models import Attendance, AttendanceActivity, EmployeeShiftDay
 from attendance.views.clock_in_out import *
 from attendance.views.clock_in_out import _attendance_datetime_now
@@ -541,56 +545,29 @@ class AttendanceRequestApproveView(APIView):
     def put(self, request, pk):
         try:
             attendance = Attendance.objects.get(id=pk)
-            prev_attendance_date = attendance.attendance_date
-            prev_attendance_clock_in_date = attendance.attendance_clock_in_date
-            prev_attendance_clock_in = attendance.attendance_clock_in
-            attendance.attendance_validated = True
-            attendance.is_validate_request_approved = True
-            attendance.is_validate_request = False
-            attendance.request_description = None
-            attendance.save()
-            if attendance.requested_data is not None:
-                requested_data = json.loads(attendance.requested_data)
-                requested_data["attendance_clock_out"] = (
-                    None
-                    if requested_data["attendance_clock_out"] == "None"
-                    else requested_data["attendance_clock_out"]
+            current_manager = getattr(request.user, "employee_get", None)
+            reporting_manager = getattr(
+                getattr(attendance.employee_id, "employee_work_info", None),
+                "reporting_manager_id",
+                None,
+            )
+            if not (
+                request.user.is_superuser
+                or request.user.has_perm("attendance.change_attendance")
+                or (
+                    current_manager
+                    and reporting_manager
+                    and current_manager.pk == reporting_manager.pk
                 )
-                requested_data["attendance_clock_out_date"] = (
-                    None
-                    if requested_data["attendance_clock_out_date"] == "None"
-                    else requested_data["attendance_clock_out_date"]
-                )
-                Attendance.objects.filter(id=pk).update(**requested_data)
-                # DUE TO AFFECT THE OVERTIME CALCULATION ON SAVE METHOD, SAVE THE INSTANCE ONCE MORE
-                attendance = Attendance.objects.get(id=pk)
-                attendance.save()
-            if (
-                attendance.attendance_clock_out is None
-                or attendance.attendance_clock_out_date is None
             ):
-                attendance.attendance_validated = True
-                activity = AttendanceActivity.objects.filter(
-                    employee_id=attendance.employee_id,
-                    attendance_date=prev_attendance_date,
-                    clock_in_date=prev_attendance_clock_in_date,
-                    clock_in=prev_attendance_clock_in,
+                return Response(
+                    {"error": "Only the reporting manager can approve this request."},
+                    status=403,
                 )
-                if activity:
-                    activity.update(
-                        employee_id=attendance.employee_id,
-                        attendance_date=attendance.attendance_date,
-                        clock_in_date=attendance.attendance_clock_in_date,
-                        clock_in=attendance.attendance_clock_in,
-                    )
-
-                else:
-                    AttendanceActivity.objects.create(
-                        employee_id=attendance.employee_id,
-                        attendance_date=attendance.attendance_date,
-                        clock_in_date=attendance.attendance_clock_in_date,
-                        clock_in=attendance.attendance_clock_in,
-                    )
+            approve_attendance_request(
+                pk,
+                approver=getattr(request.user, "employee_get", None),
+            )
         except Exception as E:
             return Response({"error": str(E)}, status=400)
         return Response({"status": "approved"}, status=200)
@@ -614,15 +591,10 @@ class AttendanceRequestCancelView(APIView):
                 or is_reportingmanager(request)
                 or request.user.has_perm("attendance.change_attendance")
             ):
-                attendance.is_validate_request_approved = False
-                attendance.is_validate_request = False
-                attendance.request_description = None
-                attendance.requested_data = None
-                attendance.request_type = None
-
-                attendance.save()
-                if attendance.request_type == "create_request":
-                    attendance.delete()
+                reject_attendance_request(
+                    pk,
+                    approver=getattr(request.user, "employee_get", None),
+                )
         except Exception as E:
             return Response({"error": str(E)}, status=400)
         return Response({"status": "success"}, status=200)

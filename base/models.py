@@ -671,6 +671,15 @@ class EmployeeShift(HorillaModel):
         null=False,
         blank=False,
     )
+    owner_employee = models.OneToOneField(
+        "employee.Employee",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="owned_employee_shift",
+        verbose_name=_("Employee Owner"),
+        help_text=_("Leave empty for a reusable shift template."),
+    )
     days = models.ManyToManyField(EmployeeShiftDay, through="EmployeeShiftSchedule")
     weekly_full_time = models.CharField(
         max_length=6,
