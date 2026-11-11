@@ -6,6 +6,8 @@ This module is used to write email backends
 
 import importlib
 import logging
+import smtplib
+import socket
 
 from django.core.cache import cache
 from django.core.mail import EmailMessage
@@ -16,6 +18,66 @@ from horilla import settings
 from horilla.horilla_middlewares import _thread_locals
 
 logger = logging.getLogger(__name__)
+
+
+def _create_ipv4_preferred_connection(address, timeout, source_address=None):
+    """Connect over IPv4 first, then fall back to the platform resolver."""
+    host, port = address
+    try:
+        ipv4_addresses = socket.getaddrinfo(
+            host,
+            port,
+            socket.AF_INET,
+            socket.SOCK_STREAM,
+        )
+    except OSError:
+        ipv4_addresses = []
+
+    for family, socktype, proto, _, socket_address in ipv4_addresses:
+        connection = None
+        try:
+            connection = socket.socket(family, socktype, proto)
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                connection.settimeout(timeout)
+            if source_address:
+                connection.bind(source_address)
+            connection.connect(socket_address)
+            return connection
+        except OSError:
+            if connection is not None:
+                connection.close()
+
+    return socket.create_connection(address, timeout, source_address)
+
+
+class _IPv4PreferredSMTP(smtplib.SMTP):
+    def _get_socket(self, host, port, timeout):
+        if timeout is not None and not timeout:
+            raise ValueError("Non-blocking socket (timeout=0) is not supported")
+        return _create_ipv4_preferred_connection(
+            (host, port),
+            timeout,
+            self.source_address,
+        )
+
+
+class _IPv4PreferredSMTPSSL(smtplib.SMTP_SSL):
+    def _get_socket(self, host, port, timeout):
+        if timeout is not None and not timeout:
+            raise ValueError("Non-blocking socket (timeout=0) is not supported")
+        connection = _create_ipv4_preferred_connection(
+            (host, port),
+            timeout,
+            self.source_address,
+        )
+        try:
+            return self.context.wrap_socket(
+                connection,
+                server_hostname=self._host,
+            )
+        except Exception:
+            connection.close()
+            raise
 
 
 class DefaultHorillaMailBackend(EmailBackend):
@@ -64,6 +126,12 @@ class DefaultHorillaMailBackend(EmailBackend):
             ssl_certfile=ssl_certfile,
             **kwargs,
         )
+
+    @property
+    def connection_class(self):
+        if self.use_ssl:
+            return _IPv4PreferredSMTPSSL
+        return _IPv4PreferredSMTP
 
     @staticmethod
     def _format_email(display_name=None, email=None):

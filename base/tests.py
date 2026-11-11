@@ -1,9 +1,10 @@
 import json
+import socket
 import shutil
 import tempfile
 from datetime import time
 from io import BytesIO
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.conf import settings as django_settings
 from django.contrib.auth.models import User
@@ -16,7 +17,12 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from openpyxl import Workbook, load_workbook
 
-from base.backends import ConfiguredEmailBackend
+from base.backends import (
+    ConfiguredEmailBackend,
+    _create_ipv4_preferred_connection,
+    _IPv4PreferredSMTP,
+    _IPv4PreferredSMTPSSL,
+)
 from base.forms import CompanyForm, HolidayForm, HolidaysColumnExportForm
 from base.models import (
     Company,
@@ -203,6 +209,90 @@ class DynamicEmailBackendSenderTests(TestCase):
             zip="1000",
         )
 
+    @patch("base.backends.socket.create_connection")
+    @patch("base.backends.socket.socket")
+    @patch("base.backends.socket.getaddrinfo")
+    def test_smtp_connection_prefers_ipv4(
+        self,
+        getaddrinfo_mock,
+        socket_class,
+        fallback_connection,
+    ):
+        getaddrinfo_mock.return_value = [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("192.0.2.25", 465),
+            )
+        ]
+        ipv4_socket = MagicMock()
+        socket_class.return_value = ipv4_socket
+
+        connection = _create_ipv4_preferred_connection(
+            ("smtp.example.com", 465),
+            10,
+        )
+
+        self.assertIs(connection, ipv4_socket)
+        socket_class.assert_called_once_with(
+            socket.AF_INET,
+            socket.SOCK_STREAM,
+            socket.IPPROTO_TCP,
+        )
+        ipv4_socket.settimeout.assert_called_once_with(10)
+        ipv4_socket.connect.assert_called_once_with(("192.0.2.25", 465))
+        fallback_connection.assert_not_called()
+
+    @patch("base.backends.socket.create_connection")
+    @patch("base.backends.socket.getaddrinfo", side_effect=socket.gaierror)
+    def test_smtp_connection_falls_back_to_platform_resolution(
+        self,
+        _getaddrinfo_mock,
+        fallback_connection,
+    ):
+        expected_connection = object()
+        fallback_connection.return_value = expected_connection
+
+        connection = _create_ipv4_preferred_connection(
+            ("smtp.ipv6-only.example.com", 465),
+            10,
+        )
+
+        self.assertIs(connection, expected_connection)
+        fallback_connection.assert_called_once_with(
+            ("smtp.ipv6-only.example.com", 465),
+            10,
+            None,
+        )
+
+    @patch("base.backends._create_ipv4_preferred_connection")
+    def test_ssl_transport_preserves_smtp_hostname_for_sni(self, connection_factory):
+        raw_connection = MagicMock()
+        wrapped_connection = object()
+        connection_factory.return_value = raw_connection
+        smtp_connection = _IPv4PreferredSMTPSSL.__new__(_IPv4PreferredSMTPSSL)
+        smtp_connection.context = MagicMock()
+        smtp_connection.context.wrap_socket.return_value = wrapped_connection
+        smtp_connection._host = "smtp.gmail.com"
+        smtp_connection.source_address = None
+
+        connection = smtp_connection._get_socket("smtp.gmail.com", 465, 10)
+
+        self.assertIs(connection, wrapped_connection)
+        smtp_connection.context.wrap_socket.assert_called_once_with(
+            raw_connection,
+            server_hostname="smtp.gmail.com",
+        )
+
+    def test_tls_backend_uses_ipv4_preferred_smtp_transport(self):
+        backend = ConfiguredEmailBackend(configuration=self.config)
+
+        self.assertTrue(backend.use_tls)
+        self.assertFalse(backend.use_ssl)
+        self.assertIs(backend.connection_class, _IPv4PreferredSMTP)
+
     def test_explicit_company_uses_company_smtp_for_anonymous_request(self):
         company = self._company("Portal Company")
         company_config = DynamicEmailConfiguration.objects.create(
@@ -228,6 +318,7 @@ class DynamicEmailBackendSenderTests(TestCase):
         self.assertEqual(backend.password, "portal-secret")
         self.assertFalse(backend.use_tls)
         self.assertTrue(backend.use_ssl)
+        self.assertIs(backend.connection_class, _IPv4PreferredSMTPSSL)
         self.assertFalse(backend.fail_silently)
         self.assertEqual(backend.timeout, 45)
         self.assertEqual(
