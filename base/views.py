@@ -280,6 +280,14 @@ def is_reportingmanger(request, instance):
     user employee is the reporting manager of the instance
     """
     manager = request.user.employee_get
+    if (
+        getattr(instance, "request_source", None) == "portal"
+        and getattr(instance, "reporting_manager_id_id", None)
+    ):
+        return Employee._base_manager.filter(
+            employee_user_id=request.user,
+            pk=instance.reporting_manager_id_id,
+        ).exists()
     try:
         employee_work_info_manager = (
             instance.employee_id.employee_work_info.reporting_manager_id
@@ -5123,17 +5131,30 @@ def shift_request_view(request):
     """
     This method renders all shift request instances to a template
     """
-    from attendance.models import AttendancePortalShiftChangeRequest
-
     previous_data = request.GET.urlencode()
     employee = Employee.objects.filter(employee_user_id=request.user).first()
+    employee_ids = list(
+        Employee.objects.filter(employee_user_id=request.user).values_list(
+            "pk", flat=True
+        )
+    )
     shift_requests = filtersubordinates(
         request,
         ShiftRequest.objects.filter(reallocate_to__isnull=True),
         "base.view_shiftrequest",
     )
     shift_requests = shift_requests | ShiftRequest.objects.filter(employee_id=employee)
+    portal_shift_requests = ShiftRequestFilter(
+        request.GET,
+        queryset=ShiftRequest._base_manager.all(),
+    ).qs.filter(
+        request_source="portal",
+        reporting_manager_id__employee_user_id=request.user,
+        reallocate_to__isnull=True,
+    )
+    shift_requests = shift_requests | portal_shift_requests
     shift_requests = shift_requests.filter(employee_id__is_active=True)
+    shift_requests = shift_requests.distinct()
 
     allocated_shift_requests = filtersubordinates(
         request,
@@ -5147,31 +5168,24 @@ def shift_request_view(request):
         )
     allocated_shift_requests = allocated_shift_requests | allocated_requests
 
-    portal_shift_request_id = request.GET.get("portal_shift_request_id")
+    shift_request_id = request.GET.get("shift_request_id")
     try:
-        portal_shift_request_id = int(portal_shift_request_id)
+        shift_request_id = int(shift_request_id)
     except (TypeError, ValueError):
-        portal_shift_request_id = None
-
-    portal_shift_requests = AttendancePortalShiftChangeRequest._base_manager.select_related(
-        "employee_id", "reporting_manager_id", "day"
-    ).filter(employee_id__is_active=True)
-    can_approve_portal_shift_requests = bool(
-        request.user.is_superuser
-        or request.user.has_perm("attendance.change_attendance")
-    )
-    if not can_approve_portal_shift_requests:
-        access_filter = Q(employee_id=employee)
-        if employee:
-            access_filter |= Q(reporting_manager_id=employee)
-        portal_shift_requests = portal_shift_requests.filter(access_filter)
-        can_approve_portal_shift_requests = bool(
-            employee
-            and portal_shift_requests.filter(reporting_manager_id=employee).exists()
-        )
-    if portal_shift_request_id is not None:
-        portal_shift_requests = portal_shift_requests.filter(
-            pk=portal_shift_request_id
+        shift_request_id = None
+    legacy_portal_request_id = request.GET.get("portal_shift_request_id")
+    try:
+        legacy_portal_request_id = int(legacy_portal_request_id)
+    except (TypeError, ValueError):
+        legacy_portal_request_id = None
+    if shift_request_id is not None:
+        shift_requests = shift_requests.filter(pk=shift_request_id)
+    elif legacy_portal_request_id is not None:
+        shift_requests = shift_requests.filter(
+            request_source="portal",
+        ).filter(
+            Q(legacy_portal_id=legacy_portal_request_id)
+            | Q(pk=legacy_portal_request_id)
         )
 
     requests_ids = json.dumps(
@@ -5209,9 +5223,8 @@ def shift_request_view(request):
                 allocated_shift_requests, request.GET.get("page")
             ),
             "data": paginator_qry(f.qs, request.GET.get("page")),
-            "portal_shift_requests": portal_shift_requests,
-            "can_approve_portal_shift_requests": can_approve_portal_shift_requests,
-            "portal_shift_approval_employee_id": getattr(employee, "pk", None),
+            "shift_request_approval_employee_id": getattr(employee, "pk", None),
+            "shift_request_approval_employee_ids": employee_ids,
             "f": f,
             "form": form,
             "filter_dict": data_dict,
@@ -5252,6 +5265,11 @@ def shift_request_search(request):
     """
 
     employee = Employee.objects.filter(employee_user_id=request.user).first()
+    employee_ids = list(
+        Employee.objects.filter(employee_user_id=request.user).values_list(
+            "pk", flat=True
+        )
+    )
     previous_data = request.GET.urlencode()
     field = request.GET.get("field")
     f = ShiftRequestFilter(request.GET)
@@ -5262,6 +5280,16 @@ def shift_request_search(request):
     shift_requests = shift_requests | f.filter(
         employee_id__employee_user_id=request.user
     )
+    portal_shift_requests = ShiftRequestFilter(
+        request.GET,
+        queryset=ShiftRequest._base_manager.all(),
+    ).qs.filter(
+        request_source="portal",
+        reporting_manager_id__employee_user_id=request.user,
+        reallocate_to__isnull=True,
+    )
+    shift_requests = shift_requests | portal_shift_requests
+    shift_requests = shift_requests.distinct()
 
     allocated_shift_requests = filtersubordinates(
         request, f.filter(reallocate_to__isnull=False), "base.add_shiftrequest"
@@ -5363,6 +5391,8 @@ def shift_request_details(request, id):
         id : shift request instance id
     """
     shift_request = ShiftRequest.find(id)
+    if not shift_request:
+        shift_request = ShiftRequest._base_manager.filter(pk=id).first()
     requests_ids_json = request.GET.get("instances_ids")
     context = {
         "shift_request": shift_request,
@@ -5390,6 +5420,8 @@ def shift_allocation_request_details(request, id):
         id : shift request instance id
     """
     shift_request = ShiftRequest.find(id)
+    if not shift_request:
+        shift_request = ShiftRequest._base_manager.filter(pk=id).first()
     requests_ids_json = request.GET.get("instances_ids")
     context = {
         "shift_request": shift_request,
@@ -5515,6 +5547,8 @@ def shift_request_cancel(request, id):
 
     shift_request = ShiftRequest.find(id)
     if not shift_request:
+        shift_request = ShiftRequest._base_manager.filter(pk=id).first()
+    if not shift_request:
         messages.error(request, _("Shift request not found."))
         return HorillaRedirect(request)
     if not (
@@ -5525,51 +5559,76 @@ def shift_request_cancel(request, id):
     ):
         messages.error(request, _("You don't have permission"))
         return HorillaRedirect(request)
-    today_date = datetime.today().date()
-    if (
-        shift_request.approved
-        and shift_request.requested_date <= today_date <= shift_request.requested_till
-        and not shift_request.is_permanent_shift
+    if shift_request.request_source == "portal" and (
+        shift_request.approved or shift_request.canceled
     ):
-        _assign_employee_shift(
-            shift_request.employee_id, shift_request.previous_shift_id
+        messages.error(request, _("This portal shift request has already been decided."))
+        return HorillaRedirect(request)
+    approver = (
+        shift_request.reporting_manager_id
+        if shift_request.request_source == "portal"
+        else request.user.employee_get
+    )
+    if shift_request.request_source != "portal":
+        today_date = datetime.today().date()
+        if (
+            shift_request.approved
+            and shift_request.requested_date <= today_date <= shift_request.requested_till
+            and not shift_request.is_permanent_shift
+        ):
+            _assign_employee_shift(
+                shift_request.employee_id, shift_request.previous_shift_id
+            )
+        work_info = EmployeeWorkInformation.objects.filter(
+            employee_id=shift_request.employee_id
         )
+        if work_info.exists():
+            _assign_employee_shift(
+                shift_request.employee_id, shift_request.previous_shift_id
+            )
+        if shift_request.reallocate_to and work_info.exists():
+            _assign_employee_shift(shift_request.reallocate_to, shift_request.shift_id)
     shift_request.canceled = True
     shift_request.approved = False
-    work_info = EmployeeWorkInformation.objects.filter(
-        employee_id=shift_request.employee_id
-    )
-    if work_info.exists():
-        _assign_employee_shift(
-            shift_request.employee_id, shift_request.previous_shift_id
-        )
-    if shift_request.reallocate_to and work_info.exists():
-        _assign_employee_shift(shift_request.reallocate_to, shift_request.shift_id)
+    shift_request.approved_by = approver
+    shift_request.approved_at = timezone.now()
+    if shift_request.request_source == "portal":
+        shift_request.decision_note = "Rejected by reporting manager."
     shift_request.save()
     messages.success(request, _("Shift request rejected"))
     notify.send(
-        request.user.employee_get,
+        approver,
         recipient=shift_request.employee_id.employee_user_id,
         verb="Your shift request has been canceled.",
         verb_ar="تم إلغاء طلبك للوردية.",
         verb_de="Ihr Schichtantrag wurde storniert.",
         verb_es="Se ha cancelado su solicitud de turno.",
         verb_fr="Votre demande de quart a été annulée.",
-        redirect=reverse("shift-request-view") + f"?id={shift_request.id}",
+        redirect=reverse("shift-request-view") + f"?shift_request_id={shift_request.id}",
         icon="close",
     )
     if shift_request.reallocate_to:
         notify.send(
-            request.user.employee_get,
+            approver,
             recipient=shift_request.reallocate_to.employee_user_id,
             verb="Your shift request has been rejected.",
             verb_ar="تم إلغاء طلبك للوردية.",
             verb_de="Ihr Schichtantrag wurde storniert.",
             verb_es="Se ha cancelado su solicitud de turno.",
             verb_fr="Votre demande de quart a été annulée.",
-            redirect=reverse("shift-request-view") + f"?id={shift_request.id}",
+            redirect=reverse("shift-request-view") + f"?shift_request_id={shift_request.id}",
             icon="close",
         )
+    if shift_request.request_source == "portal":
+        try:
+            from attendance.views.portal import _send_portal_shift_change_decision_email
+
+            _send_portal_shift_change_decision_email(request, shift_request)
+        except Exception:
+            logger.exception(
+                "Portal shift change rejection decision email failed for request %s",
+                shift_request.pk,
+            )
     return HorillaRedirect(request)
 
 
@@ -5669,7 +5728,6 @@ def shift_request_bulk_cancel(request):
 
 
 @login_required
-@manager_can_enter("base.change_shiftrequest")
 def shift_request_approve(request, id):
     """
     Approve shift request
@@ -5678,6 +5736,8 @@ def shift_request_approve(request, id):
     """
 
     shift_request = ShiftRequest.find(id)
+    if not shift_request:
+        shift_request = ShiftRequest._base_manager.filter(pk=id).first()
     if not shift_request:
         messages.error(request, _("Shift request not found."))
         return HorillaRedirect(request)
@@ -5688,23 +5748,64 @@ def shift_request_approve(request, id):
         or user.has_perm("approve_shiftrequest")
         or user.has_perm("change_shiftrequest")
         and not shift_request.approved
+        or (
+            shift_request.request_source == "portal"
+            and Employee._base_manager.filter(
+                employee_user_id=user,
+                pk=shift_request.reporting_manager_id_id,
+            ).exists()
+        )
     ):
         messages.error(request, _("You don't have permission"))
         return HorillaRedirect(request)
 
-    if shift_request.is_any_request_exists():
+    approver = (
+        shift_request.reporting_manager_id
+        if shift_request.request_source == "portal"
+        else user.employee_get
+    )
+
+    if shift_request.request_source == "portal" and (
+        shift_request.approved or shift_request.canceled
+    ):
+        messages.error(request, _("This portal shift request has already been decided."))
+        return HorillaRedirect(request)
+
+    if (
+        shift_request.request_source != "portal"
+        and shift_request.is_any_request_exists()
+    ):
         messages.error(
             request,
             _("An approved shift request already exists during this time period."),
         )
         return HorillaRedirect(request)
 
-    today_date = datetime.today().date()
-    if not shift_request.is_permanent_shift:
-        if shift_request.requested_date <= today_date <= shift_request.requested_till:
-            _assign_employee_shift(shift_request.employee_id, shift_request.shift_id)
+    if shift_request.request_source == "portal":
+        from attendance.views.portal import get_real_now, synchronize_portal_attendance_shift
+        from employee.methods.shift_ownership import update_employee_shift_schedule
+
+        update_employee_shift_schedule(
+            shift_request.employee_id,
+            shift_request.requested_day,
+            shift_request.requested_start_time,
+            shift_request.requested_end_time,
+            minimum_working_hour=shift_request.requested_minimum_working_hour,
+        )
+        synchronize_portal_attendance_shift(
+            shift_request.employee_id,
+            get_real_now(),
+        )
+    else:
+        today_date = datetime.today().date()
+        if not shift_request.is_permanent_shift:
+            if shift_request.requested_date <= today_date <= shift_request.requested_till:
+                _assign_employee_shift(shift_request.employee_id, shift_request.shift_id)
     shift_request.approved = True
     shift_request.canceled = False
+    shift_request.approved_by = approver
+    shift_request.approved_at = timezone.now()
+    shift_request.decision_note = None
 
     if shift_request.reallocate_to:
         _assign_employee_shift(
@@ -5720,16 +5821,27 @@ def shift_request_approve(request, id):
 
     for recipient in recipients:
         notify.send(
-            user.employee_get,
+            approver,
             recipient=recipient,
             verb="Your shift request has been approved.",
             verb_ar="تمت الموافقة على طلبك للوردية.",
             verb_de="Ihr Schichtantrag wurde genehmigt.",
             verb_es="Se ha aprobado su solicitud de turno.",
             verb_fr="Votre demande de quart a été approuvée.",
-            redirect=reverse("shift-request-view") + f"?id={shift_request.id}",
+            redirect=reverse("shift-request-view") + f"?shift_request_id={shift_request.id}",
             icon="checkmark",
         )
+
+    if shift_request.request_source == "portal":
+        try:
+            from attendance.views.portal import _send_portal_shift_change_decision_email
+
+            _send_portal_shift_change_decision_email(request, shift_request)
+        except Exception:
+            logger.exception(
+                "Portal shift change approval decision email failed for request %s",
+                shift_request.pk,
+            )
 
     return HorillaRedirect(request)
 

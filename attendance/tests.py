@@ -14,6 +14,7 @@ from django.core.signing import SignatureExpired
 from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth.models import AnonymousUser, Permission, User
+from django.contrib.messages.storage.fallback import FallbackStorage
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.db import connection
 from django.http import HttpResponse
@@ -45,7 +46,6 @@ from attendance.models import (
     AttendanceActivity,
     AttendanceLateComeEarlyOut,
     AttendanceOverTime,
-    AttendancePortalShiftChangeRequest,
     AttendancePortalShiftReason,
     AttendancePortalShiftContext,
     AttendancePortalShiftOverride,
@@ -77,6 +77,7 @@ from attendance.views.portal import (
     _send_portal_pin_reset_email,
     _send_portal_attendance_request_email,
     _send_portal_shift_change_email,
+    _send_portal_shift_change_decision_email,
     attendance_request_create,
     attendance_history,
     employee_lookup,
@@ -111,7 +112,14 @@ from attendance.views.views import (
     build_daily_activity_rows,
     build_my_attendance_activity_meta,
 )
-from base.models import Branch, EmployeeShift, EmployeeShiftDay, EmployeeShiftSchedule, WorkType
+from base.models import (
+    Branch,
+    EmployeeShift,
+    EmployeeShiftDay,
+    EmployeeShiftSchedule,
+    ShiftRequest,
+    WorkType,
+)
 from employee.models import Employee, EmployeeWorkInformation
 from horilla.horilla_middlewares import _thread_locals
 
@@ -119,6 +127,7 @@ from horilla.horilla_middlewares import _thread_locals
 def attach_session(request):
     middleware = SessionMiddleware(lambda req: HttpResponse())
     middleware.process_request(request)
+    request._messages = FallbackStorage(request)
     request.user = getattr(request, "user", AnonymousUser())
     return request
 
@@ -3258,6 +3267,27 @@ class PortalEmployeeShiftScheduleTests(TestCase):
             end_time=time(18, 0),
         )
 
+    def _portal_shift_request(self, status="pending", **overrides):
+        owned_shift = ensure_employee_owned_shift(self.employee)
+        values = {
+            "employee_id": self.employee,
+            "shift_id": owned_shift,
+            "previous_shift_id": owned_shift,
+            "requested_date": date(2026, 9, 28),
+            "is_permanent_shift": True,
+            "description": "Portal shift request",
+            "request_source": "portal",
+            "requested_day": self.monday,
+            "requested_start_time": time(7, 30),
+            "requested_end_time": time(16, 30),
+            "requested_minimum_working_hour": "09:00",
+            "reporting_manager_id": self.manager,
+            "approved": status == "approved",
+            "canceled": status == "rejected",
+        }
+        values.update(overrides)
+        return ShiftRequest.objects.create(**values)
+
     def test_employee_schedule_change_updates_only_the_selected_weekday(self):
         owned_shift = ensure_employee_owned_shift(self.employee)
         update_employee_shift_schedule(
@@ -3653,6 +3683,100 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         )
 
     @patch("attendance.views.portal.EmailMessage")
+    def test_portal_shift_email_rejects_invalid_manager_email(self, email_message_class):
+        self.manager_user.email = ""
+        self.manager_user.save(update_fields=["email"])
+        self.manager.email = "invalid-manager-email"
+        self.manager.save(update_fields=["email"])
+        EmployeeWorkInformation.objects.filter(employee_id=self.manager).update(
+            email=""
+        )
+        shift_request = self._portal_shift_request(
+            description="Invalid manager email",
+        )
+        request = RequestFactory().post("/attendance/portal/shift-schedule/")
+
+        self.assertFalse(_send_portal_shift_change_email(request, shift_request))
+        self.assertEqual(
+            request._portal_shift_email_error_code,
+            "SHIFT_EMAIL_MANAGER_EMAIL_INVALID",
+        )
+        email_message_class.assert_not_called()
+
+    @patch("attendance.views.portal.EmailMessage")
+    def test_portal_shift_email_reports_missing_manager_email(self, email_message_class):
+        self.manager_user.email = ""
+        self.manager_user.save(update_fields=["email"])
+        self.manager.email = ""
+        self.manager.save(update_fields=["email"])
+        EmployeeWorkInformation.objects.filter(employee_id=self.manager).update(
+            email=""
+        )
+        shift_request = self._portal_shift_request(
+            description="Missing manager email",
+        )
+        request = RequestFactory().post("/attendance/portal/shift-schedule/")
+
+        self.assertFalse(_send_portal_shift_change_email(request, shift_request))
+        self.assertEqual(
+            request._portal_shift_email_error_code,
+            "SHIFT_EMAIL_MANAGER_EMAIL_MISSING",
+        )
+        email_message_class.assert_not_called()
+
+    @patch("attendance.views.portal.EmailMessage")
+    @patch("attendance.views.portal.ConfiguredEmailBackend")
+    def test_portal_shift_email_reports_smtp_exception(
+        self,
+        backend_class,
+        email_message_class,
+    ):
+        backend = MagicMock()
+        backend.dynamic_from_email_with_display_name = "MDC <no-reply@example.com>"
+        backend.dynamic_host = "smtp.example.com"
+        backend.dynamic_port = 465
+        backend_class.return_value = backend
+        email_message = MagicMock()
+        email_message.send.side_effect = OSError("connection refused")
+        email_message_class.return_value = email_message
+        shift_request = self._portal_shift_request(
+            description="SMTP failure",
+        )
+        request = RequestFactory().post("/attendance/portal/shift-schedule/")
+
+        self.assertFalse(_send_portal_shift_change_email(request, shift_request))
+        self.assertEqual(
+            request._portal_shift_email_error_code,
+            "SHIFT_EMAIL_SMTP_ERROR",
+        )
+
+    @patch("attendance.views.portal.EmailMessage")
+    @patch("attendance.views.portal.ConfiguredEmailBackend")
+    def test_portal_shift_email_reports_smtp_rejection(
+        self,
+        backend_class,
+        email_message_class,
+    ):
+        backend = MagicMock()
+        backend.dynamic_from_email_with_display_name = "MDC <no-reply@example.com>"
+        backend.dynamic_host = "smtp.example.com"
+        backend.dynamic_port = 465
+        backend_class.return_value = backend
+        email_message = MagicMock()
+        email_message.send.return_value = 0
+        email_message_class.return_value = email_message
+        shift_request = self._portal_shift_request(
+            description="SMTP rejection",
+        )
+        request = RequestFactory().post("/attendance/portal/shift-schedule/")
+
+        self.assertFalse(_send_portal_shift_change_email(request, shift_request))
+        self.assertEqual(
+            request._portal_shift_email_error_code,
+            "SHIFT_EMAIL_SMTP_REJECTED",
+        )
+
+    @patch("attendance.views.portal.EmailMessage")
     @patch("attendance.views.portal.ConfiguredEmailBackend")
     def test_portal_shift_email_uses_employee_shift_request_view(
         self,
@@ -3665,36 +3789,138 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         email_message = MagicMock()
         email_message.send.return_value = 1
         email_message_class.return_value = email_message
-        shift_request = AttendancePortalShiftChangeRequest.objects.create(
-            employee_id=self.employee,
-            reporting_manager_id=self.manager,
-            day=self.monday,
-            start_time=time(7, 30),
-            end_time=time(16, 30),
-            reason="Use shared shift request page",
+        shift_request = self._portal_shift_request(
+            description="Use shared shift request page"
         )
 
         request = RequestFactory().post("/attendance/portal/shift-schedule/")
         self.assertTrue(_send_portal_shift_change_email(request, shift_request))
 
         body = email_message_class.call_args.kwargs["body"]
+        self.assertEqual(
+            email_message_class.call_args.kwargs["cc"],
+            ["portal-shift@example.com"],
+        )
         expected_url = (
-            f"/employee/shift-request-view/?portal_shift_request_id={shift_request.pk}"
+            f"/employee/shift-request-view/?shift_request_id={shift_request.pk}"
         )
         self.assertIn(expected_url, body)
         self.assertNotIn("/attendance/portal/shift-change/", body)
 
-    def test_employee_shift_request_view_shows_portal_request_to_manager_only(self):
-        shift_request = AttendancePortalShiftChangeRequest.objects.create(
+    @patch("attendance.views.portal.EmailMessage")
+    @patch("attendance.views.portal.ConfiguredEmailBackend")
+    def test_portal_shift_email_prefers_employee_work_email_for_cc(
+        self,
+        backend_class,
+        email_message_class,
+    ):
+        backend = MagicMock()
+        backend.dynamic_from_email_with_display_name = "MDC <no-reply@example.com>"
+        backend_class.return_value = backend
+        email_message = MagicMock()
+        email_message.send.return_value = 1
+        email_message_class.return_value = email_message
+        EmployeeWorkInformation.objects.update_or_create(
             employee_id=self.employee,
-            reporting_manager_id=self.manager,
-            day=self.monday,
-            start_time=time(7, 30),
-            end_time=time(16, 30),
-            reason="Visible in shared shift request page",
+            defaults={"email": "approval-work@example.com"},
+        )
+        shift_request = self._portal_shift_request(description="Use work email")
+
+        request = RequestFactory().post("/attendance/portal/shift-schedule/")
+        self.assertTrue(_send_portal_shift_change_email(request, shift_request))
+
+        self.assertEqual(
+            email_message_class.call_args.kwargs["cc"],
+            ["approval-work@example.com"],
+        )
+
+    @patch("attendance.views.portal.EmailMessage")
+    @patch("attendance.views.portal.ConfiguredEmailBackend")
+    def test_portal_shift_decision_email_is_sent_to_employee(
+        self,
+        backend_class,
+        email_message_class,
+    ):
+        backend = MagicMock()
+        backend.dynamic_from_email_with_display_name = "MDC <no-reply@example.com>"
+        backend_class.return_value = backend
+        email_message = MagicMock()
+        email_message.send.return_value = 1
+        email_message_class.return_value = email_message
+        shift_request = self._portal_shift_request(
+            status="approved",
+            decision_note="Approved by reporting manager.",
+            description="Decision email",
+        )
+
+        request = RequestFactory().post("/attendance/portal/shift-change/")
+        self.assertTrue(
+            _send_portal_shift_change_decision_email(request, shift_request)
+        )
+
+        kwargs = email_message_class.call_args.kwargs
+        self.assertEqual(kwargs["to"], ["portal-shift@example.com"])
+        self.assertIn("Approved", kwargs["subject"])
+        self.assertIn("approved", kwargs["body"])
+        self.assertIn("Approved by reporting manager.", kwargs["body"])
+
+    @patch("attendance.views.portal.EmailMessage")
+    @patch("attendance.views.portal.ConfiguredEmailBackend")
+    def test_portal_shift_decision_email_uses_rejected_status(
+        self,
+        backend_class,
+        email_message_class,
+    ):
+        backend = MagicMock()
+        backend.dynamic_from_email_with_display_name = "MDC <no-reply@example.com>"
+        backend_class.return_value = backend
+        email_message = MagicMock()
+        email_message.send.return_value = 1
+        email_message_class.return_value = email_message
+        shift_request = self._portal_shift_request(
+            status="rejected",
+            decision_note="Rejected by reporting manager.",
+            description="Rejected decision email",
+        )
+
+        request = RequestFactory().post("/attendance/portal/shift-change/")
+        self.assertTrue(
+            _send_portal_shift_change_decision_email(request, shift_request)
+        )
+
+        kwargs = email_message_class.call_args.kwargs
+        self.assertEqual(kwargs["to"], ["portal-shift@example.com"])
+        self.assertIn("Rejected", kwargs["subject"])
+        self.assertIn("rejected", kwargs["body"])
+
+    @patch("attendance.views.portal.EmailMessage")
+    @patch("attendance.views.portal.ConfiguredEmailBackend")
+    def test_portal_shift_decision_email_skips_employee_without_email(
+        self,
+        backend_class,
+        email_message_class,
+    ):
+        self.employee.email = ""
+        self.employee.save(update_fields=["email"])
+        EmployeeWorkInformation.objects.filter(employee_id=self.employee).update(email="")
+        shift_request = self._portal_shift_request(
+            status="approved",
+            description="No employee email",
+        )
+
+        request = RequestFactory().post("/attendance/portal/shift-change/")
+        self.assertFalse(
+            _send_portal_shift_change_decision_email(request, shift_request)
+        )
+        email_message_class.assert_not_called()
+        backend_class.assert_not_called()
+
+    def test_employee_shift_request_view_shows_portal_request_to_manager_only(self):
+        shift_request = self._portal_shift_request(
+            description="Visible in shared shift request page"
         )
         page_url = reverse("shift-request-view")
-        query = {"portal_shift_request_id": shift_request.pk}
+        query = {"shift_request_id": shift_request.pk}
 
         self.client.force_login(self.manager_user)
         manager_response = self.client.get(page_url, query)
@@ -3727,14 +3953,7 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         self.assertNotIn("Visible in shared shift request page", other_content)
 
     def test_legacy_portal_shift_review_url_redirects_to_shared_view(self):
-        shift_request = AttendancePortalShiftChangeRequest.objects.create(
-            employee_id=self.employee,
-            reporting_manager_id=self.manager,
-            day=self.monday,
-            start_time=time(7, 30),
-            end_time=time(16, 30),
-            reason="Legacy link compatibility",
-        )
+        shift_request = self._portal_shift_request(description="Legacy link compatibility")
 
         self.client.force_login(self.manager_user)
         response = self.client.get(
@@ -3743,7 +3962,7 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             response["Location"],
-            f"{reverse('shift-request-view')}?portal_shift_request_id={shift_request.pk}",
+            f"{reverse('shift-request-view')}?shift_request_id={shift_request.pk}",
         )
 
     @patch("attendance.views.portal._send_portal_shift_change_email", return_value=True)
@@ -3789,13 +4008,15 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         self.assertTrue(payload["success"])
         self.assertTrue(payload["pending_approval"])
         self.assertTrue(payload["email_sent"])
-        pending = AttendancePortalShiftChangeRequest._base_manager.get(
+        pending = ShiftRequest._base_manager.get(
             employee_id=self.employee,
-            day=self.monday,
-            status="pending",
+            request_source="portal",
+            requested_day=self.monday,
+            approved=False,
+            canceled=False,
         )
-        self.assertEqual(pending.start_time, time(7, 30))
-        self.assertEqual(pending.end_time, time(16, 30))
+        self.assertEqual(pending.requested_start_time, time(7, 30))
+        self.assertEqual(pending.requested_end_time, time(16, 30))
         self.assertEqual(payload["today_shift"]["start_time"], "08:00")
         self.assertEqual(payload["today_shift"]["end_time"], "17:00")
 
@@ -3856,14 +4077,16 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         )
         self.assertEqual(schedule.start_time, time(8, 0))
         self.assertEqual(schedule.end_time, time(17, 0))
-        pending = AttendancePortalShiftChangeRequest._base_manager.get(
+        pending = ShiftRequest._base_manager.get(
             employee_id=self.employee,
-            day=self.monday,
-            status="pending",
+            request_source="portal",
+            requested_day=self.monday,
+            approved=False,
+            canceled=False,
         )
-        self.assertEqual(pending.reason, "Schedule adjustment")
-        self.assertEqual(pending.start_time, time(7, 30))
-        self.assertEqual(pending.end_time, time(16, 30))
+        self.assertEqual(pending.description, "Schedule adjustment")
+        self.assertEqual(pending.requested_start_time, time(7, 30))
+        self.assertEqual(pending.requested_end_time, time(16, 30))
         self.assertEqual(payload["today_shift"]["start_time"], "08:00")
         self.assertEqual(payload["today_shift"]["end_time"], "17:00")
 
@@ -3883,15 +4106,18 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         self.assertTrue(payload["pending_approval"])
         self.assertFalse(payload["email_sent"])
         self.assertIn("warning", payload)
-        pending = AttendancePortalShiftChangeRequest._base_manager.get(
+        self.assertEqual(payload["email_error_code"], "SHIFT_EMAIL_SEND_FAILED")
+        pending = ShiftRequest._base_manager.get(
             employee_id=self.employee,
-            day=self.monday,
-            status="pending",
+            request_source="portal",
+            requested_day=self.monday,
+            approved=False,
+            canceled=False,
         )
-        self.assertEqual(pending.start_time, time(7, 30))
+        self.assertEqual(pending.requested_start_time, time(7, 30))
         self.assertEqual(
             notify_mock.send.call_args.kwargs["redirect"],
-            f"{reverse('shift-request-view')}?portal_shift_request_id={pending.pk}",
+            f"{reverse('shift-request-view')}?shift_request_id={pending.pk}",
         )
 
     @patch("notifications.signals.notify")
@@ -3914,9 +4140,11 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         self.assertTrue(payload["success"])
         self.assertFalse(payload["email_sent"])
         self.assertTrue(
-            AttendancePortalShiftChangeRequest._base_manager.filter(
+            ShiftRequest._base_manager.filter(
                 employee_id=self.employee,
-                status="pending",
+                request_source="portal",
+                approved=False,
+                canceled=False,
             ).exists()
         )
         notify_mock.send.assert_called_once()
@@ -3933,7 +4161,7 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         self.assertFalse(payload["success"])
         self.assertEqual(response.status_code, 422)
         self.assertFalse(
-            AttendancePortalShiftChangeRequest._base_manager.filter(
+            ShiftRequest._base_manager.filter(
                 employee_id=self.employee
             ).exists()
         )
@@ -3961,13 +4189,15 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         )
         self.assertFalse(schedule.is_night_shift)
         self.assertEqual(schedule.minimum_working_hour, "09:00")
-        pending = AttendancePortalShiftChangeRequest._base_manager.get(
+        pending = ShiftRequest._base_manager.get(
             employee_id=self.employee,
-            day=self.monday,
-            status="pending",
+            request_source="portal",
+            requested_day=self.monday,
+            approved=False,
+            canceled=False,
         )
-        self.assertEqual(pending.start_time, time(20, 0))
-        self.assertEqual(pending.end_time, time(5, 0))
+        self.assertEqual(pending.requested_start_time, time(20, 0))
+        self.assertEqual(pending.requested_end_time, time(5, 0))
 
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
     @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
@@ -4074,11 +4304,13 @@ class PortalEmployeeShiftScheduleTests(TestCase):
             ).exists()
         )
         self.assertTrue(
-            AttendancePortalShiftChangeRequest._base_manager.filter(
+            ShiftRequest._base_manager.filter(
                 employee_id=self.employee,
-                day=self.monday,
-                status="pending",
-                reason="New shift reason",
+                request_source="portal",
+                requested_day=self.monday,
+                approved=False,
+                canceled=False,
+                description="New shift reason",
             ).exists()
         )
 
@@ -4155,9 +4387,33 @@ class PortalApprovalFlowTests(TestCase):
         )
         self.employee.refresh_from_db()
 
+    def _portal_shift_request(self, status="pending", **overrides):
+        values = {
+            "employee_id": self.employee,
+            "shift_id": self.shift,
+            "previous_shift_id": self.shift,
+            "requested_date": date(2026, 9, 28),
+            "is_permanent_shift": True,
+            "description": "Portal shift request",
+            "request_source": "portal",
+            "requested_day": self.monday,
+            "requested_start_time": time(7, 30),
+            "requested_end_time": time(16, 30),
+            "requested_minimum_working_hour": "09:00",
+            "reporting_manager_id": self.manager,
+            "approved": status == "approved",
+            "canceled": status == "rejected",
+        }
+        values.update(overrides)
+        return ShiftRequest.objects.create(**values)
+
+    @patch(
+        "attendance.views.portal._send_portal_shift_change_decision_email",
+        return_value=True,
+    )
     @patch("attendance.views.portal.get_real_now", return_value=datetime(2026, 9, 28, 9, 0))
     def test_reporting_manager_approval_applies_shift_and_current_attendance(
-        self, _now_mock
+        self, _now_mock, decision_email_mock
     ):
         owned_shift = ensure_employee_owned_shift(self.employee)
         attendance = Attendance.objects.create(
@@ -4169,13 +4425,8 @@ class PortalApprovalFlowTests(TestCase):
             attendance_clock_in=time(8, 0),
             minimum_hour="09:00",
         )
-        shift_request = AttendancePortalShiftChangeRequest.objects.create(
-            employee_id=self.employee,
-            reporting_manager_id=self.manager,
-            day=self.monday,
-            start_time=time(7, 30),
-            end_time=time(16, 30),
-            reason="Approved schedule adjustment",
+        shift_request = self._portal_shift_request(
+            description="Approved schedule adjustment"
         )
         request = RequestFactory().post(
             reverse("portal-shift-change-approve", args=[shift_request.pk])
@@ -4192,7 +4443,7 @@ class PortalApprovalFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             response["Location"],
-            f"{reverse('shift-request-view')}?portal_shift_request_id={shift_request.pk}",
+            f"{reverse('shift-request-view')}?shift_request_id={shift_request.pk}",
         )
         shift_request.refresh_from_db()
         attendance.refresh_from_db()
@@ -4200,19 +4451,40 @@ class PortalApprovalFlowTests(TestCase):
             shift_id=owned_shift,
             day=self.monday,
         )
-        self.assertEqual(shift_request.status, "approved")
+        self.assertTrue(shift_request.approved)
+        self.assertFalse(shift_request.canceled)
+        decision_email_mock.assert_called_once_with(request, shift_request)
         self.assertEqual(schedule.start_time, time(7, 30))
         self.assertEqual(schedule.end_time, time(16, 30))
         self.assertEqual(attendance.minimum_hour, "09:00")
 
+    @patch(
+        "attendance.views.portal._send_portal_shift_change_decision_email",
+        side_effect=RuntimeError("mail unavailable"),
+    )
+    def test_shift_approval_succeeds_when_decision_email_fails(
+        self, decision_email_mock
+    ):
+        shift_request = self._portal_shift_request(
+            description="Email failure safety check"
+        )
+        request = RequestFactory().post(
+            reverse("portal-shift-change-approve", args=[shift_request.pk])
+        )
+        attach_session(request)
+        request.user = self.manager_user
+
+        response = portal_shift_change_approve(request, shift_request.pk)
+
+        shift_request.refresh_from_db()
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(shift_request.approved)
+        self.assertFalse(shift_request.canceled)
+        decision_email_mock.assert_called_once_with(request, shift_request)
+
     def test_shift_approval_get_does_not_mutate_request(self):
-        shift_request = AttendancePortalShiftChangeRequest.objects.create(
-            employee_id=self.employee,
-            reporting_manager_id=self.manager,
-            day=self.monday,
-            start_time=time(7, 30),
-            end_time=time(16, 30),
-            reason="Approval safety check",
+        shift_request = self._portal_shift_request(
+            description="Approval safety check"
         )
         request = RequestFactory().get(
             reverse("portal-shift-change-approve", args=[shift_request.pk])
@@ -4224,9 +4496,16 @@ class PortalApprovalFlowTests(TestCase):
 
         shift_request.refresh_from_db()
         self.assertEqual(response.status_code, 405)
-        self.assertEqual(shift_request.status, "pending")
+        self.assertFalse(shift_request.approved)
+        self.assertFalse(shift_request.canceled)
 
-    def test_reporting_manager_rejection_from_shared_view_redirects_back(self):
+    @patch(
+        "attendance.views.portal._send_portal_shift_change_decision_email",
+        return_value=True,
+    )
+    def test_reporting_manager_rejection_from_shared_view_redirects_back(
+        self, decision_email_mock
+    ):
         owned_shift = ensure_employee_owned_shift(self.employee)
         original_schedule = EmployeeShiftSchedule.objects.get(
             shift_id=owned_shift,
@@ -4234,13 +4513,8 @@ class PortalApprovalFlowTests(TestCase):
         )
         original_start = original_schedule.start_time
         original_end = original_schedule.end_time
-        shift_request = AttendancePortalShiftChangeRequest.objects.create(
-            employee_id=self.employee,
-            reporting_manager_id=self.manager,
-            day=self.monday,
-            start_time=time(7, 30),
-            end_time=time(16, 30),
-            reason="Reject from shared shift request page",
+        shift_request = self._portal_shift_request(
+            description="Reject from shared shift request page"
         )
         request = RequestFactory().post(
             reverse("portal-shift-change-reject", args=[shift_request.pk])
@@ -4259,9 +4533,11 @@ class PortalApprovalFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             response["Location"],
-            f"{reverse('shift-request-view')}?portal_shift_request_id={shift_request.pk}",
+            f"{reverse('shift-request-view')}?shift_request_id={shift_request.pk}",
         )
-        self.assertEqual(shift_request.status, "rejected")
+        self.assertFalse(shift_request.approved)
+        self.assertTrue(shift_request.canceled)
+        decision_email_mock.assert_called_once_with(request, shift_request)
         self.assertEqual(original_schedule.start_time, original_start)
         self.assertEqual(original_schedule.end_time, original_end)
 

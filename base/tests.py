@@ -21,6 +21,7 @@ from base.forms import CompanyForm, HolidayForm, HolidaysColumnExportForm
 from base.models import (
     Company,
     DynamicEmailConfiguration,
+    EmailLog,
     EmployeeShift,
     EmployeeShiftDay,
     EmployeeShiftSchedule,
@@ -229,6 +230,43 @@ class DynamicEmailBackendSenderTests(TestCase):
             ConfiguredEmailBackend().dynamic_from_email_with_display_name,
             "MDC <smtp@example.com>",
         )
+
+    @patch(
+        "base.backends.DefaultHorillaMailBackend.send_messages",
+        side_effect=RuntimeError("SMTP authentication failed"),
+    )
+    def test_smtp_exception_is_recorded_as_failed_email(self, _send_messages):
+        message = EmailMessage(
+            "Failed subject",
+            "Failed body",
+            from_email="smtp@example.com",
+            to=["to@example.com"],
+        )
+        backend = ConfiguredEmailBackend()
+
+        with self.assertRaisesRegex(RuntimeError, "SMTP authentication failed"):
+            backend.send_messages([message])
+
+        log = EmailLog.objects.latest("created_at")
+        self.assertEqual(log.status, "failed")
+        self.assertEqual(log.to, "to@example.com")
+        self.assertIn("SMTP authentication failed", log.error_message)
+
+    @patch("base.backends.DefaultHorillaMailBackend.send_messages", return_value=0)
+    def test_smtp_rejection_is_recorded_as_failed_email(self, _send_messages):
+        message = EmailMessage(
+            "Rejected subject",
+            "Rejected body",
+            from_email="smtp@example.com",
+            to=["to@example.com"],
+        )
+        backend = ConfiguredEmailBackend()
+
+        self.assertEqual(backend.send_messages([message]), 0)
+
+        log = EmailLog.objects.latest("created_at")
+        self.assertEqual(log.status, "failed")
+        self.assertIn("accepted=0", log.error_message)
 
 
 @override_settings(

@@ -15,6 +15,7 @@ from django.contrib import messages
 from django.contrib.auth.models import AbstractUser, User
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from base.horilla_company_manager import HorillaCompanyManager
@@ -1296,6 +1297,11 @@ class ShiftRequest(HorillaModel):
     ShiftRequest model
     """
 
+    REQUEST_SOURCE_CHOICES = (
+        ("web", _("Web")),
+        ("portal", _("Portal")),
+    )
+
     employee_id = models.ForeignKey(
         "employee.Employee",
         on_delete=models.PROTECT,
@@ -1340,6 +1346,62 @@ class ShiftRequest(HorillaModel):
     approved = models.BooleanField(default=False, verbose_name=_("Approved"))
     canceled = models.BooleanField(default=False, verbose_name=_("Canceled"))
     shift_changed = models.BooleanField(default=False)
+    request_source = models.CharField(
+        max_length=12,
+        choices=REQUEST_SOURCE_CHOICES,
+        default="web",
+        db_index=True,
+        verbose_name=_("Request Source"),
+    )
+    requested_day = models.ForeignKey(
+        EmployeeShiftDay,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="shift_requests",
+        verbose_name=_("Requested Recurring Day"),
+    )
+    requested_start_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Requested Start Time"),
+    )
+    requested_end_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Requested End Time"),
+    )
+    requested_minimum_working_hour = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+        validators=[validate_time_format],
+        verbose_name=_("Requested Minimum Working Hours"),
+    )
+    reporting_manager_id = models.ForeignKey(
+        "employee.Employee",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="shift_requests_as_reporting_manager",
+        verbose_name=_("Reporting Manager"),
+    )
+    approved_by = models.ForeignKey(
+        "employee.Employee",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="approved_shift_requests",
+        verbose_name=_("Approved By"),
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.TextField(null=True, blank=True)
+    legacy_portal_id = models.PositiveBigIntegerField(
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+    )
     history = HorillaAuditLog(
         related_name="history_set",
         bases=[
@@ -1361,6 +1423,17 @@ class ShiftRequest(HorillaModel):
         )
         ordering = [
             "-id",
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee_id", "requested_day"],
+                condition=Q(
+                    request_source="portal",
+                    approved=False,
+                    canceled=False,
+                ),
+                name="uniq_pending_portal_shift_request",
+            )
         ]
 
     def clean(self):
@@ -1913,6 +1986,7 @@ class EmailLog(models.Model):
     from_email = models.EmailField()
     to = models.EmailField()
     status = models.CharField(max_length=6, choices=statuses)
+    error_message = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     objects = models.Manager()
     company_id = models.ForeignKey(

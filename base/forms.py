@@ -2051,6 +2051,16 @@ class ShiftRequestForm(ModelForm):
             "previous_shift_id",
             "is_active",
             "shift_changed",
+            "request_source",
+            "requested_day",
+            "requested_start_time",
+            "requested_end_time",
+            "requested_minimum_working_hour",
+            "reporting_manager_id",
+            "approved_by",
+            "approved_at",
+            "decision_note",
+            "legacy_portal_id",
         ]
         labels = {
             "description": _trans("Description"),
@@ -2099,6 +2109,16 @@ class ShiftAllocationForm(ModelForm):
             "previous_shift_id",
             "is_active",
             "shift_changed",
+            "request_source",
+            "requested_day",
+            "requested_start_time",
+            "requested_end_time",
+            "requested_minimum_working_hour",
+            "reporting_manager_id",
+            "approved_by",
+            "approved_at",
+            "decision_note",
+            "legacy_portal_id",
         )
 
         labels = {
@@ -2366,6 +2386,16 @@ excluded_fields = [
     "additional_data",
     "horilla_history",
     "additional_data",
+    "request_source",
+    "requested_day",
+    "requested_start_time",
+    "requested_end_time",
+    "requested_minimum_working_hour",
+    "reporting_manager_id",
+    "approved_by",
+    "approved_at",
+    "decision_note",
+    "legacy_portal_id",
 ]
 
 

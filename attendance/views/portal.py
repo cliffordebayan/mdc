@@ -28,6 +28,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core import signing
 from django.core.mail import EmailMessage
+from django.core.validators import validate_email
 from django.core.signing import BadSignature, SignatureExpired
 from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Q
@@ -56,7 +57,6 @@ from attendance.models import (
     AttendanceActivity,
     AttendanceGeneralSetting,
     AttendancePortalMultiPunchEmployee,
-    AttendancePortalShiftChangeRequest,
     AttendancePortalShiftReason,
 )
 from attendance.views.clock_in_out import (
@@ -71,6 +71,7 @@ from base.models import (
     Company,
     EmployeeShiftDay,
     EmployeeShiftSchedule,
+    ShiftRequest,
 )
 from employee.models import (
     Employee,
@@ -301,7 +302,56 @@ def _portal_employee_personal_email(employee):
 
 
 def _portal_employee_preferred_email(employee):
-    return _portal_employee_work_email(employee) or _portal_employee_personal_email(employee)
+    for candidate in (
+        _portal_employee_work_email(employee),
+        _portal_employee_personal_email(employee),
+    ):
+        if not candidate:
+            continue
+        try:
+            validate_email(candidate)
+        except ValidationError:
+            continue
+        return candidate
+    return None
+
+
+def _portal_manager_email_details(manager):
+    if not manager:
+        return None, "SHIFT_EMAIL_MANAGER_MISSING"
+
+    manager_user = getattr(manager, "employee_user_id", None)
+    try:
+        manager_work_info = (
+            EmployeeWorkInformation._base_manager.filter(
+                employee_id=manager
+            )
+            .only("email")
+            .first()
+        )
+    except Exception:
+        manager_work_info = None
+
+    candidates = (
+        getattr(manager_user, "email", None),
+        getattr(manager_work_info, "email", None),
+        getattr(manager, "email", None),
+    )
+    found_candidate = False
+    for candidate in candidates:
+        candidate = str(candidate or "").strip()
+        if not candidate:
+            continue
+        found_candidate = True
+        try:
+            validate_email(candidate)
+        except ValidationError:
+            continue
+        return candidate, None
+
+    if found_candidate:
+        return None, "SHIFT_EMAIL_MANAGER_EMAIL_INVALID"
+    return None, "SHIFT_EMAIL_MANAGER_EMAIL_MISSING"
 
 
 def _portal_pin_reset_digest(employee):
@@ -413,27 +463,7 @@ def _portal_attendance_request_display(value, fallback="Not provided"):
 
 
 def _portal_manager_email(manager):
-    if not manager:
-        return None
-    manager_user = getattr(manager, "employee_user_id", None)
-    try:
-        manager_work_info = (
-            EmployeeWorkInformation._base_manager.filter(
-                employee_id=manager
-            )
-            .only("email")
-            .first()
-        )
-    except Exception:
-        manager_work_info = None
-    for candidate in (
-        getattr(manager_user, "email", None),
-        getattr(manager_work_info, "email", None),
-        getattr(manager, "email", None),
-    ):
-        if candidate and str(candidate).strip():
-            return str(candidate).strip()
-    return None
+    return _portal_manager_email_details(manager)[0]
 
 
 def _portal_reporting_manager(employee):
@@ -532,10 +562,23 @@ def _send_portal_attendance_request_email(
 def _send_portal_shift_change_email(request, shift_request):
     employee = shift_request.employee_id
     manager = shift_request.reporting_manager_id
-    manager_email = _portal_manager_email(manager)
-    if not manager or not manager_email:
+    manager_email, manager_email_error = _portal_manager_email_details(manager)
+    if manager_email_error:
+        if request is not None:
+            request._portal_shift_email_error_code = manager_email_error
+        logger.warning(
+            "Portal shift change email skipped request_id=%s code=%s",
+            shift_request.pk,
+            manager_email_error,
+        )
         return False
     recipients = [manager_email]
+    employee_email = _portal_employee_preferred_email(employee)
+    cc = (
+        [employee_email]
+        if employee_email and employee_email.casefold() != manager_email.casefold()
+        else []
+    )
 
     review_url = request.build_absolute_uri(
         _portal_shift_request_view_url(shift_request.pk)
@@ -548,12 +591,88 @@ def _send_portal_shift_change_email(request, shift_request):
             "An employee submitted a recurring attendance shift change request.",
             "",
             f"Employee: {employee.get_full_name()} ({employee.employee_no or ''})",
-            f"Day: {shift_request.day.day.title()}",
-            f"New shift: {shift_request.start_time.strftime('%I:%M %p')} - "
-            f"{shift_request.end_time.strftime('%I:%M %p')}",
-            f"Reason: {shift_request.reason}",
+            f"Day: {shift_request.requested_day.day.title()}",
+            f"New shift: {shift_request.requested_start_time.strftime('%I:%M %p')} - "
+            f"{shift_request.requested_end_time.strftime('%I:%M %p')}",
+            f"Reason: {shift_request.description}",
             "",
             f"Review and approve/reject: {review_url}",
+            "",
+            "Thank you.",
+        ]
+    )
+    try:
+        email_backend = ConfiguredEmailBackend()
+        from_email = (
+            email_backend.dynamic_from_email_with_display_name
+            or getattr(settings, "DEFAULT_FROM_EMAIL", None)
+            or "no-reply@example.com"
+        )
+        email = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=from_email,
+            to=recipients,
+            cc=cc,
+            connection=email_backend,
+        )
+        sent_count = email.send()
+    except Exception as error:
+        if request is not None:
+            request._portal_shift_email_error_code = "SHIFT_EMAIL_SMTP_ERROR"
+        logger.exception(
+            "Portal shift change email failed request_id=%s recipient=%s host=%r port=%r error_type=%s",
+            shift_request.pk,
+            manager_email,
+            getattr(locals().get("email_backend"), "dynamic_host", None),
+            getattr(locals().get("email_backend"), "dynamic_port", None),
+            error.__class__.__name__,
+        )
+        return False
+
+    if sent_count != 1:
+        if request is not None:
+            request._portal_shift_email_error_code = "SHIFT_EMAIL_SMTP_REJECTED"
+        logger.error(
+            "Portal shift change email was not accepted request_id=%s recipient=%s host=%r port=%r sent_count=%s",
+            shift_request.pk,
+            manager_email,
+            getattr(email_backend, "dynamic_host", None),
+            getattr(email_backend, "dynamic_port", None),
+            sent_count,
+        )
+        return False
+
+    if request is not None:
+        request._portal_shift_email_error_code = None
+    return True
+
+
+def _send_portal_shift_change_decision_email(request, shift_request):
+    employee = shift_request.employee_id
+    employee_email = _portal_employee_preferred_email(employee)
+    if not employee_email:
+        return False
+
+    status = "approved" if shift_request.approved else "rejected"
+    status_display = status.title()
+    review_url = request.build_absolute_uri(
+        _portal_shift_request_view_url(shift_request.pk)
+    )
+    subject = f"Shift Change Request {status_display} - {employee.get_full_name()}"
+    body = "\n".join(
+        [
+            f"Hello {employee.get_full_name()},",
+            "",
+            f"Your recurring attendance shift change request was {status_display.lower()}.",
+            "",
+            f"Day: {shift_request.requested_day.day.title()}",
+            f"Requested shift: {shift_request.requested_start_time.strftime('%I:%M %p')} - "
+            f"{shift_request.requested_end_time.strftime('%I:%M %p')}",
+            f"Reason: {shift_request.description}",
+            f"Decision note: {shift_request.decision_note or 'None'}",
+            "",
+            f"View request: {review_url}",
             "",
             "Thank you.",
         ]
@@ -568,13 +687,16 @@ def _send_portal_shift_change_email(request, shift_request):
         subject=subject,
         body=body,
         from_email=from_email,
-        to=recipients,
+        to=[employee_email],
         connection=email_backend,
     )
     try:
         return email.send() == 1
     except Exception:
-        logger.exception("Failed to send portal shift change email")
+        logger.exception(
+            "Failed to send portal shift change decision email for request %s",
+            shift_request.pk,
+        )
         return False
 
 
@@ -582,8 +704,23 @@ def _portal_shift_request_view_url(request_id=None):
     """Return the shared employee shift-request page for a portal request."""
     url = reverse("shift-request-view")
     if request_id is not None:
-        url = f"{url}?portal_shift_request_id={request_id}"
+        url = f"{url}?shift_request_id={request_id}"
     return url
+
+
+def _get_portal_shift_request(request_id):
+    """Resolve a current or migrated portal request from a legacy URL id."""
+    queryset = ShiftRequest._base_manager.select_related(
+        "employee_id",
+        "reporting_manager_id",
+        "requested_day",
+        "shift_id",
+        "previous_shift_id",
+    ).filter(request_source="portal")
+    return (
+        queryset.filter(legacy_portal_id=request_id).first()
+        or queryset.filter(pk=request_id).first()
+    )
 
 
 def _get_real_now_uncached():
@@ -1392,22 +1529,32 @@ def _portal_shift_payload(employee, schedule_date=None):
     shift_request = None
     if day:
         shift_request = (
-            AttendancePortalShiftChangeRequest._base_manager.filter(
+            ShiftRequest._base_manager.filter(
                 employee_id=employee,
-                day=day,
+                request_source="portal",
+                requested_day=day,
             )
             .order_by("-id")
             .first()
+        )
+    approval_status = None
+    if shift_request:
+        approval_status = (
+            "approved"
+            if shift_request.approved
+            else "rejected"
+            if shift_request.canceled
+            else "pending"
         )
     if context.get("error") or not schedule:
         return {
             "configured": False,
             "day": schedule_date.strftime("%a"),
             "message": context.get("error") or "Employee shift schedule not configured",
-            "approval_status": getattr(shift_request, "status", None),
+            "approval_status": approval_status,
             "pending_request_id": (
                 shift_request.pk
-                if shift_request and shift_request.status == "pending"
+                if shift_request and approval_status == "pending"
                 else None
             ),
         }
@@ -1421,10 +1568,10 @@ def _portal_shift_payload(employee, schedule_date=None):
         "end_display": schedule["end_time"].strftime("%I:%M %p").lstrip("0"),
         "is_night_shift": bool(schedule["is_night_shift"]),
         "minimum_working_hour": schedule["minimum_working_hour"],
-        "approval_status": getattr(shift_request, "status", None),
+        "approval_status": approval_status,
         "pending_request_id": (
             shift_request.pk
-            if shift_request and shift_request.status == "pending"
+            if shift_request and approval_status == "pending"
             else None
         ),
     }
@@ -2747,26 +2894,22 @@ def _portal_shift_change_actor_allowed(request, shift_request):
         "attendance.change_attendance"
     ):
         return True
-    manager = Employee.objects.entire().filter(
-        employee_user_id=request.user
-    ).first()
     return bool(
-        manager
-        and shift_request.reporting_manager_id_id
-        and manager.pk == shift_request.reporting_manager_id_id
+        shift_request.reporting_manager_id_id
+        and Employee.objects.entire()
+        .filter(
+            employee_user_id=request.user,
+            pk=shift_request.reporting_manager_id_id,
+        )
+        .exists()
     )
 
 
 @login_required
 @require_http_methods(["GET"])
 def portal_shift_change_review(request, request_id):
-    try:
-        shift_request = (
-            AttendancePortalShiftChangeRequest._base_manager.select_related(
-                "employee_id", "reporting_manager_id", "day"
-            ).get(pk=request_id)
-        )
-    except AttendancePortalShiftChangeRequest.DoesNotExist:
+    shift_request = _get_portal_shift_request(request_id)
+    if shift_request is None:
         return _portal_shift_change_response(
             request, "Shift change request not found.", success=False, status=404
         )
@@ -2777,6 +2920,8 @@ def portal_shift_change_review(request, request_id):
 
 @login_required
 def portal_shift_change_approve(request, request_id):
+    from base.views import shift_request_approve
+
     if request.method != "POST":
         return _portal_shift_change_response(
             request,
@@ -2784,81 +2929,23 @@ def portal_shift_change_approve(request, request_id):
             success=False,
             status=405,
         )
-    try:
-        with transaction.atomic():
-            shift_request = (
-                AttendancePortalShiftChangeRequest._base_manager.select_for_update()
-                .get(pk=request_id)
-            )
-            if not _portal_shift_change_actor_allowed(request, shift_request):
-                return HttpResponseForbidden("Only the reporting manager can approve this request.")
-            if shift_request.status != "pending":
-                return _portal_shift_change_response(
-                    request,
-                    f"This shift request is already {shift_request.status}.",
-                    success=False,
-                    status=409,
-                )
-
-            update_employee_shift_schedule(
-                shift_request.employee_id,
-                shift_request.day,
-                shift_request.start_time,
-                shift_request.end_time,
-                minimum_working_hour=shift_request.minimum_working_hour,
-            )
-            synchronize_portal_attendance_shift(
-                shift_request.employee_id,
-                get_real_now(),
-            )
-            shift_request.status = "approved"
-            shift_request.approved_by = Employee.objects.entire().filter(
-                employee_user_id=request.user
-            ).first()
-            shift_request.approved_at = timezone.now()
-            shift_request.save(
-                update_fields=[
-                    "status",
-                    "approved_by",
-                    "approved_at",
-                    "modified_by",
-                ]
-            )
-    except AttendancePortalShiftChangeRequest.DoesNotExist:
+    shift_request = _get_portal_shift_request(request_id)
+    if shift_request is None:
         return _portal_shift_change_response(
             request, "Shift change request not found.", success=False, status=404
         )
-    except Exception:
-        logger.exception("Portal shift change approval failed")
-        return _portal_shift_change_response(
-            request,
-            "Unable to approve the shift change request.",
-            success=False,
-            status=500,
-        )
-
-    try:
-        from notifications.signals import notify
-
-        notify.send(
-            request.user,
-            recipient=shift_request.employee_id.employee_user_id,
-            verb="Your portal shift change request was approved.",
-            redirect=reverse("portal-shift-schedule"),
-            icon="checkmark-circle-outline",
-        )
-    except Exception:
-        logger.debug("Portal shift approval notification failed", exc_info=True)
-    return _portal_shift_change_response(
-        request,
-        "Shift change approved and applied to the employee schedule.",
-        success=True,
-        redirect_url=_portal_shift_request_view_url(shift_request.pk),
-    )
+    if not _portal_shift_change_actor_allowed(request, shift_request):
+        return HttpResponseForbidden("Only the reporting manager can approve this request.")
+    response = shift_request_approve(request, shift_request.pk)
+    if response.status_code in {302, 303}:
+        return redirect(_portal_shift_request_view_url(shift_request.pk))
+    return response
 
 
 @login_required
 def portal_shift_change_reject(request, request_id):
+    from base.views import shift_request_cancel
+
     if request.method != "POST":
         return _portal_shift_change_response(
             request,
@@ -2866,66 +2953,17 @@ def portal_shift_change_reject(request, request_id):
             success=False,
             status=405,
         )
-    try:
-        with transaction.atomic():
-            shift_request = (
-                AttendancePortalShiftChangeRequest._base_manager.select_for_update()
-                .get(pk=request_id)
-            )
-            if not _portal_shift_change_actor_allowed(request, shift_request):
-                return HttpResponseForbidden("Only the reporting manager can reject this request.")
-            if shift_request.status != "pending":
-                return _portal_shift_change_response(
-                    request,
-                    f"This shift request is already {shift_request.status}.",
-                    success=False,
-                    status=409,
-                )
-            shift_request.status = "rejected"
-            shift_request.approved_by = Employee.objects.entire().filter(
-                employee_user_id=request.user
-            ).first()
-            shift_request.approved_at = timezone.now()
-            shift_request.decision_note = "Rejected by reporting manager."
-            shift_request.save(
-                update_fields=[
-                    "status",
-                    "approved_by",
-                    "approved_at",
-                    "decision_note",
-                    "modified_by",
-                ]
-            )
-    except AttendancePortalShiftChangeRequest.DoesNotExist:
+    shift_request = _get_portal_shift_request(request_id)
+    if shift_request is None:
         return _portal_shift_change_response(
             request, "Shift change request not found.", success=False, status=404
         )
-    except Exception:
-        logger.exception("Portal shift change rejection failed")
-        return _portal_shift_change_response(
-            request,
-            "Unable to reject the shift change request.",
-            success=False,
-            status=500,
-        )
-    try:
-        from notifications.signals import notify
-
-        notify.send(
-            request.user,
-            recipient=shift_request.employee_id.employee_user_id,
-            verb="Your portal shift change request was rejected.",
-            redirect=reverse("portal-shift-schedule"),
-            icon="close-circle-outline",
-        )
-    except Exception:
-        logger.debug("Portal shift rejection notification failed", exc_info=True)
-    return _portal_shift_change_response(
-        request,
-        "Shift change request rejected.",
-        success=True,
-        redirect_url=_portal_shift_request_view_url(shift_request.pk),
-    )
+    if not _portal_shift_change_actor_allowed(request, shift_request):
+        return HttpResponseForbidden("Only the reporting manager can reject this request.")
+    response = shift_request_cancel(request, shift_request.pk)
+    if response.status_code in {302, 303}:
+        return redirect(_portal_shift_request_view_url(shift_request.pk))
+    return response
 
 
 def portal_shift_schedule(request):
@@ -3061,10 +3099,12 @@ def _portal_shift_schedule(request):
         work_info = EmployeeWorkInformation._base_manager.filter(
             employee_id=employee
         ).select_related("shift_id", "reporting_manager_id").first()
-        pending_request = AttendancePortalShiftChangeRequest._base_manager.filter(
+        pending_request = ShiftRequest._base_manager.filter(
             employee_id=employee,
-            day=day,
-            status="pending",
+            request_source="portal",
+            requested_day=day,
+            approved=False,
+            canceled=False,
         ).first()
         if pending_request:
             return JsonResponse(
@@ -3075,14 +3115,20 @@ def _portal_shift_schedule(request):
                 status=200,
             )
 
-        shift_request = AttendancePortalShiftChangeRequest._base_manager.create(
+        shift_request = ShiftRequest._base_manager.create(
             employee_id=employee,
+            shift_id=work_info.shift_id,
+            previous_shift_id=work_info.shift_id,
+            requested_date=date_today,
+            requested_till=None,
+            is_permanent_shift=True,
+            description=reason,
+            request_source="portal",
+            requested_day=day,
+            requested_start_time=start_time,
+            requested_end_time=end_time,
+            requested_minimum_working_hour=minimum_working_hour,
             reporting_manager_id=reporting_manager,
-            day=day,
-            start_time=start_time,
-            end_time=end_time,
-            minimum_working_hour=minimum_working_hour,
-            reason=reason,
         )
         email_sent = False
         try:
@@ -3151,6 +3197,17 @@ def _portal_shift_schedule(request):
                     "warning": (
                         "The manager email could not be delivered. "
                         "Please notify the administrator."
+                    )
+                }
+                if not email_sent
+                else {}
+            ),
+            **(
+                {
+                    "email_error_code": getattr(
+                        request,
+                        "_portal_shift_email_error_code",
+                        "SHIFT_EMAIL_SEND_FAILED",
                     )
                 }
                 if not email_sent

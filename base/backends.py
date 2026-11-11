@@ -222,10 +222,17 @@ if EMAIL_BACKEND and EMAIL_BACKEND != default:
 
 class ConfiguredEmailBackend(BACKEND_CLASS):
 
-    def send_messages(self, email_messages):
-        response = super(BACKEND_CLASS, self).send_messages(email_messages)
-        for message in email_messages:
-            email_log = EmailLog(
+    @staticmethod
+    def _message_recipients(message):
+        try:
+            return ", ".join(message.recipients())
+        except Exception:
+            recipients = getattr(message, "to", None) or []
+            return ", ".join(str(recipient) for recipient in recipients)
+
+    def _write_email_log(self, message, status, error_message=None):
+        try:
+            EmailLog.objects.create(
                 subject=message.subject,
                 from_email=(
                     self.dynamic_from_email_with_display_name
@@ -233,11 +240,45 @@ class ConfiguredEmailBackend(BACKEND_CLASS):
                     or getattr(settings, "DEFAULT_FROM_EMAIL", None)
                     or "no-reply@example.com"
                 ),
-                to=message.to,
+                to=self._message_recipients(message),
                 body=message.body,
-                status="sent" if response else "failed",
+                status=status,
+                error_message=error_message,
             )
-            email_log.save()
+        except Exception:
+            logger.exception(
+                "Unable to record email log subject=%r status=%s",
+                getattr(message, "subject", ""),
+                status,
+            )
+
+    def send_messages(self, email_messages):
+        if not email_messages:
+            return 0
+
+        try:
+            response = super().send_messages(email_messages)
+        except Exception as error:
+            error_message = f"{error.__class__.__name__}: {error}"
+            for message in email_messages:
+                self._write_email_log(message, "failed", error_message)
+            logger.exception(
+                "Email backend failed host=%r port=%r recipients=%r",
+                self.dynamic_host,
+                self.dynamic_port,
+                [self._message_recipients(message) for message in email_messages],
+            )
+            raise
+
+        status = "sent" if response == len(email_messages) else "failed"
+        error_message = None
+        if status == "failed":
+            error_message = (
+                "SMTP backend did not accept all messages "
+                f"(accepted={response}, attempted={len(email_messages)})"
+            )
+        for message in email_messages:
+            self._write_email_log(message, status, error_message)
         return response
 
 
