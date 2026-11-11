@@ -481,6 +481,11 @@ def _portal_reporting_manager(employee):
     return work_info, manager, manager_email
 
 
+def _portal_email_backend(employee):
+    """Use the employee company's configured SMTP server for public portal mail."""
+    return ConfiguredEmailBackend(company=employee.get_company())
+
+
 def _send_portal_attendance_request_email(
     employee,
     request_data,
@@ -539,7 +544,7 @@ def _send_portal_attendance_request_email(
     body_lines.extend(["", "Thank you."])
     body = "\n".join(body_lines)
 
-    email_backend = ConfiguredEmailBackend()
+    email_backend = _portal_email_backend(employee)
     from_email = (
         email_backend.dynamic_from_email_with_display_name
         or getattr(settings, "DEFAULT_FROM_EMAIL", None)
@@ -553,10 +558,39 @@ def _send_portal_attendance_request_email(
         connection=email_backend,
     )
     try:
-        return email.send() == 1
-    except Exception:
-        logger.exception("Failed to send attendance portal attendance request email")
+        sent_count = email.send()
+    except Exception as error:
+        logger.exception(
+            "Attendance portal request email failed recipient=%s configuration_id=%r company_id=%r host=%r port=%r error_type=%s",
+            manager_email,
+            getattr(getattr(email_backend, "configuration", None), "pk", None),
+            getattr(
+                getattr(email_backend, "configuration", None),
+                "company_id_id",
+                None,
+            ),
+            getattr(email_backend, "dynamic_host", None),
+            getattr(email_backend, "dynamic_port", None),
+            error.__class__.__name__,
+        )
         return False
+
+    if sent_count != 1:
+        logger.error(
+            "Attendance portal request email was not accepted recipient=%s configuration_id=%r company_id=%r host=%r port=%r sent_count=%s",
+            manager_email,
+            getattr(getattr(email_backend, "configuration", None), "pk", None),
+            getattr(
+                getattr(email_backend, "configuration", None),
+                "company_id_id",
+                None,
+            ),
+            getattr(email_backend, "dynamic_host", None),
+            getattr(email_backend, "dynamic_port", None),
+            sent_count,
+        )
+        return False
+    return True
 
 
 def _send_portal_shift_change_email(request, shift_request):
@@ -602,7 +636,7 @@ def _send_portal_shift_change_email(request, shift_request):
         ]
     )
     try:
-        email_backend = ConfiguredEmailBackend()
+        email_backend = _portal_email_backend(employee)
         from_email = (
             email_backend.dynamic_from_email_with_display_name
             or getattr(settings, "DEFAULT_FROM_EMAIL", None)
@@ -621,9 +655,19 @@ def _send_portal_shift_change_email(request, shift_request):
         if request is not None:
             request._portal_shift_email_error_code = "SHIFT_EMAIL_SMTP_ERROR"
         logger.exception(
-            "Portal shift change email failed request_id=%s recipient=%s host=%r port=%r error_type=%s",
+            "Portal shift change email failed request_id=%s recipient=%s configuration_id=%r company_id=%r host=%r port=%r error_type=%s",
             shift_request.pk,
             manager_email,
+            getattr(
+                getattr(locals().get("email_backend"), "configuration", None),
+                "pk",
+                None,
+            ),
+            getattr(
+                getattr(locals().get("email_backend"), "configuration", None),
+                "company_id_id",
+                None,
+            ),
             getattr(locals().get("email_backend"), "dynamic_host", None),
             getattr(locals().get("email_backend"), "dynamic_port", None),
             error.__class__.__name__,
@@ -634,9 +678,15 @@ def _send_portal_shift_change_email(request, shift_request):
         if request is not None:
             request._portal_shift_email_error_code = "SHIFT_EMAIL_SMTP_REJECTED"
         logger.error(
-            "Portal shift change email was not accepted request_id=%s recipient=%s host=%r port=%r sent_count=%s",
+            "Portal shift change email was not accepted request_id=%s recipient=%s configuration_id=%r company_id=%r host=%r port=%r sent_count=%s",
             shift_request.pk,
             manager_email,
+            getattr(getattr(email_backend, "configuration", None), "pk", None),
+            getattr(
+                getattr(email_backend, "configuration", None),
+                "company_id_id",
+                None,
+            ),
             getattr(email_backend, "dynamic_host", None),
             getattr(email_backend, "dynamic_port", None),
             sent_count,

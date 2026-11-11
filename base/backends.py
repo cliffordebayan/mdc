@@ -31,9 +31,15 @@ class DefaultHorillaMailBackend(EmailBackend):
         timeout=None,
         ssl_keyfile=None,
         ssl_certfile=None,
+        configuration=None,
+        company=None,
         **kwargs,
     ):
-        self.configuration = self.get_dynamic_email_config()
+        self.configuration = (
+            configuration
+            if configuration is not None
+            else self.get_dynamic_email_config(company=company)
+        )
         ssl_keyfile = (
             getattr(self.configuration, "ssl_keyfile", None)
             if self.configuration
@@ -77,10 +83,11 @@ class DefaultHorillaMailBackend(EmailBackend):
         return None
 
     @staticmethod
-    def get_dynamic_email_config():
+    def get_dynamic_email_config(company=None):
         request = getattr(_thread_locals, "request", None)
         employee = DefaultHorillaMailBackend._get_request_employee(request)
-        company = employee.get_company() if employee else None
+        if company is None and employee:
+            company = employee.get_company()
         configuration = DynamicEmailConfiguration.objects.filter(
             company_id=company
         ).first()
@@ -222,6 +229,19 @@ if EMAIL_BACKEND and EMAIL_BACKEND != default:
 
 class ConfiguredEmailBackend(BACKEND_CLASS):
 
+    def __init__(self, *args, company=None, configuration=None, **kwargs):
+        if issubclass(BACKEND_CLASS, DefaultHorillaMailBackend):
+            super().__init__(
+                *args,
+                company=company,
+                configuration=configuration,
+                **kwargs,
+            )
+        else:
+            # Third-party backends own their connection configuration and may not
+            # accept Horilla's company/configuration selectors.
+            super().__init__(*args, **kwargs)
+
     @staticmethod
     def _message_recipients(message):
         try:
@@ -263,7 +283,11 @@ class ConfiguredEmailBackend(BACKEND_CLASS):
             for message in email_messages:
                 self._write_email_log(message, "failed", error_message)
             logger.exception(
-                "Email backend failed host=%r port=%r recipients=%r",
+                "Email backend failed configuration_id=%r company_id=%r host=%r port=%r recipients=%r",
+                getattr(getattr(self, "configuration", None), "pk", None),
+                getattr(
+                    getattr(self, "configuration", None), "company_id_id", None
+                ),
                 self.dynamic_host,
                 self.dynamic_port,
                 [self._message_recipients(message) for message in email_messages],

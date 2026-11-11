@@ -192,6 +192,85 @@ class DynamicEmailBackendSenderTests(TestCase):
         request.user = user
         _thread_locals.request = request
 
+    @staticmethod
+    def _company(name):
+        return Company.objects.create(
+            company=name,
+            address="HQ",
+            country="PH",
+            state="NCR",
+            city="Manila",
+            zip="1000",
+        )
+
+    def test_explicit_company_uses_company_smtp_for_anonymous_request(self):
+        company = self._company("Portal Company")
+        company_config = DynamicEmailConfiguration.objects.create(
+            host="smtp.portal.example.com",
+            port=465,
+            from_email="portal@example.com",
+            username="portal-user@example.com",
+            display_name="Portal Mail",
+            password="portal-secret",
+            use_tls=False,
+            use_ssl=True,
+            fail_silently=False,
+            timeout=45,
+            company_id=company,
+        )
+
+        backend = ConfiguredEmailBackend(company=company)
+
+        self.assertEqual(backend.configuration, company_config)
+        self.assertEqual(backend.host, "smtp.portal.example.com")
+        self.assertEqual(backend.port, 465)
+        self.assertEqual(backend.username, "portal-user@example.com")
+        self.assertEqual(backend.password, "portal-secret")
+        self.assertFalse(backend.use_tls)
+        self.assertTrue(backend.use_ssl)
+        self.assertFalse(backend.fail_silently)
+        self.assertEqual(backend.timeout, 45)
+        self.assertEqual(
+            backend.dynamic_from_email_with_display_name,
+            "Portal Mail <portal@example.com>",
+        )
+
+    def test_explicit_company_falls_back_to_primary_smtp(self):
+        company = self._company("Company Without SMTP")
+
+        backend = ConfiguredEmailBackend(company=company)
+
+        self.assertEqual(backend.configuration, self.config)
+        self.assertEqual(backend.host, "smtp.example.com")
+        self.assertEqual(backend.port, 587)
+
+    def test_explicit_configuration_initializes_connection_values(self):
+        company = self._company("Explicit Configuration Company")
+        company_config = DynamicEmailConfiguration.objects.create(
+            host="smtp.explicit.example.com",
+            port=2525,
+            from_email="explicit@example.com",
+            username="explicit-user@example.com",
+            display_name="Explicit Mail",
+            password="explicit-secret",
+            use_tls=True,
+            use_ssl=False,
+            fail_silently=False,
+            timeout=30,
+            company_id=company,
+        )
+
+        backend = ConfiguredEmailBackend(configuration=company_config)
+
+        self.assertEqual(backend.configuration, company_config)
+        self.assertEqual(backend.host, "smtp.explicit.example.com")
+        self.assertEqual(backend.port, 2525)
+        self.assertEqual(backend.username, "explicit-user@example.com")
+        self.assertEqual(backend.password, "explicit-secret")
+        self.assertTrue(backend.use_tls)
+        self.assertFalse(backend.use_ssl)
+        self.assertEqual(backend.timeout, 30)
+
     def test_employee_display_name_keeps_configured_smtp_sender(self):
         user = User.objects.create_user(
             username="manager",

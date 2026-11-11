@@ -114,6 +114,7 @@ from attendance.views.views import (
 )
 from base.models import (
     Branch,
+    Company,
     EmployeeShift,
     EmployeeShiftDay,
     EmployeeShiftSchedule,
@@ -3783,6 +3784,17 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         backend_class,
         email_message_class,
     ):
+        company = Company.objects.create(
+            company="Portal Shift Company",
+            address="HQ",
+            country="PH",
+            state="NCR",
+            city="Manila",
+            zip="1000",
+        )
+        work_info = self.employee.employee_work_info
+        work_info.company_id = company
+        work_info.save(update_fields=["company_id"])
         backend = MagicMock()
         backend.dynamic_from_email_with_display_name = "MDC <no-reply@example.com>"
         backend_class.return_value = backend
@@ -3796,6 +3808,7 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         request = RequestFactory().post("/attendance/portal/shift-schedule/")
         self.assertTrue(_send_portal_shift_change_email(request, shift_request))
 
+        backend_class.assert_called_once_with(company=company)
         body = email_message_class.call_args.kwargs["body"]
         self.assertEqual(
             email_message_class.call_args.kwargs["cc"],
@@ -4650,6 +4663,17 @@ class PortalAttendanceRequestTests(TestCase):
         email_message_class,
         backend_class,
     ):
+        company = Company.objects.create(
+            company="Portal Attendance Company",
+            address="HQ",
+            country="PH",
+            state="NCR",
+            city="Manila",
+            zip="1000",
+        )
+        work_info = self.employee.employee_work_info
+        work_info.company_id = company
+        work_info.save(update_fields=["company_id"])
         backend = MagicMock()
         backend.dynamic_from_email_with_display_name = "MDC <no-reply@example.com>"
         backend_class.return_value = backend
@@ -4671,6 +4695,7 @@ class PortalAttendanceRequestTests(TestCase):
         )
 
         self.assertTrue(sent)
+        backend_class.assert_called_once_with(company=company)
         kwargs = email_message_class.call_args.kwargs
         self.assertEqual(kwargs["to"], ["attendance-request-manager@example.com"])
         self.assertNotIn("cc", kwargs)
