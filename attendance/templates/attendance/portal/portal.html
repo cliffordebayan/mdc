@@ -1659,6 +1659,10 @@
             transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
+        .clock-camera-panel.face-detection-disabled .face-guide {
+            display: none;
+        }
+
         .clock-camera-panel #canvas {
             display: none;
         }
@@ -4065,6 +4069,7 @@
             const cameraPanel = document.querySelector('.clock-camera-panel');
             if (!cameraPanel) return;
             cameraPanel.classList.toggle('face-detected', faceDetectionRequired && faceDetected);
+            cameraPanel.classList.toggle('face-detection-disabled', !faceDetectionRequired);
         }
 
         function facePredictionScore(prediction) {

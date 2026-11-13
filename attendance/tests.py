@@ -2476,6 +2476,13 @@ class PortalTemplateRegressionTests(SimpleTestCase):
         self.assertIn("if (faceDetectionRequired && (!faceDetectionReady || !faceDetected))", self.portal_template)
         self.assertNotIn("verifyFaceBeforeAction", self.portal_template)
 
+    def test_face_detection_visuals_are_hidden_when_detection_is_disabled(self):
+        self.assertIn(".clock-camera-panel.face-detection-disabled .face-guide", self.portal_template)
+        self.assertIn(
+            "cameraPanel.classList.toggle('face-detection-disabled', !faceDetectionRequired)",
+            self.portal_template,
+        )
+
     def test_face_detection_feedback_includes_larger_guide_and_success_pill(self):
         self.assertIn('id="face-status-pill"', self.portal_template)
         self.assertIn(".face-status-pill.is-visible", self.portal_template)
@@ -2602,9 +2609,9 @@ class PortalFaceDetectionEndpointTests(SimpleTestCase):
             employee_work_info=SimpleNamespace(company_id=company),
         )
 
-    def test_face_detection_remains_required_for_the_client_gate(self):
-        self.assertTrue(_portal_face_detection_required(self._employee(True)))
-        self.assertTrue(_portal_face_detection_required(self._employee(False)))
+    def test_face_detection_is_disabled_for_the_client_gate(self):
+        self.assertFalse(_portal_face_detection_required(self._employee(True)))
+        self.assertFalse(_portal_face_detection_required(self._employee(False)))
 
     @patch("attendance.views.portal._maybe_auto_checkout_employee")
     @patch("attendance.views.portal.Employee")
@@ -4949,7 +4956,7 @@ class PortalEmployeeLookupTests(SimpleTestCase):
         self.assertEqual(result["break_total_time"], "00:00")
         self.assertEqual(result["lunch_total_seconds"], 0)
         self.assertEqual(result["lunch_total_time"], "00:00")
-        self.assertTrue(result["face_detection_required"])
+        self.assertFalse(result["face_detection_required"])
 
     @patch("attendance.views.portal.Attendance")
     @patch("attendance.views.portal.AttendanceActivity")

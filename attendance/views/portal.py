@@ -930,8 +930,13 @@ def _active_assigned_geofences(employee):
 
 
 def _portal_face_detection_required(employee):
-    """Portal attendance always requires local face presence detection."""
-    return True
+    """Return whether portal attendance should require local face detection.
+
+    Face detection is temporarily disabled for the employee portal. Keep this
+    helper as the single switch so the feature can be re-enabled later without
+    changing the client or attendance endpoints.
+    """
+    return False
 
 
 def _employee_is_excluded_from_geofence(employee, geofence):
