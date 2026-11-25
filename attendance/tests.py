@@ -2107,6 +2107,9 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
         # Forgotten clock-out from yesterday: a same-day repeat Clock In is a
         # Clock Out instead (see PortalRepeatClockInTests).
         open_activity.attendance_date = date(2026, 6, 4)
+        open_activity.clock_in = time(8, 24)
+        open_activity.clock_in_date = date(2026, 6, 4)
+        open_activity.in_datetime = datetime(2026, 6, 4, 8, 24)
         new_activity = MagicMock()
         new_activity.location_verified = False
         open_activity_qs = MagicMock()
@@ -2122,9 +2125,12 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
         payload = json.loads(response.content)
 
         self.assertTrue(payload["success"])
-        self.assertEqual(open_activity.clock_out, datetime(2026, 6, 5, 10, 0, 0))
-        self.assertEqual(open_activity.clock_out_date, date(2026, 6, 5))
-        self.assertEqual(open_activity.out_datetime, datetime(2026, 6, 5, 10, 0, 0))
+        # Forgotten clock-out: closed at its own clock-in (blank, zero hours),
+        # never at today's clock-in time.
+        self.assertEqual(open_activity.clock_out, time(8, 24))
+        self.assertEqual(open_activity.clock_out_date, date(2026, 6, 4))
+        self.assertEqual(open_activity.out_datetime, datetime(2026, 6, 4, 8, 24))
+        self.assertTrue(open_activity.is_auto_punch_out)
         open_activity.save.assert_called_once()
         update_worked_hours_mock.assert_called_once_with(employee, date(2026, 6, 4))
         clock_in_helper_mock.assert_called_once()
@@ -12573,3 +12579,99 @@ class ActivityBasedAttendanceDisplayTests(TestCase):
         context = render_mock.call_args.args[2]
         self.assertEqual(context["check_out"], time(16, 4))
         self.assertEqual(context["check_in"], time(6, 39))
+
+
+class ForgottenClockOutTests(TestCase):
+    """A punch left open on an earlier day shows blank, never days later."""
+
+    def setUp(self):
+        self.thursday, _ = EmployeeShiftDay.objects.get_or_create(day="thursday")
+        self.monday, _ = EmployeeShiftDay.objects.get_or_create(day="monday")
+        self.employee = Employee.objects.create(
+            employee_first_name="Forgot",
+            employee_last_name="ClockOut",
+            email="forgot-clockout@example.com",
+            phone="09170000096",
+            gender="male",
+            is_active=True,
+        )
+        self.day = date(2026, 11, 19)
+        self.attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.day,
+            attendance_day=self.thursday,
+            attendance_clock_in_date=self.day,
+            attendance_clock_in=time(8, 24),
+            minimum_hour="09:00",
+        )
+
+    def _activity(self, attendance_date, clock_in, clock_out_date=None, clock_out=None, **extra):
+        return AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=attendance_date,
+            shift_day=self.thursday,
+            clock_in_date=attendance_date,
+            clock_in=clock_in,
+            clock_out_date=clock_out_date,
+            clock_out=clock_out,
+            activity_type="work",
+            **extra,
+        )
+
+    def test_command_blanks_punch_closed_by_next_clock_in(self):
+        later = date(2026, 11, 23)
+        forgotten = self._activity(self.day, time(8, 24), later, time(8, 13))
+        self._activity(later, time(8, 13), later, time(17, 2))
+
+        call_command("close_forgotten_clock_outs", "--apply", stdout=io.StringIO())
+
+        forgotten.refresh_from_db()
+        self.assertEqual((forgotten.clock_out_date, forgotten.clock_out), (self.day, time(8, 24)))
+        self.assertTrue(forgotten.is_auto_punch_out)
+        row = build_daily_activity_rows(
+            AttendanceActivity.objects.filter(pk=forgotten.pk)
+        )[0]
+        self.assertIsNone(row.table_clock_out)
+        self.assertEqual(row.work_hours, "")
+        self.assertTrue(row.clock_out_forgotten)
+
+    def test_command_leaves_real_overnight_clock_out_alone(self):
+        later = date(2026, 11, 20)
+        night = self._activity(
+            self.day,
+            time(23, 54),
+            later,
+            time(9, 0),
+            clock_out_selfie=SimpleUploadedFile("out.jpg", b"x", content_type="image/jpeg"),
+        )
+
+        call_command("close_forgotten_clock_outs", "--apply", stdout=io.StringIO())
+
+        night.refresh_from_db()
+        self.assertEqual((night.clock_out_date, night.clock_out), (later, time(9, 0)))
+
+    def test_dry_run_changes_nothing(self):
+        later = date(2026, 11, 23)
+        forgotten = self._activity(self.day, time(8, 24), later, time(8, 13))
+        self._activity(later, time(8, 13), later, time(17, 2))
+
+        call_command("close_forgotten_clock_outs", stdout=io.StringIO())
+
+        forgotten.refresh_from_db()
+        self.assertEqual(forgotten.clock_out_date, later)
+
+    def test_portal_clock_out_closes_stale_punch_as_forgotten(self):
+        from attendance.views.portal import _close_forgotten_activity
+
+        stale = self._activity(self.day, time(8, 24))
+
+        _close_forgotten_activity(self.employee, stale)
+
+        stale.refresh_from_db()
+        self.assertEqual((stale.clock_out_date, stale.clock_out), (self.day, time(8, 24)))
+        self.assertTrue(stale.is_auto_punch_out)
+        self.assertFalse(
+            AttendanceActivity.objects.filter(
+                employee_id=self.employee, clock_out__isnull=True
+            ).exists()
+        )

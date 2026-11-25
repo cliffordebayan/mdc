@@ -568,6 +568,16 @@ def _is_auto_punch_out_activity(activity, attendance_date, schedule):
     return bool(scheduled_out and _activity_out_datetime(activity) == scheduled_out)
 
 
+def _is_forgotten_clock_out(activity):
+    """A punch closed without a real clock-out (zero length, auto punch-out)."""
+    return bool(
+        getattr(activity, "is_auto_punch_out", False)
+        and activity.clock_out is not None
+        and activity.clock_out == activity.clock_in
+        and activity.clock_out_date == activity.clock_in_date
+    )
+
+
 def _activity_duration_seconds(activity):
     if not activity or not activity.clock_out:
         return 0
@@ -1520,6 +1530,13 @@ def build_daily_activity_rows(
         detail_activity = work_in or (
             row_data["activities"][0] if row_data["activities"] else None
         )
+        # Every work punch of the day had a forgotten clock-out: the real
+        # hours are unknown, so show them blank rather than 00:00.
+        clock_out_forgotten = bool(work_activities) and all(
+            _is_forgotten_clock_out(activity) for activity in work_activities
+        )
+        if clock_out_forgotten:
+            late_early_durations["early_out"] = ""
         work_segments = [_daily_activity_segment(activity) for activity in work_activities]
         break_segments = [_daily_activity_segment(activity) for activity in break_activities]
         lunch_segments = [_daily_activity_segment(activity) for activity in lunch_activities]
@@ -1558,7 +1575,8 @@ def build_daily_activity_rows(
                 min_hour=hours.min_hour,
                 late_come_duration=late_early_durations["late_come"],
                 early_out_duration=late_early_durations["early_out"],
-                work_hours=hours.work_hours,
+                work_hours="" if clock_out_forgotten else hours.work_hours,
+                clock_out_forgotten=clock_out_forgotten,
                 break_hours=_activity_total_hours(break_activities),
                 lunch_hours=_activity_total_hours(lunch_activities),
                 pending_hour=hours.pending_hour,

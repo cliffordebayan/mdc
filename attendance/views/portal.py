@@ -2207,6 +2207,29 @@ def _update_attendance_worked_hours(employee, attendance_date):
     return attendance
 
 
+def _close_forgotten_activity(employee, activity):
+    """Close a punch whose clock-out was forgotten on an earlier day.
+
+    The real clock-out time is unknown, so the punch is closed at its own
+    clock-in (zero hours) and flagged as an automatic punch-out. Attendance
+    views then show Clock Out as "—" and the day counts no worked hours
+    until someone corrects it.
+    """
+    in_datetime = activity.in_datetime
+    if in_datetime is None and activity.clock_in_date and activity.clock_in:
+        in_datetime = timezone.make_aware(
+            datetime.combine(activity.clock_in_date, activity.clock_in),
+            timezone.get_current_timezone(),
+        )
+    activity.clock_out = activity.clock_in
+    activity.clock_out_date = activity.clock_in_date
+    activity.out_datetime = in_datetime
+    activity.is_auto_punch_out = True
+    activity.save()
+    _update_attendance_worked_hours(employee, activity.attendance_date)
+    return activity
+
+
 def _portal_update_current_attendance_schedule(
     employee,
     attendance_context,
@@ -3364,7 +3387,11 @@ def attendance_history(request):
                 "clock_out_time": format_time_value(
                     getattr(table_out, "clock_out", None)
                 ),
-                "worked_hours": getattr(daily_row, "work_hours", None) or "00:00",
+                "worked_hours": (
+                    ""
+                    if getattr(daily_row, "clock_out_forgotten", False)
+                    else getattr(daily_row, "work_hours", None) or "00:00"
+                ),
                 "break_time": getattr(daily_row, "break_hours", None) or "00:00",
                 "lunch_time": getattr(daily_row, "lunch_hours", None) or "00:00",
                 "approval_status": (
@@ -4693,11 +4720,9 @@ def public_clock_in(request):
                 # Already clocked in for this shift day: a repeat Clock In
                 # is the employee ending their day, so record a Clock Out.
                 return public_clock_out(request)
-            open_activity.clock_out = datetime_now
-            open_activity.clock_out_date = date_today
-            open_activity.out_datetime = datetime_now
-            open_activity.save()
-            _update_attendance_worked_hours(employee, open_activity.attendance_date)
+            # Punch left open from an earlier day: the clock-out was
+            # forgotten, so never stamp today's time on it.
+            _close_forgotten_activity(employee, open_activity)
 
         # Call the business logic function
         try:
@@ -5105,6 +5130,25 @@ def public_clock_out(request):
         open_activity = AttendanceActivity.objects.filter(
             employee_id=employee, clock_out__isnull=True
         ).order_by("attendance_date", "id").last()
+
+        if (
+            open_activity
+            and not multi_punch_enabled
+            and isinstance(getattr(open_activity, "attendance_date", None), date)
+            and _portal_activity_type(open_activity) == PORTAL_WORK_ACTIVITY
+        ):
+            current_context = _portal_current_attendance_context(
+                work_info_out, datetime_now, employee=employee
+            )
+            current_attendance_date = current_context.get("attendance_date")
+            if (
+                isinstance(current_attendance_date, date)
+                and open_activity.attendance_date < current_attendance_date
+            ):
+                # Punch left open from an earlier day: close it as a
+                # forgotten clock-out and record today's clock-out normally.
+                _close_forgotten_activity(employee, open_activity)
+                open_activity = None
 
         multi_punch_state = None
         multi_punch_context = None
