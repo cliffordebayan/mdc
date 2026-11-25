@@ -62,12 +62,12 @@
             <div class="oh-timeoff-modal__stat">
                 <span class="oh-timeoff-modal__stat-title">{% trans "Check In" %}</span>
                 <span
-                    class="oh-timeoff-modal__stat-count timeformat_changer">{{attendance_request.attendance_clock_in}}</span>
+                    class="oh-timeoff-modal__stat-count{% if check_in %} timeformat_changer{% endif %}">{% if check_in %}{{check_in}}{% else %}&mdash;{% endif %}</span>
             </div>
             <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
                 <span class="oh-timeoff-modal__stat-title">{% trans "Check In Date" %}</span>
                 <span
-                    class="oh-timeoff-modal__stat-count dateformat_changer">{{attendance_request.attendance_clock_in_date}}</span>
+                    class="oh-timeoff-modal__stat-count{% if check_in_date %} dateformat_changer{% endif %}">{% if check_in_date %}{{check_in_date}}{% else %}&mdash;{% endif %}</span>
             </div>
         </div>
 
@@ -75,12 +75,12 @@
             <div class="oh-timeoff-modal__stat">
                 <span class="oh-timeoff-modal__stat-title">{% trans "Check Out" %}</span>
                 <span
-                    class="oh-timeoff-modal__stat-count timeformat_changer">{{attendance_request.attendance_clock_out}}</span>
+                    class="oh-timeoff-modal__stat-count{% if check_out %} timeformat_changer{% endif %}">{% if check_out %}{{check_out}}{% else %}&mdash;{% endif %}</span>
             </div>
             <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
                 <span class="oh-timeoff-modal__stat-title">{% trans "Check Out Date" %}</span>
                 <span
-                    class="oh-timeoff-modal__stat-count dateformat_changer">{{attendance_request.attendance_clock_out_date}}</span>
+                    class="oh-timeoff-modal__stat-count{% if check_out_date %} dateformat_changer{% endif %}">{% if check_out_date %}{{check_out_date}}{% else %}&mdash;{% endif %}</span>
             </div>
         </div>
 

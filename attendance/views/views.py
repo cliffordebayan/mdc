@@ -36,6 +36,7 @@ from urllib.parse import parse_qs
 import pandas as pd
 from django.contrib import messages
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.core.validators import validate_ipv46_address
 from django.db import transaction
@@ -76,6 +77,7 @@ from attendance.forms import (
     ATTENDANCE_ACTIVITY_BULK_TIME_FIELDS,
     ATTENDANCE_PREMIUM_EXPORT_FIELDS,
     AttendanceActivityBulkUpdateFieldForm,
+    AttendanceActivityCreateForm,
     AttendanceActivityExportForm,
     AttendanceActivityForm,
     AttendanceActivityUpdateForm,
@@ -1803,9 +1805,15 @@ def _empty_daily_attendance_row(attendance):
     fallback_work_in = None
     fallback_work_out = None
     if getattr(attendance, "attendance_clock_in", None):
-        fallback_work_in = SimpleNamespace(clock_in=attendance.attendance_clock_in)
+        fallback_work_in = SimpleNamespace(
+            clock_in=attendance.attendance_clock_in,
+            clock_in_date=getattr(attendance, "attendance_clock_in_date", None),
+        )
     if getattr(attendance, "attendance_clock_out", None):
-        fallback_work_out = SimpleNamespace(clock_out=attendance.attendance_clock_out)
+        fallback_work_out = SimpleNamespace(
+            clock_out=attendance.attendance_clock_out,
+            clock_out_date=getattr(attendance, "attendance_clock_out_date", None),
+        )
     hours = _attendance_row_hours(attendance)
     return SimpleNamespace(
         employee=employee,
@@ -1822,6 +1830,10 @@ def _empty_daily_attendance_row(attendance):
         lunch_segments=[],
         work_in=fallback_work_in,
         work_out=fallback_work_out,
+        # No activities (e.g. a manual attendance request): the request's own
+        # times are the only record, so show them in the In/Out column.
+        table_clock_in=fallback_work_in,
+        table_clock_out=fallback_work_out,
         has_work_images=False,
         shift=hours.shift,
         shift_schedule=_shift_schedule_days_label(shift_schedule_days),
@@ -4581,6 +4593,72 @@ def attendance_activity_view(request):
 
 
 @login_required
+@require_http_methods(["GET", "POST"])
+def attendance_activity_create(request):
+    """Create a work activity from the administrator attendance activity modal."""
+
+    if not (request.user.is_superuser or request.user.is_staff):
+        raise PermissionDenied
+
+    form = AttendanceActivityCreateForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            employee = form.cleaned_data["employee_id"]
+            attendance_date = form.cleaned_data["attendance_date"]
+            clock_in_date = form.cleaned_data["clock_in_date"]
+            clock_in = form.cleaned_data["clock_in"]
+            clock_out_date = form.cleaned_data.get("clock_out_date")
+            clock_out = form.cleaned_data.get("clock_out")
+            shift_day = EmployeeShiftDay.objects.filter(
+                day=attendance_date.strftime("%A").lower()
+            ).first()
+
+            activity = form.save(commit=False)
+            activity.attendance_date = attendance_date
+            activity.shift_day = shift_day
+            activity.activity_type = "work"
+            activity.source = "website"
+            activity.in_datetime = datetime.combine(clock_in_date, clock_in)
+            if clock_out_date and clock_out:
+                activity.out_datetime = datetime.combine(clock_out_date, clock_out)
+            activity.save()
+
+            attendance = (
+                Attendance.objects.select_for_update()
+                .filter(employee_id=employee, attendance_date=attendance_date)
+                .first()
+            )
+            if attendance is None:
+                work_info = getattr(employee, "employee_work_info", None)
+                attendance = Attendance(
+                    employee_id=employee,
+                    attendance_date=attendance_date,
+                    attendance_day=shift_day,
+                    shift_id=getattr(work_info, "shift_id", None),
+                    work_type_id=getattr(work_info, "work_type_id", None),
+                    attendance_clock_in_date=clock_in_date,
+                    attendance_clock_in=clock_in,
+                    attendance_clock_out_date=clock_out_date,
+                    attendance_clock_out=clock_out,
+                )
+                schedule = get_effective_attendance_schedule(attendance)
+                if schedule and schedule.minimum_working_hour:
+                    attendance.minimum_hour = schedule.minimum_working_hour
+                attendance.save()
+
+            recalculate_attendance_for_day(attendance)
+
+        messages.success(request, _("Attendance activity added."))
+        return HorillaRedirect(request)
+
+    return render(
+        request,
+        "attendance/attendance_activity/create_form.html",
+        {"form": form},
+    )
+
+
+@login_required
 def absent_employees_view(request):
     """
     This method will render a template to view employees absent within a date range.
@@ -6313,6 +6391,20 @@ def user_request_one_view(request, id):
     hours_over_time = over_time_seconds // 3600
     minutes_over_time = (over_time_seconds % 3600) // 60
     over_time = "{:02}:{:02}".format(hours_over_time, minutes_over_time)
+
+    # Show the same values as the attendance activity view: clock in/out and
+    # hours come from the day's activities, not the stored Attendance fields.
+    activity_row = (build_daily_attendance_rows([attendance_request]) or [None])[0]
+    table_in = getattr(activity_row, "table_clock_in", None)
+    table_out = getattr(activity_row, "table_clock_out", None)
+    check_in = getattr(table_in, "clock_in", None)
+    check_in_date = getattr(table_in, "clock_in_date", None) if check_in else None
+    check_out = getattr(table_out, "clock_out", None)
+    check_out_date = getattr(table_out, "clock_out_date", None) if check_out else None
+    if activity_row is not None:
+        at_work = getattr(activity_row, "work_hours", None) or at_work
+        over_time = getattr(activity_row, "overtime", None) or over_time
+
     instance_ids_json = request.GET["instances_ids"]
     instance_ids = json.loads(instance_ids_json) if instance_ids_json else []
     previous_instance, next_instance = closest_numbers(instance_ids, id)
@@ -6321,6 +6413,11 @@ def user_request_one_view(request, id):
         "attendance/attendance/attendance_request_one.html",
         {
             "attendance_request": attendance_request,
+            "activity_row": activity_row,
+            "check_in": check_in,
+            "check_in_date": check_in_date,
+            "check_out": check_out,
+            "check_out_date": check_out_date,
             "at_work": at_work,
             "over_time": over_time,
             "previous_instance": previous_instance,

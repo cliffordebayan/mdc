@@ -4,13 +4,18 @@ Shift records with no owner_employee are reusable templates. Once a template
 is assigned to an employee, the employee receives an independent copy.
 """
 
-from datetime import date, datetime, time, timedelta
+from datetime import time
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 
-from base.models import EmployeeShift, EmployeeShiftDay, EmployeeShiftSchedule
+from base.models import (
+    SHIFT_MINIMUM_WORKING_HOUR,
+    EmployeeShift,
+    EmployeeShiftDay,
+    EmployeeShiftSchedule,
+)
 from employee.models import Employee, EmployeeWorkInformation
 
 
@@ -28,17 +33,6 @@ def _employee_shift_name(employee):
     if len(name) <= max_length:
         return name
     return f"employee_{employee.pk}{suffix}"[:max_length]
-
-
-def _duration_label(start_time, end_time):
-    if not start_time or not end_time:
-        return "00:00"
-    start = datetime.combine(date(2000, 1, 1), start_time)
-    end = datetime.combine(date(2000, 1, 1), end_time)
-    if end <= start:
-        end += timedelta(days=1)
-    minutes = int((end - start).total_seconds() // 60)
-    return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
 def _copy_schedule_fields(source_schedule):
@@ -201,7 +195,8 @@ def update_employee_shift_schedule(
 ):
     """Persist one employee-owned recurring schedule row."""
     shift = ensure_employee_owned_shift(employee)
-    minimum_working_hour = minimum_working_hour or _duration_label(start_time, end_time)
+    # Every employee shift schedule requires 9 working hours.
+    minimum_working_hour = SHIFT_MINIMUM_WORKING_HOUR
     schedule, _created = EmployeeShiftSchedule._base_manager.update_or_create(
         shift_id=shift,
         day=day,

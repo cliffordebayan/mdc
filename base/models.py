@@ -743,6 +743,43 @@ class EmployeeShift(HorillaModel):
 from django.db.models import Case, When
 
 
+SHIFT_MINIMUM_WORKING_HOUR = "09:00"
+SHIFT_MIN_SPAN_SECONDS = 9 * 60 * 60
+# A span longer than this is almost always an AM/PM entry mistake
+# (e.g. 23:00 -> 20:00 instead of 11:00 -> 20:00).
+SHIFT_MAX_SPAN_SECONDS = 16 * 60 * 60
+
+
+def shift_span_seconds(start_time, end_time):
+    """Return the shift length in seconds, wrapping past midnight."""
+    if not start_time or not end_time:
+        return None
+    start = start_time.hour * 3600 + start_time.minute * 60 + start_time.second
+    end = end_time.hour * 3600 + end_time.minute * 60 + end_time.second
+    if end <= start:
+        end += 24 * 60 * 60
+    return end - start
+
+
+def validate_shift_span(start_time, end_time):
+    """Raise ValidationError unless the shift is between 9 and 16 hours long."""
+    span = shift_span_seconds(start_time, end_time)
+    if span is None:
+        return
+    if span < SHIFT_MIN_SPAN_SECONDS:
+        raise ValidationError(
+            _("A shift must be at least 9 hours long (start to end).")
+        )
+    if span > SHIFT_MAX_SPAN_SECONDS:
+        raise ValidationError(
+            _(
+                "This shift is %(hours)s hours long. Please check AM/PM on "
+                "the start and end times."
+            )
+            % {"hours": span // 3600}
+        )
+
+
 class EmployeeShiftSchedule(HorillaModel):
     """
     EmployeeShiftSchedule model
@@ -758,7 +795,7 @@ class EmployeeShiftSchedule(HorillaModel):
         EmployeeShift, on_delete=models.PROTECT, verbose_name=_("Shift")
     )
     minimum_working_hour = models.CharField(
-        default="08:15",
+        default=SHIFT_MINIMUM_WORKING_HOUR,
         max_length=5,
         validators=[validate_time_format],
         verbose_name=_("Minimum Working Hours"),
@@ -811,6 +848,11 @@ class EmployeeShiftSchedule(HorillaModel):
     def save(self, *args, **kwargs):
         if self.start_time and self.end_time:
             self.is_night_shift = self.start_time > self.end_time
+        # Every employee shift schedule requires 9 working hours.
+        self.minimum_working_hour = SHIFT_MINIMUM_WORKING_HOUR
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "minimum_working_hour" not in update_fields:
+            kwargs["update_fields"] = [*update_fields, "minimum_working_hour"]
         super().save(*args, **kwargs)
 
 

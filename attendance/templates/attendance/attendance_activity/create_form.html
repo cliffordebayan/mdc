@@ -1,0 +1,42 @@
+{% load i18n %}
+{% load widget_tweaks %}
+
+<div class="oh-modal__dialog-header">
+    <h2 class="oh-modal__dialog-title" id="objectCreateModalLabel">
+        {% trans "Create Attendance Activity" %}
+    </h2>
+    <button type="button" class="oh-modal__close" aria-label="{% trans 'Close' %}">
+        <ion-icon name="close-outline"></ion-icon>
+    </button>
+</div>
+
+<div class="oh-modal__dialog-body">
+    <form id="attendanceActivityCreateForm"
+        hx-post="{% url 'attendance-activity-create' %}"
+        hx-target="#objectCreateModalTarget"
+        hx-swap="innerHTML"
+        hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        <div class="oh-profile-section">
+            {{ form.non_field_errors }}
+
+            <div class="row">
+                {% for field in form.visible_fields %}
+                    <div class="{% if field.name == 'clock_in_selfie' or field.name == 'clock_out_selfie' or field.name == 'clock_in_gps_address' or field.name == 'clock_out_gps_address' %}col-12{% else %}col-12 col-md-6{% endif %} mb-3">
+                        <label class="oh-label {% if field.field.required %}required-star{% endif %}"
+                            for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field|add_class:"form-control" }}
+                        {% if field.help_text %}<small class="text-muted">{{ field.help_text }}</small>{% endif %}
+                        {{ field.errors }}
+                    </div>
+                {% endfor %}
+            </div>
+
+            <div class="oh-modal__dialog-footer p-0 mt-2">
+                <button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">
+                    {% trans "Save" %}
+                </button>
+            </div>
+        </div>
+    </form>
+</div>

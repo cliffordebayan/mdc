@@ -489,7 +489,7 @@ class EmployeeShiftScheduleSettingsTests(TestCase):
             "shift_id": str(self.shift.id),
             "minimum_working_hour": "07:30",
             "start_time": "08:00",
-            "end_time": "16:30",
+            "end_time": "17:00",
             "auto_punch_out_time": "",
         }
         payload.update(overrides)
@@ -507,12 +507,12 @@ class EmployeeShiftScheduleSettingsTests(TestCase):
         self.assertNotIn("HX-Redirect", response.headers)
         self.schedule.refresh_from_db()
         self.assertEqual(self.schedule.start_time, time(8, 0))
-        self.assertEqual(self.schedule.end_time, time(16, 30))
-        self.assertEqual(self.schedule.minimum_working_hour, "07:30")
+        self.assertEqual(self.schedule.end_time, time(17, 0))
+        self.assertEqual(self.schedule.minimum_working_hour, "09:00")
 
         refreshed_response = self.client.get(reverse("employee-shift-schedule-view"))
-        self.assertContains(refreshed_response, "08:00 - 16:30")
-        self.assertContains(refreshed_response, "07:30")
+        self.assertContains(refreshed_response, "08:00 - 17:00")
+        self.assertContains(refreshed_response, "09:00")
 
     def test_invalid_auto_checkout_keeps_modal_open_with_errors(self):
         response = self.client.post(
@@ -533,7 +533,7 @@ class EmployeeShiftScheduleSettingsTests(TestCase):
         )
         self.schedule.refresh_from_db()
         self.assertEqual(self.schedule.start_time, time(9, 0))
-        self.assertEqual(self.schedule.minimum_working_hour, "08:00")
+        self.assertEqual(self.schedule.minimum_working_hour, "09:00")
 
     def test_disabling_auto_checkout_does_not_block_time_updates(self):
         self.schedule.is_auto_punch_out_enabled = True
@@ -553,7 +553,7 @@ class EmployeeShiftScheduleSettingsTests(TestCase):
         self.assertFalse(self.schedule.is_auto_punch_out_enabled)
         self.assertIsNone(self.schedule.auto_punch_out_time)
         self.assertEqual(self.schedule.start_time, time(8, 0))
-        self.assertEqual(self.schedule.minimum_working_hour, "07:30")
+        self.assertEqual(self.schedule.minimum_working_hour, "09:00")
 
     def test_rest_day_schedule_keeps_required_start_and_end_times(self):
         response = self.client.post(
@@ -566,10 +566,10 @@ class EmployeeShiftScheduleSettingsTests(TestCase):
         self.schedule.refresh_from_db()
         self.assertTrue(self.schedule.is_rest_day)
         self.assertEqual(self.schedule.start_time, time(8, 0))
-        self.assertEqual(self.schedule.end_time, time(16, 30))
+        self.assertEqual(self.schedule.end_time, time(17, 0))
 
         refreshed_response = self.client.get(reverse("employee-shift-schedule-view"))
-        self.assertContains(refreshed_response, "08:00 - 16:30")
+        self.assertContains(refreshed_response, "08:00 - 17:00")
         self.assertContains(refreshed_response, "Rest Day")
 
     def test_rest_day_schedule_still_requires_start_and_end_times(self):
@@ -608,15 +608,15 @@ class EmployeeShiftScheduleSettingsTests(TestCase):
         self.assertEqual(response.headers["HX-Refresh"], "true")
         self.schedule.refresh_from_db()
         self.assertEqual(self.schedule.start_time, time(8, 0))
-        self.assertEqual(self.schedule.end_time, time(16, 30))
-        self.assertEqual(self.schedule.minimum_working_hour, "07:30")
+        self.assertEqual(self.schedule.end_time, time(17, 0))
+        self.assertEqual(self.schedule.minimum_working_hour, "09:00")
 
     def test_schedule_view_shows_start_end_and_minimum_working_time(self):
         response = self.client.get(reverse("employee-shift-schedule-view"))
 
         self.assertContains(response, "09:00 - 17:00")
         self.assertContains(response, "Minimum")
-        self.assertContains(response, "08:00")
+        self.assertContains(response, "9:00")
 
 
 class EmployeeShiftScheduleImportTests(TestCase):

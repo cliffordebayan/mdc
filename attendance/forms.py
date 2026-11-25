@@ -442,6 +442,128 @@ class AttendanceActivityForm(BaseModelForm):
         super().__init__(*args, **kwargs)
 
 
+class AttendanceActivityCreateForm(BaseModelForm):
+    """Form used by administrators to add a work activity manually."""
+
+    employee_id = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        label=_("Employee"),
+        empty_label=_("Select an employee"),
+    )
+    attendance_date = forms.DateField(
+        label=_("Attendance Date"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    clock_in_date = forms.DateField(
+        label=_("Clock In Date"),
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    clock_in = forms.TimeField(
+        label=_("Clock In"),
+        widget=forms.TimeInput(attrs={"type": "time"}),
+    )
+    clock_out_date = forms.DateField(
+        label=_("Clock Out Date"),
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    clock_out = forms.TimeField(
+        label=_("Clock Out"),
+        required=False,
+        widget=forms.TimeInput(attrs={"type": "time"}),
+    )
+    clock_in_selfie = forms.ImageField(
+        label=_("Clock In Image"),
+        required=False,
+        widget=forms.ClearableFileInput(attrs={"accept": "image/*"}),
+    )
+    clock_out_selfie = forms.ImageField(
+        label=_("Clock Out Image"),
+        required=False,
+        widget=forms.ClearableFileInput(attrs={"accept": "image/*"}),
+    )
+    clock_in_gps_address = forms.CharField(
+        label=_("Clock In Location"), required=False, max_length=500
+    )
+    clock_out_gps_address = forms.CharField(
+        label=_("Clock Out Location"), required=False, max_length=500
+    )
+    clock_in_latitude = forms.FloatField(
+        label=_("Clock In Latitude"), required=False
+    )
+    clock_in_longitude = forms.FloatField(
+        label=_("Clock In Longitude"), required=False
+    )
+    clock_out_latitude = forms.FloatField(
+        label=_("Clock Out Latitude"), required=False
+    )
+    clock_out_longitude = forms.FloatField(
+        label=_("Clock Out Longitude"), required=False
+    )
+
+    class Meta:
+        model = AttendanceActivity
+        fields = [
+            "employee_id",
+            "attendance_date",
+            "clock_in_date",
+            "clock_in",
+            "clock_out_date",
+            "clock_out",
+            "clock_in_selfie",
+            "clock_out_selfie",
+            "clock_in_gps_address",
+            "clock_out_gps_address",
+            "clock_in_latitude",
+            "clock_in_longitude",
+            "clock_out_latitude",
+            "clock_out_longitude",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["employee_id"].queryset = (
+            Employee.objects.filter(
+                is_active=True,
+                employee_work_info__isnull=False,
+            )
+            .order_by("employee_first_name", "employee_last_name", "employee_no")
+            .distinct()
+        )
+
+        if not self.is_bound:
+            today = datetime.date.today()
+            self.initial.setdefault("attendance_date", today)
+            self.initial.setdefault("clock_in_date", today)
+            self.initial["clock_out_date"] = None
+            self.initial["clock_out"] = None
+
+    def clean(self):
+        cleaned_data = super().clean()
+        clock_in_date = cleaned_data.get("clock_in_date")
+        clock_in = cleaned_data.get("clock_in")
+        clock_out_date = cleaned_data.get("clock_out_date")
+        clock_out = cleaned_data.get("clock_out")
+
+        if bool(clock_out_date) != bool(clock_out):
+            message = _("Clock out date and clock out time must be provided together.")
+            if not clock_out_date:
+                self.add_error("clock_out_date", message)
+            if not clock_out:
+                self.add_error("clock_out", message)
+
+        if clock_in_date and clock_in and clock_out_date and clock_out:
+            clock_in_datetime = datetime.datetime.combine(clock_in_date, clock_in)
+            clock_out_datetime = datetime.datetime.combine(clock_out_date, clock_out)
+            if clock_out_datetime < clock_in_datetime:
+                self.add_error(
+                    "clock_out",
+                    _("Clock out must be later than or equal to clock in."),
+                )
+
+        return cleaned_data
+
+
 class AttendanceActivityUpdateForm(BaseModelForm):
     """
     Day-level work activity editor for the attendance activity modal.

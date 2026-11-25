@@ -308,17 +308,22 @@ def clock_in(request):
             minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
                 day=day, shift=shift
             )
+            # A punch only belongs to yesterday when yesterday's shift is
+            # overnight and still running.
+            date_yesterday = date_today - timedelta(days=1)
+            day_yesterday = date_yesterday.strftime("%A").lower()
+            day_yesterday = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
+            (
+                minimum_hour_yesterday,
+                start_time_sec_yesterday,
+                end_time_sec_yesterday,
+            ) = shift_schedule_today(day=day_yesterday, shift=shift)
             if should_clock_in_use_previous_attendance_day(
-                now_sec, start_time_sec, end_time_sec
+                now_sec, start_time_sec_yesterday, end_time_sec_yesterday
             ):
-                # night shift
-                # ------------------
-                date_yesterday = date_today - timedelta(days=1)
-                day_yesterday = date_yesterday.strftime("%A").lower()
-                day_yesterday = EmployeeShiftDay.objects.filter(day=day_yesterday).first()
-                minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
-                    day=day_yesterday, shift=shift
-                )
+                minimum_hour = minimum_hour_yesterday
+                start_time_sec = start_time_sec_yesterday
+                end_time_sec = end_time_sec_yesterday
                 attendance_date = date_yesterday
                 day = day_yesterday
             attendance = clock_in_attendance_and_activity(

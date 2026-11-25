@@ -110,6 +110,7 @@ from attendance.views.views import (
     _write_export_totals_sheet,
     build_attendance_tab_context,
     build_daily_activity_rows,
+    build_daily_attendance_rows,
     build_my_attendance_activity_meta,
 )
 from base.models import (
@@ -2081,7 +2082,7 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
     @patch("attendance.views.portal.AttendanceActivity")
     @patch("attendance.views.portal.Employee")
     @patch("attendance.views.portal._ip_is_allowed", return_value=True)
-    def test_clock_in_while_already_working_closes_open_work_and_starts_new_activity(
+    def test_clock_in_with_previous_day_open_work_closes_it_and_starts_new_activity(
         self,
         _ip_allowed_mock,
         employee_model,
@@ -2103,7 +2104,9 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
         shift_day_model.objects.filter.return_value.first.return_value = object()
         open_activity = MagicMock()
         open_activity.activity_type = "work"
-        open_activity.attendance_date = date(2026, 6, 5)
+        # Forgotten clock-out from yesterday: a same-day repeat Clock In is a
+        # Clock Out instead (see PortalRepeatClockInTests).
+        open_activity.attendance_date = date(2026, 6, 4)
         new_activity = MagicMock()
         new_activity.location_verified = False
         open_activity_qs = MagicMock()
@@ -2123,7 +2126,7 @@ class PortalUnrestrictedGeofenceEndpointTests(SimpleTestCase):
         self.assertEqual(open_activity.clock_out_date, date(2026, 6, 5))
         self.assertEqual(open_activity.out_datetime, datetime(2026, 6, 5, 10, 0, 0))
         open_activity.save.assert_called_once()
-        update_worked_hours_mock.assert_called_once_with(employee, date(2026, 6, 5))
+        update_worked_hours_mock.assert_called_once_with(employee, date(2026, 6, 4))
         clock_in_helper_mock.assert_called_once()
         self.assertEqual(new_activity.clock_in_latitude, 14.6)
         self.assertEqual(new_activity.clock_in_longitude, 121.0)
@@ -3074,6 +3077,26 @@ class AttendanceSchedulerAutoCheckoutTests(SimpleTestCase):
 
         clock_out_mock.assert_not_called()
 
+    def test_checkout_before_clock_in_is_skipped(self):
+        # Activity misdated to the previous day: the computed checkout
+        # (Jun 5 23:59) is before the real clock-in (Jun 6 07:37).
+        activity = SimpleNamespace(
+            pk=1,
+            employee_id=SimpleNamespace(employee_user_id=SimpleNamespace()),
+            attendance_date=date(2026, 6, 5),
+            in_datetime=timezone.make_aware(datetime(2026, 6, 6, 7, 37)),
+        )
+
+        clock_out_mock, _ = self._run_scheduler(
+            datetime(2026, 6, 6, 9, 0),
+            auto_punch_out_time=time(23, 59),
+            activities=[activity],
+            locked_activity=activity,
+            attendance=SimpleNamespace(employee_id=activity.employee_id),
+        )
+
+        clock_out_mock.assert_not_called()
+
 
 class PortalActivityDurationTests(SimpleTestCase):
     def _activity(self, start, end=None, clock_out=None):
@@ -3494,7 +3517,8 @@ class PortalEmployeeShiftScheduleTests(TestCase):
         self.assertEqual(employee_schedule.end_time, time(16, 30))
         current_attendance.refresh_from_db()
         historical_attendance.refresh_from_db()
-        self.assertEqual(current_attendance.minimum_hour, "07:30")
+        # Every shift schedule is fixed at a 9-hour minimum.
+        self.assertEqual(current_attendance.minimum_hour, "09:00")
         self.assertEqual(current_attendance.shift_id, employee_shift)
         self.assertEqual(historical_attendance.minimum_hour, "09:00")
 
@@ -5406,6 +5430,7 @@ class PortalAttendanceHistoryTests(SimpleTestCase):
         self.assertTrue(payload["success"])
         self.assertEqual(payload["rows"], [])
 
+    @patch("attendance.views.views.build_daily_attendance_rows")
     @patch("attendance.views.portal.timezone.localdate", return_value=date(2026, 6, 5))
     @patch("attendance.views.portal.Attendance")
     @patch("attendance.views.portal.Employee")
@@ -5416,6 +5441,7 @@ class PortalAttendanceHistoryTests(SimpleTestCase):
         employee_model,
         attendance_model,
         _localdate_mock,
+        build_rows_mock,
     ):
         request = self._verified_request(employee_id="1")
         employee = MagicMock()
@@ -5423,18 +5449,33 @@ class PortalAttendanceHistoryTests(SimpleTestCase):
         attendance_rows = [
             SimpleNamespace(
                 attendance_date=date(2026, 6, 5),
-                attendance_clock_in=datetime(2026, 6, 5, 9, 45).time(),
-                attendance_clock_out=datetime(2026, 6, 5, 17, 30).time(),
-                attendance_worked_hour="07:45",
+                is_validate_request=False,
+                approval_status=None,
             ),
             SimpleNamespace(
                 attendance_date=date(2026, 6, 4),
-                attendance_clock_in=datetime(2026, 6, 4, 9, 0).time(),
-                attendance_clock_out=None,
-                attendance_worked_hour=None,
+                is_validate_request=False,
+                approval_status=None,
             ),
         ]
         attendance_model.objects.filter.return_value.order_by.return_value = attendance_rows
+        # Values come from the activity-based daily rows, not the Attendance.
+        build_rows_mock.return_value = [
+            SimpleNamespace(
+                table_clock_in=SimpleNamespace(clock_in=time(9, 45)),
+                table_clock_out=SimpleNamespace(clock_out=time(17, 30)),
+                work_hours="07:45",
+                break_hours="00:15",
+                lunch_hours="",
+            ),
+            SimpleNamespace(
+                table_clock_in=SimpleNamespace(clock_in=time(9, 0)),
+                table_clock_out=None,
+                work_hours=None,
+                break_hours="",
+                lunch_hours="",
+            ),
+        ]
 
         response = attendance_history(request)
         payload = json.loads(response.content)
@@ -5454,8 +5495,9 @@ class PortalAttendanceHistoryTests(SimpleTestCase):
                 "clock_in_time": "09:45 AM",
                 "clock_out_time": "05:30 PM",
                 "worked_hours": "07:45",
-                "break_time": "00:00",
+                "break_time": "00:15",
                 "lunch_time": "00:00",
+                "approval_status": "none",
             },
         )
         self.assertEqual(payload["rows"][1]["clock_out_time"], "--:--")
@@ -12044,3 +12086,490 @@ class ActivityImportChainTests(TestCase):
             AttendanceActivity.objects.filter(employee_id=self.employee)
         )
         self.assertEqual(str(rows[0].source), "Mixed")
+
+
+class PreviousDayOvernightClockInTests(TestCase):
+    """A punch only belongs to yesterday when *yesterday's* shift is overnight."""
+
+    def setUp(self):
+        self.friday, _ = EmployeeShiftDay.objects.get_or_create(day="friday")
+        self.saturday, _ = EmployeeShiftDay.objects.get_or_create(day="saturday")
+        self.shift = EmployeeShift.objects.create(
+            employee_shift="Prev Day Shift",
+            weekly_full_time="40:00",
+            full_time="200:00",
+        )
+        self.work_info = SimpleNamespace(shift_id=self.shift, employee_id=None)
+
+    def _schedule(self, day, start, end):
+        return EmployeeShiftSchedule.objects.create(
+            day=day, shift_id=self.shift, start_time=start, end_time=end
+        )
+
+    def _context(self, when):
+        from attendance.views.portal import _portal_current_attendance_context
+
+        return _portal_current_attendance_context(self.work_info, when)
+
+    def test_today_overnight_schedule_does_not_move_morning_punch_to_yesterday(self):
+        # Mirrors employee 2026894: Saturday mistyped 23:00->20:00, Friday 11:00->20:00.
+        self._schedule(self.friday, time(11, 0), time(20, 0))
+        self._schedule(self.saturday, time(23, 0), time(20, 0))
+
+        context = self._context(datetime(2026, 11, 14, 10, 34))
+
+        self.assertEqual(context["attendance_date"], date(2026, 11, 14))
+
+    def test_yesterday_overnight_shift_keeps_early_punch_on_yesterday(self):
+        self._schedule(self.friday, time(22, 0), time(7, 0))
+        self._schedule(self.saturday, time(11, 0), time(20, 0))
+
+        context = self._context(datetime(2026, 11, 14, 5, 0))
+
+        self.assertEqual(context["attendance_date"], date(2026, 11, 13))
+
+    def test_yesterday_overnight_shift_after_end_uses_today(self):
+        self._schedule(self.friday, time(22, 0), time(7, 0))
+        self._schedule(self.saturday, time(11, 0), time(20, 0))
+
+        context = self._context(datetime(2026, 11, 14, 10, 30))
+
+        self.assertEqual(context["attendance_date"], date(2026, 11, 14))
+
+
+class ShiftScheduleNineHourRuleTests(TestCase):
+    def setUp(self):
+        self.monday, _ = EmployeeShiftDay.objects.get_or_create(day="monday")
+        self.shift = EmployeeShift.objects.create(
+            employee_shift="Nine Hour Shift",
+            weekly_full_time="40:00",
+            full_time="200:00",
+        )
+
+    def test_save_forces_nine_hour_minimum(self):
+        schedule = EmployeeShiftSchedule.objects.create(
+            day=self.monday,
+            shift_id=self.shift,
+            minimum_working_hour="08:00",
+            start_time=time(8, 0),
+            end_time=time(17, 0),
+        )
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.minimum_working_hour, "09:00")
+
+    def test_validate_shift_span(self):
+        from django.core.exceptions import ValidationError
+
+        from base.models import validate_shift_span
+
+        validate_shift_span(time(8, 0), time(17, 0))
+        validate_shift_span(time(22, 0), time(7, 0))
+        with self.assertRaises(ValidationError):
+            validate_shift_span(time(23, 0), time(20, 0))  # 21h AM/PM typo
+        with self.assertRaises(ValidationError):
+            validate_shift_span(time(9, 0), time(17, 0))  # 8h
+
+    def test_update_form_rejects_am_pm_typo(self):
+        from base.forms import EmployeeShiftScheduleUpdateForm
+
+        form = EmployeeShiftScheduleUpdateForm(
+            data={
+                "day": self.monday.id,
+                "shift_id": self.shift.id,
+                "start_time": "23:00",
+                "end_time": "20:00",
+            }
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("end_time", form.errors)
+
+    def test_normalize_command_fixes_typos_and_minimum(self):
+        from attendance.management.commands.normalize_shift_schedules import (
+            corrected_times,
+        )
+
+        self.assertEqual(corrected_times(time(23, 0), time(20, 0)), (time(11, 0), time(20, 0)))
+        self.assertEqual(corrected_times(time(9, 0), time(6, 0)), (time(9, 0), time(18, 0)))
+        self.assertEqual(corrected_times(time(20, 30), time(17, 30)), (time(8, 30), time(17, 30)))
+        self.assertIsNone(corrected_times(time(22, 0), time(7, 0)))
+        self.assertIsNone(corrected_times(time(8, 0), time(17, 0)))
+
+        schedule = EmployeeShiftSchedule.objects.create(
+            day=self.monday,
+            shift_id=self.shift,
+            start_time=time(23, 0),
+            end_time=time(20, 0),
+        )
+        EmployeeShiftSchedule.objects.filter(pk=schedule.pk).update(
+            minimum_working_hour="21:00"
+        )
+        call_command("normalize_shift_schedules", "--apply", stdout=io.StringIO())
+        schedule.refresh_from_db()
+        self.assertEqual((schedule.start_time, schedule.end_time), (time(11, 0), time(20, 0)))
+        self.assertFalse(schedule.is_night_shift)
+        self.assertEqual(schedule.minimum_working_hour, "09:00")
+
+
+class RepairClockOutDataCommandTests(TestCase):
+    def setUp(self):
+        self.monday, _ = EmployeeShiftDay.objects.get_or_create(day="monday")
+        self.shift = EmployeeShift.objects.create(
+            employee_shift="Repair Clock Out Shift",
+            weekly_full_time="40:00",
+            full_time="200:00",
+        )
+        EmployeeShiftSchedule.objects.create(
+            day=self.monday,
+            shift_id=self.shift,
+            start_time=time(7, 0),
+            end_time=time(16, 0),
+        )
+        self.employee = Employee.objects.create(
+            employee_first_name="Repair",
+            employee_last_name="Clockout",
+            email="repair-clockout@example.com",
+            phone="09170000099",
+            gender="male",
+            is_active=True,
+        )
+        self.day = date(2026, 11, 9)  # Monday
+        Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.day,
+            shift_id=self.shift,
+            attendance_day=self.monday,
+            attendance_clock_in_date=self.day,
+            attendance_clock_in=time(7, 37),
+            minimum_hour="09:00",
+        )
+
+    def _activity(self, clock_in, clock_out_date=None, clock_out=None, **extra):
+        return AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.day,
+            shift_day=self.monday,
+            clock_in_date=self.day,
+            clock_in=clock_in,
+            clock_out_date=clock_out_date,
+            clock_out=clock_out,
+            **extra,
+        )
+
+    def _run(self, *args):
+        call_command("repair_clock_out_data", *args, stdout=io.StringIO())
+
+    def test_merges_zero_length_clock_out_into_broken_activity(self):
+        broken = self._activity(
+            time(7, 37), self.day - timedelta(days=1), time(23, 59), is_auto_punch_out=True
+        )
+        clock_out_punch = self._activity(
+            time(18, 20, 24),
+            self.day,
+            time(18, 20, 23),
+            clock_out_latitude=14.5,
+            clock_out_longitude=121.0,
+            clock_out_gps_address="Office",
+        )
+
+        self._run("--apply")
+
+        broken.refresh_from_db()
+        self.assertEqual((broken.clock_out_date, broken.clock_out), (self.day, time(18, 20, 23)))
+        self.assertFalse(broken.is_auto_punch_out)
+        self.assertEqual(broken.clock_out_gps_address, "Office")
+        self.assertFalse(AttendanceActivity.objects.filter(pk=clock_out_punch.pk).exists())
+
+    def test_closes_broken_activity_at_next_real_clock_in(self):
+        broken = self._activity(time(8, 2), self.day - timedelta(days=1), time(23, 59))
+        self._activity(
+            time(15, 58),
+            self.day,
+            time(17, 36),
+            clock_in_selfie=SimpleUploadedFile("in.jpg", b"x", content_type="image/jpeg"),
+        )
+
+        self._run("--apply")
+
+        broken.refresh_from_db()
+        self.assertEqual((broken.clock_out_date, broken.clock_out), (self.day, time(15, 58)))
+
+    def test_closes_lone_broken_activity_at_schedule_end(self):
+        broken = self._activity(time(7, 1), self.day - timedelta(days=1), time(23, 59))
+
+        self._run("--apply")
+
+        broken.refresh_from_db()
+        self.assertEqual((broken.clock_out_date, broken.clock_out), (self.day, time(16, 0)))
+        self.assertTrue(broken.is_auto_punch_out)
+
+    def test_dry_run_changes_nothing(self):
+        broken = self._activity(time(7, 1), self.day - timedelta(days=1), time(23, 59))
+
+        self._run()
+
+        broken.refresh_from_db()
+        self.assertEqual(broken.clock_out_date, self.day - timedelta(days=1))
+
+
+class PortalRepeatClockInTests(SimpleTestCase):
+    """A Clock In while already clocked in for the same day is a Clock Out."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _request(self):
+        request = self.factory.post(
+            "/attendance/portal/clock-in/",
+            {"employee_id": "1", "latitude": "14.6", "longitude": "121.0"},
+        )
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": "1",
+            "verified_at": datetime.now().timestamp(),
+        }
+        return request
+
+    def _run(self, open_activity_date, multi_punch=False):
+        context = {
+            "error": "",
+            "date_today": date(2026, 11, 2),
+            "attendance_date": date(2026, 11, 2),
+            "day": SimpleNamespace(),
+            "now_str": "16:04",
+            "minimum_hour": "09:00",
+            "start_time_sec": 7 * 3600,
+            "end_time_sec": 16 * 3600,
+            "shift": SimpleNamespace(),
+        }
+        open_activity = MagicMock()
+        open_activity.attendance_date = open_activity_date
+        open_activity.activity_type = "work"
+        with (
+            patch("attendance.views.portal._ip_is_allowed", return_value=True),
+            patch("attendance.views.portal.Employee") as employee_model,
+            patch("attendance.views.portal._maybe_auto_checkout_employee"),
+            patch("attendance.views.portal._geofence_check", return_value=None),
+            patch(
+                "attendance.views.portal.get_real_now",
+                return_value=datetime(2026, 11, 2, 16, 4),
+            ),
+            patch(
+                "attendance.views.portal._portal_current_attendance_context",
+                return_value=context,
+            ),
+            patch(
+                "attendance.views.portal._portal_multi_punch_enabled",
+                return_value=multi_punch,
+            ),
+            patch(
+                "attendance.views.portal._portal_multi_punch_state",
+                return_value={},
+            ),
+            patch(
+                "attendance.views.portal._portal_multi_punch_action_error",
+                return_value="",
+            ),
+            patch("attendance.views.portal.AttendanceActivity") as activity_model,
+            patch("attendance.views.portal._update_attendance_worked_hours"),
+            patch("attendance.views.portal._reverse_geocode", return_value="Addr"),
+            patch(
+                "attendance.views.portal.clock_in_attendance_and_activity"
+            ) as clock_in_helper,
+            patch(
+                "attendance.views.portal.public_clock_out",
+                return_value=HttpResponse("clock-out"),
+            ) as clock_out_view,
+        ):
+            employee = MagicMock()
+            employee.id = 1
+            employee.employee_work_info.shift_id = SimpleNamespace()
+            employee_model.objects.get.return_value = employee
+            activity_model.objects.filter.return_value.order_by.return_value.last.return_value = open_activity
+            response = public_clock_in(self._request())
+        return response, clock_out_view, clock_in_helper
+
+    def test_repeat_clock_in_same_day_is_recorded_as_clock_out(self):
+        response, clock_out_view, clock_in_helper = self._run(date(2026, 11, 2))
+
+        clock_out_view.assert_called_once()
+        clock_in_helper.assert_not_called()
+        self.assertEqual(response.content, b"clock-out")
+
+    def test_open_activity_from_previous_day_still_clocks_in(self):
+        _response, clock_out_view, clock_in_helper = self._run(date(2026, 11, 1))
+
+        clock_out_view.assert_not_called()
+        clock_in_helper.assert_called_once()
+
+    def test_multi_punch_employee_is_not_converted(self):
+        _response, clock_out_view, clock_in_helper = self._run(
+            date(2026, 11, 2), multi_punch=True
+        )
+
+        clock_out_view.assert_not_called()
+        clock_in_helper.assert_called_once()
+
+
+class ConvertRepeatClockInsCommandTests(TestCase):
+    def setUp(self):
+        self.monday, _ = EmployeeShiftDay.objects.get_or_create(day="monday")
+        self.employee = Employee.objects.create(
+            employee_first_name="Repeat",
+            employee_last_name="ClockIn",
+            email="repeat-clockin@example.com",
+            phone="09170000098",
+            gender="male",
+            is_active=True,
+        )
+        self.day = date(2026, 11, 2)
+
+    def _activity(self, clock_in, clock_out, **extra):
+        return AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.day,
+            shift_day=self.monday,
+            clock_in_date=self.day,
+            clock_in=clock_in,
+            clock_out_date=self.day,
+            clock_out=clock_out,
+            activity_type="work",
+            **extra,
+        )
+
+    def _run(self, *args):
+        call_command("convert_repeat_clock_ins", *args, stdout=io.StringIO())
+
+    def test_repeat_clock_in_becomes_clock_out_of_earlier_punch(self):
+        first = self._activity(time(6, 39), time(16, 4, 3))
+        repeat = self._activity(
+            time(16, 4, 3),
+            time(23, 59),
+            clock_in_selfie=SimpleUploadedFile("end.jpg", b"x", content_type="image/jpeg"),
+            clock_in_gps_address="Baguio",
+        )
+
+        self._run("--apply")
+
+        first.refresh_from_db()
+        self.assertEqual(first.clock_out, time(16, 4, 3))
+        self.assertTrue(first.clock_out_selfie.name)
+        self.assertEqual(first.clock_out_gps_address, "Baguio")
+        self.assertFalse(AttendanceActivity.objects.filter(pk=repeat.pk).exists())
+
+    def test_repeat_with_real_clock_out_is_left_alone(self):
+        self._activity(time(6, 39), time(12, 0))
+        repeat = self._activity(
+            time(12, 0),
+            time(23, 59),
+            clock_out_selfie=SimpleUploadedFile("out.jpg", b"x", content_type="image/jpeg"),
+        )
+
+        self._run("--apply")
+
+        self.assertTrue(AttendanceActivity.objects.filter(pk=repeat.pk).exists())
+
+    def test_dry_run_changes_nothing(self):
+        self._activity(time(6, 39), time(16, 4, 3))
+        repeat = self._activity(time(16, 4, 3), time(23, 59))
+
+        self._run()
+
+        self.assertTrue(AttendanceActivity.objects.filter(pk=repeat.pk).exists())
+
+
+@override_settings(TIME_ZONE="Asia/Manila")
+class ActivityBasedAttendanceDisplayTests(TestCase):
+    """My Attendance, its detail popup and the portal history show activity data."""
+
+    def setUp(self):
+        self.monday, _ = EmployeeShiftDay.objects.get_or_create(day="monday")
+        self.user = User.objects.create_user(username="display-user", password="x")
+        self.employee = Employee.objects.create(
+            employee_user_id=self.user,
+            employee_first_name="Display",
+            employee_last_name="User",
+            email="display-user@example.com",
+            phone="09170000097",
+            gender="male",
+            is_active=True,
+        )
+        self.day = date(2026, 11, 2)
+        # Stored Attendance values are stale (auto punch-out at 23:59).
+        self.attendance = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.day,
+            attendance_day=self.monday,
+            attendance_clock_in_date=self.day,
+            attendance_clock_in=time(6, 39),
+            attendance_clock_out_date=self.day,
+            attendance_clock_out=time(23, 59),
+            minimum_hour="09:00",
+        )
+        AttendanceActivity.objects.create(
+            employee_id=self.employee,
+            attendance_date=self.day,
+            shift_day=self.monday,
+            clock_in_date=self.day,
+            clock_in=time(6, 39),
+            clock_out_date=self.day,
+            clock_out=time(16, 4),
+            activity_type="work",
+        )
+
+    def test_portal_history_uses_activity_clock_out(self):
+        request = RequestFactory().post(
+            "/attendance/portal/attendance-history/",
+            {"employee_id": str(self.employee.id), "start_date": "2026-11-01", "end_date": "2026-11-03"},
+        )
+        attach_session(request)
+        request.session["portal_pin_verification"] = {
+            "employee_id": str(self.employee.id),
+            "verified_at": datetime.now().timestamp(),
+        }
+        with patch("attendance.views.portal._ip_is_allowed", return_value=True):
+            payload = json.loads(attendance_history(request).content)
+
+        self.assertEqual(payload["rows"][0]["clock_in_time"], "06:39 AM")
+        self.assertEqual(payload["rows"][0]["clock_out_time"], "04:04 PM")
+
+    def test_daily_attendance_row_matches_activity_view_row(self):
+        my_row = build_daily_attendance_rows([self.attendance])[0]
+        activity_row = build_daily_activity_rows(
+            AttendanceActivity.objects.filter(employee_id=self.employee)
+        )[0]
+
+        self.assertEqual(my_row.table_clock_in.clock_in, activity_row.table_clock_in.clock_in)
+        self.assertEqual(my_row.table_clock_out.clock_out, activity_row.table_clock_out.clock_out)
+        self.assertEqual(my_row.table_clock_out.clock_out, time(16, 4))
+
+    def test_manual_request_without_activities_still_shows_its_times(self):
+        manual = Attendance.objects.create(
+            employee_id=self.employee,
+            attendance_date=date(2026, 11, 3),
+            attendance_clock_in_date=date(2026, 11, 3),
+            attendance_clock_in=time(8, 0),
+            attendance_clock_out_date=date(2026, 11, 3),
+            attendance_clock_out=time(17, 0),
+            minimum_hour="09:00",
+        )
+        row = build_daily_attendance_rows([manual])[0]
+
+        self.assertEqual(row.table_clock_in.clock_in, time(8, 0))
+        self.assertEqual(row.table_clock_out.clock_out, time(17, 0))
+
+    def test_detail_popup_uses_activity_clock_out(self):
+        from attendance.views.views import user_request_one_view
+
+        request = RequestFactory().get(
+            f"/attendance/user-request-one-view/{self.attendance.id}",
+            {"instances_ids": json.dumps([self.attendance.id])},
+        )
+        request.user = self.user
+        attach_session(request)
+        with patch("attendance.views.views.render") as render_mock:
+            render_mock.return_value = HttpResponse()
+            user_request_one_view(request, self.attendance.id)
+
+        context = render_mock.call_args.args[2]
+        self.assertEqual(context["check_out"], time(16, 4))
+        self.assertEqual(context["check_in"], time(6, 39))

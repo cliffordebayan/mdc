@@ -213,6 +213,11 @@ urlpatterns = [
         name="attendance-activity-view",
     ),
     path(
+        "attendance-activity-create/",
+        views.attendance_activity_create,
+        name="attendance-activity-create",
+    ),
+    path(
         "attendance-activity-single-view/<int:obj_id>/",
         views.activity_single_view,
         name="attendance-activity-single-view",

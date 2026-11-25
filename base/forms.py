@@ -71,6 +71,7 @@ from base.models import (
     RotatingShiftPeriod,
     RotatingWorkType,
     RotatingWorkTypeAssign,
+    SHIFT_MINIMUM_WORKING_HOUR,
     ShiftRequest,
     ShiftRequestComment,
     Tags,
@@ -78,6 +79,7 @@ from base.models import (
     WorkType,
     WorkTypeRequest,
     WorkTypeRequestComment,
+    validate_shift_span,
 )
 from employee.filters import EmployeeFilter
 from employee.forms import MultipleFileField
@@ -1220,6 +1222,26 @@ class EmployeeShiftForm(ModelForm):
         return super().clean()
 
 
+def _lock_shift_minimum_working_hour(form):
+    """Every shift schedule uses a fixed 9-hour minimum."""
+    field = form.fields.get("minimum_working_hour")
+    if field is not None:
+        field.initial = SHIFT_MINIMUM_WORKING_HOUR
+        field.disabled = True
+        field.required = False
+        field.help_text = _("Fixed at 9 hours for every employee.")
+
+
+def _validate_shift_schedule_span(cleaned_data):
+    """Reject AM/PM mistakes and shifts shorter than 9 hours."""
+    if cleaned_data.get("is_rest_day"):
+        return
+    try:
+        validate_shift_span(cleaned_data.get("start_time"), cleaned_data.get("end_time"))
+    except ValidationError as error:
+        raise ValidationError({"end_time": error.messages})
+
+
 class EmployeeShiftScheduleUpdateForm(ModelForm):
     """
     EmployeeShiftSchedule model's form
@@ -1266,6 +1288,7 @@ class EmployeeShiftScheduleUpdateForm(ModelForm):
             self.fields["is_auto_punch_out_enabled"].widget.attrs.update(
                 {"onchange": "toggleDivVisibility(this)"}
             )
+        _lock_shift_minimum_working_hour(self)
 
     def as_p(self):
         """
@@ -1278,6 +1301,7 @@ class EmployeeShiftScheduleUpdateForm(ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        _validate_shift_schedule_span(cleaned_data)
         if apps.is_installed("attendance"):
             auto_punch_out_enabled = cleaned_data.get("is_auto_punch_out_enabled")
             auto_punch_out_time = cleaned_data.get("auto_punch_out_time")
@@ -1356,6 +1380,7 @@ class EmployeeShiftScheduleForm(ModelForm):
             self.fields["is_auto_punch_out_enabled"].widget.attrs.update(
                 {"onchange": "toggleDivVisibility(this)"}
             )
+        _lock_shift_minimum_working_hour(self)
 
     def as_p(self):
         """
@@ -1368,6 +1393,7 @@ class EmployeeShiftScheduleForm(ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        _validate_shift_schedule_span(cleaned_data)
         if apps.is_installed("attendance"):
             auto_punch_out_enabled = self.cleaned_data["is_auto_punch_out_enabled"]
             auto_punch_out_time = self.cleaned_data["auto_punch_out_time"]

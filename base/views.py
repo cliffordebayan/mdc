@@ -3330,24 +3330,25 @@ def _shift_import_apply_row(row):
             )
         )
 
+    from django.core.exceptions import ValidationError
+
+    from base.models import SHIFT_MINIMUM_WORKING_HOUR, validate_shift_span
     from employee.methods.shift_ownership import ensure_employee_owned_shift
+
+    for day_name, is_rest_day, start_time, end_time in day_values:
+        if start_time and end_time and not is_rest_day:
+            try:
+                validate_shift_span(start_time, end_time)
+            except ValidationError as error:
+                raise ValueError(
+                    "%s: %s" % (day_name.capitalize(), " ".join(error.messages))
+                )
 
     shift = ensure_employee_owned_shift(employee)
 
     for day_name, is_rest_day, start_time, end_time in day_values:
         day, day_created = EmployeeShiftDay.objects.get_or_create(day=day_name)
-        if start_time and end_time:
-            duration_seconds = int(
-                (
-                    datetime.combine(datetime.today().date(), end_time)
-                    - datetime.combine(datetime.today().date(), start_time)
-                ).total_seconds()
-            )
-            if duration_seconds <= 0:
-                duration_seconds += 24 * 60 * 60
-            minimum_working_hour = f"{duration_seconds // 3600:02d}:{(duration_seconds % 3600) // 60:02d}"
-        else:
-            minimum_working_hour = "00:00"
+        minimum_working_hour = SHIFT_MINIMUM_WORKING_HOUR
         EmployeeShiftSchedule._base_manager.update_or_create(
             shift_id=shift,
             day=day,

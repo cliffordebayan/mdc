@@ -10,6 +10,20 @@ from django.utils import timezone
 from base.backends import logger
 
 
+def _activity_clock_in_datetime(activity):
+    """Return the activity's clock-in as an aware datetime, or None."""
+    value = getattr(activity, "in_datetime", None)
+    clock_in_date = getattr(activity, "clock_in_date", None)
+    clock_in = getattr(activity, "clock_in", None)
+    if value is None and clock_in_date and clock_in:
+        value = datetime.datetime.combine(clock_in_date, clock_in)
+    if value is None:
+        return None
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value, timezone=timezone.get_current_timezone())
+    return value
+
+
 def auto_checkout_attendance():
     """
     Close open attendance activities after their configured automatic checkout
@@ -91,6 +105,20 @@ def auto_checkout_attendance():
                     )
 
                     if checkout_at >= current_time:
+                        continue
+
+                    clock_in_at = _activity_clock_in_datetime(activity)
+                    if clock_in_at and checkout_at <= clock_in_at:
+                        # Never stamp a clock-out earlier than the clock-in
+                        # (happens when the activity's attendance date is
+                        # behind its real clock-in date).
+                        logger.warning(
+                            "Skipped automatic checkout for activity %s: "
+                            "checkout %s is not after clock-in %s",
+                            activity.pk,
+                            checkout_at,
+                            clock_in_at,
+                        )
                         continue
 
                     clock_out(

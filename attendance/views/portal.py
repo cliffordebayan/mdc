@@ -1480,29 +1480,27 @@ def _portal_current_attendance_context(
 
     employee = employee or getattr(work_info, "employee_id", None)
     if employee:
-        schedule_context = _portal_schedule_context(
-            employee,
-            date_today,
-            persist=False,
-        )
-        if schedule_context["error"]:
-            if require_shift:
-                context["error"] = schedule_context["error"]
-            return context
-
         now_sec = strtime_seconds(now_str)
         attendance_date = date_today
-        if (
-            should_clock_in_use_previous_attendance_day(
-                now_sec,
-                schedule_context["start_time_sec"],
-                schedule_context["end_time_sec"],
-            )
+        # A punch only belongs to yesterday when yesterday's shift is
+        # overnight and still running; today's schedule is irrelevant here.
+        date_yesterday = date_today - timedelta(days=1)
+        yesterday_context = _portal_schedule_context(
+            employee,
+            date_yesterday,
+            persist=False,
+        )
+        if not yesterday_context["error"] and should_clock_in_use_previous_attendance_day(
+            now_sec,
+            yesterday_context["start_time_sec"],
+            yesterday_context["end_time_sec"],
         ):
-            attendance_date = date_today - timedelta(days=1)
+            attendance_date = date_yesterday
+            schedule_context = yesterday_context
+        else:
             schedule_context = _portal_schedule_context(
                 employee,
-                attendance_date,
+                date_today,
                 persist=False,
             )
             if schedule_context["error"]:
@@ -1548,20 +1546,24 @@ def _portal_current_attendance_context(
         shift=shift,
     )
     attendance_date = date_today
-    if should_clock_in_use_previous_attendance_day(
-        now_sec, start_time_sec, end_time_sec
-    ):
-        attendance_date = date_today - timedelta(days=1)
-        day_name = attendance_date.strftime("%A").lower()
-        day = EmployeeShiftDay.objects.filter(day=day_name).first()
-        if not day:
-            if require_shift:
-                context["error"] = "Shift day configuration error"
-            return context
-        minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
-            day=day,
-            shift=shift,
-        )
+    date_yesterday = date_today - timedelta(days=1)
+    day_yesterday = EmployeeShiftDay.objects.filter(
+        day=date_yesterday.strftime("%A").lower()
+    ).first()
+    if day_yesterday:
+        (
+            minimum_hour_yesterday,
+            start_time_sec_yesterday,
+            end_time_sec_yesterday,
+        ) = shift_schedule_today(day=day_yesterday, shift=shift)
+        if should_clock_in_use_previous_attendance_day(
+            now_sec, start_time_sec_yesterday, end_time_sec_yesterday
+        ):
+            attendance_date = date_yesterday
+            day = day_yesterday
+            minimum_hour = minimum_hour_yesterday
+            start_time_sec = start_time_sec_yesterday
+            end_time_sec = end_time_sec_yesterday
 
     context.update(
         {
@@ -3142,13 +3144,18 @@ def _portal_shift_schedule(request):
             status=200,
         )
 
-    duration_seconds = int((
-        datetime.combine(date_today, end_time)
-        - datetime.combine(date_today, start_time)
-    ).total_seconds())
-    if duration_seconds < 0:
-        duration_seconds += 24 * 60 * 60
-    minimum_working_hour = format_time(duration_seconds)
+    from django.core.exceptions import ValidationError as DjangoValidationError
+
+    from base.models import SHIFT_MINIMUM_WORKING_HOUR, validate_shift_span
+
+    try:
+        validate_shift_span(start_time, end_time)
+    except DjangoValidationError as error:
+        return JsonResponse(
+            {"success": False, "message": " ".join(str(m) for m in error.messages)},
+            status=200,
+        )
+    minimum_working_hour = SHIFT_MINIMUM_WORKING_HOUR
     try:
         ensure_employee_owned_shift(employee)
         work_info = EmployeeWorkInformation._base_manager.filter(
@@ -3341,53 +3348,25 @@ def attendance_history(request):
         .order_by("-attendance_date", "-id")
     )
 
-    current_time = timezone.now()
-    activity_totals_by_date = {}
-    activities = AttendanceActivity.objects.filter(
-        employee_id=employee,
-        attendance_date__gte=start_date,
-        attendance_date__lte=end_date,
-        activity_type__in=[PORTAL_BREAK_ACTIVITY, PORTAL_LUNCH_ACTIVITY],
-    ).only(
-        "attendance_date",
-        "activity_type",
-        "clock_in_date",
-        "clock_in",
-        "clock_out_date",
-        "clock_out",
-        "in_datetime",
-        "out_datetime",
-    )
-    for activity in activities:
-        attendance_date = activity.attendance_date
-        if attendance_date not in activity_totals_by_date:
-            activity_totals_by_date[attendance_date] = {
-                PORTAL_BREAK_ACTIVITY: 0,
-                PORTAL_LUNCH_ACTIVITY: 0,
-            }
-        ended_at = _activity_end_datetime(activity)
-        if ended_at is None and getattr(activity, "clock_out", None) is None:
-            ended_at = current_time
-        activity_totals_by_date[attendance_date][activity.activity_type] += (
-            _activity_duration_seconds(activity, ended_at)
-        )
+    # Build the same activity-based daily rows as the attendance activity view
+    # and My Attendance, so all three show identical clock in/out and hours.
+    from attendance.views.views import build_daily_attendance_rows
 
-    for attendance in attendance_rows:
-        activity_totals = activity_totals_by_date.get(
-            attendance.attendance_date,
-            {
-                PORTAL_BREAK_ACTIVITY: 0,
-                PORTAL_LUNCH_ACTIVITY: 0,
-            },
-        )
+    daily_rows = build_daily_attendance_rows(attendance_rows)
+
+    for attendance, daily_row in zip(attendance_rows, daily_rows):
+        table_in = getattr(daily_row, "table_clock_in", None)
+        table_out = getattr(daily_row, "table_clock_out", None)
         rows.append(
             {
                 "attendance_date": attendance.attendance_date.strftime("%b %d, %Y"),
-                "clock_in_time": format_time_value(attendance.attendance_clock_in),
-                "clock_out_time": format_time_value(attendance.attendance_clock_out),
-                "worked_hours": attendance.attendance_worked_hour or "00:00",
-                "break_time": format_time(activity_totals[PORTAL_BREAK_ACTIVITY]),
-                "lunch_time": format_time(activity_totals[PORTAL_LUNCH_ACTIVITY]),
+                "clock_in_time": format_time_value(getattr(table_in, "clock_in", None)),
+                "clock_out_time": format_time_value(
+                    getattr(table_out, "clock_out", None)
+                ),
+                "worked_hours": getattr(daily_row, "work_hours", None) or "00:00",
+                "break_time": getattr(daily_row, "break_hours", None) or "00:00",
+                "lunch_time": getattr(daily_row, "lunch_hours", None) or "00:00",
                 "approval_status": (
                     "pending"
                     if attendance.is_validate_request
@@ -4707,6 +4686,13 @@ def public_clock_in(request):
                     },
                     status=200,
                 )
+            if (
+                not multi_punch_enabled
+                and open_activity.attendance_date == attendance_date
+            ):
+                # Already clocked in for this shift day: a repeat Clock In
+                # is the employee ending their day, so record a Clock Out.
+                return public_clock_out(request)
             open_activity.clock_out = datetime_now
             open_activity.clock_out_date = date_today
             open_activity.out_datetime = datetime_now

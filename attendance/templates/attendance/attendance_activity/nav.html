@@ -50,6 +50,15 @@
                     @click="searchShow = !searchShow">
                     <ion-icon name="search-outline" class="oh-main__titlebar-serach-icon"></ion-icon>
                 </a>
+                {% if request.user.is_superuser or request.user.is_staff %}
+                    <a class="oh-btn oh-btn--secondary ml-2" href="#"
+                        data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
+                        hx-get="{% url 'attendance-activity-create' %}"
+                        hx-target="#objectCreateModalTarget">
+                        <ion-icon name="add-outline" class="mr-1"></ion-icon>
+                        <span class="oh-titlebar-btn-text">{% trans "Create" %}</span>
+                    </a>
+                {% endif %}
                 <div class="oh-dropdown" x-data="{open: false}">
                     <button class="oh-btn ml-2" @click="open = !open" onclick="event.preventDefault()">
                         <ion-icon name="filter" class="mr-1"></ion-icon><span class="oh-titlebar-btn-text">{% trans "Filter" %}</span><div id="filterCount"></div>
